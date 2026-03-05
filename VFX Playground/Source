@@ -1,7 +1,7 @@
-// ================================================================
-//  VFX PLAYGROUND v3 — paste into browser console to activate
+// ==========================================================================
+//  VFX PLAYGROUND v3 — paste into browser console / run bookmark to activate
 //  Run again to remove. Right-click ⚡ handle to remove entirely.
-// ================================================================
+// ==========================================================================
 (function () {
   if (document.getElementById('__vfx_root')) {
     document.getElementById('__vfx_root').remove();
