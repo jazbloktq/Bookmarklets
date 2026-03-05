@@ -1,1 +1,623 @@
+// ================================================================
+//  VFX PLAYGROUND v3 — paste into browser console to activate
+//  Run again to remove. Right-click ⚡ handle to remove entirely.
+// ================================================================
+(function () {
+  if (document.getElementById('__vfx_root')) {
+    document.getElementById('__vfx_root').remove();
+    document.getElementById('__vfx_style')?.remove();
+    console.log('[VFX] Removed. Paste again to restore.');
+    return;
+  }
 
+  // ── FONTS ─────────────────────────────────────────────────────
+  if (!document.getElementById('__vfx_font')) {
+    const l = document.createElement('link');
+    l.id = '__vfx_font'; l.rel = 'stylesheet';
+    l.href = 'https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@800&display=swap';
+    document.head.appendChild(l);
+  }
+
+  // ── CSS ───────────────────────────────────────────────────────
+  const style = document.createElement('style');
+  style.id = '__vfx_style';
+  style.textContent = `
+    #__vfx_root{position:fixed;inset:0;z-index:2147483647;pointer-events:none;}
+    #__vfx_canvas{position:fixed;inset:0;pointer-events:none;z-index:2;}
+    #__vfx_stage{position:fixed;inset:0;z-index:1;pointer-events:all;background:transparent;transition:background .4s;}
+    #__vfx_stage.vfx-drawing{cursor:crosshair!important;}
+    #__vfx_stage.vfx-erasing{cursor:cell!important;}
+    #__vfx_panel{
+      position:fixed;top:50%;right:20px;transform:translateY(-50%);
+      width:224px;background:rgba(11,11,18,0.93);backdrop-filter:blur(14px);
+      border:1px solid #252535;border-radius:14px;padding:15px 13px;
+      box-shadow:0 0 50px rgba(0,0,0,.75),0 0 70px rgba(124,58,237,.07);
+      pointer-events:all;z-index:10;user-select:none;
+      transition:right .35s cubic-bezier(.4,0,.2,1);
+    }
+    #__vfx_panel.vfx-hidden{right:-248px;}
+    #__vfx_toggle{
+      position:fixed;right:0;top:50%;transform:translateY(-50%);
+      width:27px;height:54px;background:rgba(11,11,18,0.93);backdrop-filter:blur(14px);
+      border:1px solid #252535;border-right:none;border-radius:10px 0 0 10px;
+      cursor:pointer;pointer-events:all;z-index:11;display:flex;align-items:center;
+      justify-content:center;font-size:13px;color:#4a5568;
+      transition:color .15s,background .15s;box-shadow:-4px 0 18px rgba(0,0,0,.55);
+    }
+    #__vfx_toggle:hover{color:#e2e8f0;background:rgba(22,22,34,.98);}
+    .__vt{font-family:'Syne',sans-serif;font-size:10px;font-weight:800;letter-spacing:3px;
+      text-transform:uppercase;color:#4a5568;padding-bottom:9px;border-bottom:1px solid #252535;margin-bottom:11px;}
+    .__vs{font-size:8px;letter-spacing:2px;text-transform:uppercase;color:#374151;margin:9px 0 5px;}
+    .__vg{display:grid;grid-template-columns:1fr 1fr;gap:4px;}
+    .__vb{padding:7px 3px;border-radius:7px;border:1px solid #252535;background:rgba(255,255,255,.02);
+      cursor:pointer;font-family:'Space Mono',monospace;font-size:9px;color:#4a5568;text-align:center;
+      transition:all .12s;display:flex;flex-direction:column;align-items:center;gap:2px;outline:none;}
+    .__vb .vi{font-size:15px;line-height:1;}
+    .__vb:hover{border-color:#7c3aed;color:#e2e8f0;background:rgba(124,58,237,.12);transform:translateY(-1px);}
+    .__vb.vfx-on{border-color:#7c3aed;background:rgba(124,58,237,.22);color:#a78bfa;box-shadow:0 0 9px rgba(124,58,237,.25);}
+    .__vmr{display:flex;gap:4px;flex-wrap:wrap;}
+    .__vm{flex:1;min-width:0;padding:6px 2px;border-radius:7px;border:1px solid #252535;
+      background:rgba(255,255,255,.02);cursor:pointer;font-family:'Space Mono',monospace;
+      font-size:8px;color:#4a5568;text-align:center;transition:all .12s;outline:none;
+      letter-spacing:.3px;white-space:nowrap;}
+    .__vm:hover{border-color:#06b6d4;color:#e2e8f0;}
+    .__vm.vfx-on{border-color:#06b6d4;background:rgba(6,182,212,.15);color:#67e8f9;}
+    .__vm.vfx-block-on{border-color:#f59e0b;background:rgba(245,158,11,.15);color:#fbbf24;}
+    .__vm.vfx-erase-on{border-color:#ef4444;background:rgba(239,68,68,.15);color:#fca5a5;}
+    .__vsr{display:flex;align-items:center;gap:5px;margin:4px 0;}
+    .__vsl{font-size:8px;color:#374151;width:48px;flex-shrink:0;letter-spacing:.3px;}
+    .__vri{-webkit-appearance:none;flex:1;height:3px;background:#252535;border-radius:2px;outline:none;cursor:pointer;}
+    .__vri::-webkit-slider-thumb{-webkit-appearance:none;width:11px;height:11px;border-radius:50%;
+      background:#7c3aed;cursor:pointer;box-shadow:0 0 5px rgba(124,58,237,.5);}
+    .__vsv{font-size:8px;color:#06b6d4;width:18px;text-align:right;}
+    .__vrow{display:flex;gap:4px;margin-top:5px;}
+    .__vcb{flex:1;padding:6px;border-radius:7px;border:1px solid #ef4444;background:rgba(239,68,68,.08);
+      cursor:pointer;font-family:'Space Mono',monospace;font-size:8px;color:#ef4444;
+      letter-spacing:1px;transition:all .12s;outline:none;}
+    .__vcb:hover{background:rgba(239,68,68,.2);}
+    .__vbb{flex:1;padding:6px;border-radius:7px;border:1px solid #252535;background:rgba(255,255,255,.03);
+      cursor:pointer;font-family:'Space Mono',monospace;font-size:8px;color:#4a5568;
+      letter-spacing:.3px;transition:all .12s;outline:none;}
+    .__vbb:hover{border-color:#f59e0b;color:#f59e0b;}
+    .__vbb.vfx-on{border-color:#f59e0b;background:rgba(245,158,11,.1);color:#fbbf24;}
+    .__vem{position:fixed;width:9px;height:9px;border-radius:50%;background:rgba(124,58,237,.7);
+      border:1px solid #a78bfa;box-shadow:0 0 9px rgba(124,58,237,.5);
+      pointer-events:all;cursor:pointer;z-index:9;transform:translate(-50%,-50%);
+      animation:__vfx_p 1.5s ease infinite;}
+    .__vem:hover{background:rgba(239,68,68,.85);border-color:#ef4444;}
+    @keyframes __vfx_p{0%,100%{box-shadow:0 0 7px rgba(124,58,237,.5);}50%{box-shadow:0 0 16px rgba(124,58,237,.9);}}
+    #__vfx_status{position:fixed;top:16px;left:50%;transform:translateX(-50%);font-size:9px;
+      color:#64748b;letter-spacing:1.5px;pointer-events:none;z-index:20;opacity:0;
+      transition:opacity .3s;font-family:'Space Mono',monospace;background:rgba(11,11,18,.85);
+      padding:4px 10px;border-radius:6px;border:1px solid #252535;white-space:nowrap;}
+    #__vfx_hud{position:fixed;bottom:16px;left:16px;pointer-events:none;z-index:10;
+      font-size:8px;color:#1e293b;letter-spacing:.6px;line-height:1.9;
+      font-family:'Space Mono',monospace;}
+    #__vfx_hud span{color:#2d3748;}
+    .__vdp{position:fixed;pointer-events:none;z-index:8;
+      border:2px dashed rgba(245,158,11,.7);background:rgba(245,158,11,.06);border-radius:3px;}
+  `;
+  document.head.appendChild(style);
+
+  // ── ROOT ──────────────────────────────────────────────────────
+  const root = document.createElement('div');
+  root.id = '__vfx_root';
+  document.body.appendChild(root);
+
+  // ── CANVAS ────────────────────────────────────────────────────
+  const canvas = document.createElement('canvas');
+  canvas.id = '__vfx_canvas';
+  canvas.width = innerWidth; canvas.height = innerHeight;
+  root.appendChild(canvas);
+  const ctx = canvas.getContext('2d');
+  window.addEventListener('resize', () => { canvas.width = innerWidth; canvas.height = innerHeight; });
+
+  // ── STAGE ─────────────────────────────────────────────────────
+  const stage = document.createElement('div');
+  stage.id = '__vfx_stage';
+  root.appendChild(stage);
+  stage.addEventListener('contextmenu', e => e.preventDefault());
+
+  // ── STATUS ────────────────────────────────────────────────────
+  const statusEl = document.createElement('div');
+  statusEl.id = '__vfx_status';
+  root.appendChild(statusEl);
+  let _sT;
+  function flash(msg) {
+    statusEl.textContent = msg; statusEl.style.opacity = '1';
+    clearTimeout(_sT); _sT = setTimeout(() => statusEl.style.opacity = '0', 2000);
+  }
+
+  // ── HUD ───────────────────────────────────────────────────────
+  const hud = document.createElement('div');
+  hud.id = '__vfx_hud';
+  hud.innerHTML = '<span>HOLD</span> spray · <span>M</span> menu · <span>C</span> clear · <span>B</span> draw block · <span>E</span> erase block · emitter: <span>right-click dot</span>';
+  root.appendChild(hud);
+
+  // ── PANEL ─────────────────────────────────────────────────────
+  const panel = document.createElement('div');
+  panel.id = '__vfx_panel';
+  panel.innerHTML = `
+    <div class="__vt">⚡ VFX Playground</div>
+    <div class="__vs">Effect</div>
+    <div class="__vg">
+      <button class="__vb vfx-on" data-fx="confetti"><span class="vi">🎊</span>confetti</button>
+      <button class="__vb" data-fx="fireworks"><span class="vi">🎆</span>fireworks</button>
+      <button class="__vb" data-fx="sparks"><span class="vi">✨</span>sparks</button>
+      <button class="__vb" data-fx="bubbles"><span class="vi">🫧</span>bubbles</button>
+      <button class="__vb" data-fx="smoke"><span class="vi">💨</span>smoke</button>
+      <button class="__vb" data-fx="fire"><span class="vi">🔥</span>fire</button>
+      <button class="__vb" data-fx="matrix"><span class="vi">💻</span>matrix</button>
+      <button class="__vb" data-fx="stars"><span class="vi">⭐</span>stars</button>
+      <button class="__vb" data-fx="snow"><span class="vi">❄️</span>snow</button>
+      <button class="__vb" data-fx="hearts"><span class="vi">💖</span>hearts</button>
+    </div>
+    <div class="__vs">Trigger Mode</div>
+    <div class="__vmr">
+      <button class="__vm vfx-on" data-mode="spray">SPRAY</button>
+      <button class="__vm" data-mode="emitter">EMITTER</button>
+      <button class="__vm" data-mode="trail">TRAIL</button>
+    </div>
+    <div class="__vs">Collision Blocks</div>
+    <div class="__vmr">
+      <button class="__vm" id="__vfx_bdraw">✏️ DRAW</button>
+      <button class="__vm" id="__vfx_berase">🗑 ERASE</button>
+      <button class="__vm" id="__vfx_bclear">✕ ALL</button>
+    </div>
+    <div class="__vs">Parameters</div>
+    <div class="__vsr"><span class="__vsl">INTENSITY</span><input class="__vri" type="range" id="__vri0" min="5" max="100" value="30"><span class="__vsv" id="__vd0">30</span></div>
+    <div class="__vsr"><span class="__vsl">SPEED</span><input class="__vri" type="range" id="__vri1" min="1" max="10" value="5"><span class="__vsv" id="__vd1">5</span></div>
+    <div class="__vsr"><span class="__vsl">SIZE</span><input class="__vri" type="range" id="__vri2" min="2" max="20" value="6"><span class="__vsv" id="__vd2">6</span></div>
+    <div class="__vsr"><span class="__vsl">GRAVITY</span><input class="__vri" type="range" id="__vri3" min="0" max="10" value="3"><span class="__vsv" id="__vd3">3</span></div>
+    <div class="__vrow">
+      <button class="__vbb" id="__vfx_bg">🌑 BG</button>
+      <button class="__vcb" id="__vfx_clr">✕ CLEAR</button>
+    </div>
+  `;
+  root.appendChild(panel);
+
+  const toggleBtn = document.createElement('div');
+  toggleBtn.id = '__vfx_toggle';
+  toggleBtn.textContent = '⚡';
+  toggleBtn.title = 'Toggle panel · right-click to remove VFX';
+  root.appendChild(toggleBtn);
+
+  // ── STATE ─────────────────────────────────────────────────────
+  const S = {
+    fx:'confetti', mode:'spray',
+    intensity:30, speed:5, size:6, gravity:3,
+    darkBg:false,
+    blockMode:false, eraseMode:false,
+    particles:[], emitters:[], blocks:[],
+    mouse:{x:0,y:0}, held:false,
+    lastSpray:0, lastTrail:0,
+    drawStart:null,
+  };
+
+  // ── PANEL WIRING ──────────────────────────────────────────────
+  panel.querySelectorAll('.__vb').forEach(b => b.addEventListener('click', e => {
+    e.stopPropagation();
+    panel.querySelectorAll('.__vb').forEach(x => x.classList.remove('vfx-on'));
+    b.classList.add('vfx-on'); S.fx = b.dataset.fx;
+    flash('FX → ' + S.fx.toUpperCase());
+  }));
+
+  panel.querySelectorAll('.__vm[data-mode]').forEach(b => b.addEventListener('click', e => {
+    e.stopPropagation();
+    panel.querySelectorAll('.__vm[data-mode]').forEach(x => x.classList.remove('vfx-on'));
+    b.classList.add('vfx-on'); S.mode = b.dataset.mode;
+    if (S.mode !== 'emitter') clearEmitters();
+    exitBlockModes();
+    flash('MODE → ' + S.mode.toUpperCase());
+  }));
+
+  document.getElementById('__vfx_bdraw').addEventListener('click', e => {
+    e.stopPropagation();
+    S.blockMode = !S.blockMode; S.eraseMode = false;
+    updateBlockBtns();
+    flash(S.blockMode ? 'BLOCK DRAW — click & drag anywhere' : 'BLOCK DRAW OFF');
+  });
+  document.getElementById('__vfx_berase').addEventListener('click', e => {
+    e.stopPropagation();
+    S.eraseMode = !S.eraseMode; S.blockMode = false;
+    updateBlockBtns();
+    flash(S.eraseMode ? 'ERASE MODE — click a block to remove' : 'ERASE OFF');
+  });
+  document.getElementById('__vfx_bclear').addEventListener('click', e => {
+    e.stopPropagation(); S.blocks = []; flash('ALL BLOCKS REMOVED');
+  });
+
+  function updateBlockBtns() {
+    document.getElementById('__vfx_bdraw').className = '__vm' + (S.blockMode ? ' vfx-block-on' : '');
+    document.getElementById('__vfx_berase').className = '__vm' + (S.eraseMode ? ' vfx-erase-on' : '');
+    stage.className = S.blockMode ? 'vfx-drawing' : (S.eraseMode ? 'vfx-erasing' : '');
+  }
+  function exitBlockModes() {
+    S.blockMode = false; S.eraseMode = false; updateBlockBtns();
+    if (drawPreview) { drawPreview.remove(); drawPreview = null; }
+    S.drawStart = null;
+  }
+
+  function bindSlider(id, key, did) {
+    const el = document.getElementById(id);
+    ['input','click','mousedown'].forEach(ev =>
+      el.addEventListener(ev, e => { e.stopPropagation(); S[key]=+el.value; document.getElementById(did).textContent=el.value; })
+    );
+  }
+  bindSlider('__vri0','intensity','__vd0');
+  bindSlider('__vri1','speed','__vd1');
+  bindSlider('__vri2','size','__vd2');
+  bindSlider('__vri3','gravity','__vd3');
+
+  const bgBtn = document.getElementById('__vfx_bg');
+  bgBtn.addEventListener('click', e => {
+    e.stopPropagation(); S.darkBg = !S.darkBg;
+    stage.style.background = S.darkBg ? 'rgba(7,7,13,0.93)' : 'transparent';
+    bgBtn.classList.toggle('vfx-on', S.darkBg);
+    bgBtn.textContent = S.darkBg ? '☀️ BG' : '🌑 BG';
+    flash(S.darkBg ? 'DARK BACKGROUND ON' : 'TRANSPARENT BACKGROUND');
+  });
+  document.getElementById('__vfx_clr').addEventListener('click', e => {
+    e.stopPropagation(); S.particles=[]; clearEmitters(); flash('CLEARED');
+  });
+
+  panel.addEventListener('click', e => e.stopPropagation());
+  panel.addEventListener('mousedown', e => e.stopPropagation());
+
+  // ── MENU TOGGLE ───────────────────────────────────────────────
+  let menuOpen = true;
+  function setMenu(open) {
+    menuOpen = open;
+    panel.classList.toggle('vfx-hidden', !open);
+    toggleBtn.textContent = open ? '✕' : '⚡';
+  }
+  toggleBtn.addEventListener('click', e => { e.stopPropagation(); setMenu(!menuOpen); });
+  toggleBtn.addEventListener('contextmenu', e => {
+    e.preventDefault(); e.stopPropagation();
+    root.remove(); document.getElementById('__vfx_style').remove();
+    console.log('[VFX] Removed. Paste script again to restore.');
+  });
+
+  // ── HELPERS ───────────────────────────────────────────────────
+  const rand = (a,b) => Math.random()*(b-a)+a;
+  const randInt = (a,b) => Math.floor(rand(a,b));
+  const choice = arr => arr[randInt(0,arr.length)];
+  const CONFETTI = ['#ff6b6b','#feca57','#48dbfb','#ff9ff3','#54a0ff','#5f27cd','#01cbd5','#ff9f43','#ee5a24'];
+  const SPARKS   = ['#ffd700','#ffaa00','#ff6600','#ffffff','#ffe500'];
+  const FIRE_C   = ['#ff4500','#ff6a00','#ff8c00','#ffa500','#ffcc00','#ff2200'];
+  const SMOKE_C  = ['#555566','#6a6a7a','#444455','#333344'];
+  const MTX      = '01アイウエオカキクケコサシスセソ'.split('');
+  const STAR_C   = ['#ffffff','#fffacd','#add8e6','#ffec8b','#ffd700'];
+  const HEART_C  = ['#ff6b9d','#ff4081','#ff85a2','#ff1744','#e91e63'];
+
+  // ── BLOCK PHYSICS ─────────────────────────────────────────────
+  function resolveCollision(p) {
+    for (const b of S.blocks) {
+      const r = Math.max(p.size||3, 3);
+      if (p.x < b.x-r || p.x > b.x+b.w+r || p.y < b.y-r || p.y > b.y+b.h+r) continue;
+
+      // Find closest face
+      const dTop    = Math.abs(p.y - b.y);
+      const dBottom = Math.abs(p.y - (b.y+b.h));
+      const dLeft   = Math.abs(p.x - b.x);
+      const dRight  = Math.abs(p.x - (b.x+b.w));
+      const min = Math.min(dTop, dBottom, dLeft, dRight);
+      let side, nx=0, ny=0;
+      if      (min===dTop)    { side='top';    ny=-1; p.y=b.y-r; }
+      else if (min===dBottom) { side='bottom'; ny=1;  p.y=b.y+b.h+r; }
+      else if (min===dLeft)   { side='left';   nx=-1; p.x=b.x-r; }
+      else                    { side='right';  nx=1;  p.x=b.x+b.w+r; }
+
+      const fx = p.fx;
+      if (fx==='smoke'||fx==='fire') {
+        // Smoke/fire curl around block edges, forced upward
+        if (side==='top'||side==='bottom') {
+          p.vy *= -0.05;
+          p.vx += rand(-0.8,0.8);
+          p.gravity = -Math.abs(p.gravity||0.04) - 0.03;
+        } else {
+          p.vx = nx * (Math.abs(p.vx)*0.2 + rand(0.3,0.8));
+          p.vy -= rand(0.1,0.4); // drift upward along wall
+        }
+      } else if (fx==='snow') {
+        if (side==='top') {
+          // Land on top, slow and settle
+          p.vy *= -0.08; p.vx *= 0.5; p.gravity=0;
+          p.decay = Math.max(p.decay, 0.003);
+        } else {
+          p.vx *= -0.35; p.vy *= 0.7;
+        }
+      } else if (fx==='bubbles') {
+        // Bounce gently
+        const dot = p.vx*nx + p.vy*ny;
+        p.vx -= 2*dot*nx*0.45; p.vy -= 2*dot*ny*0.45;
+        p.vx += rand(-0.2,0.2); p.vy += rand(-0.2,0.2);
+      } else if (fx==='sparks') {
+        const dot = p.vx*nx + p.vy*ny;
+        p.vx -= 2*dot*nx*0.65; p.vy -= 2*dot*ny*0.65;
+        p.vx += rand(-0.8,0.8); p.vy += rand(-0.4,0.4);
+      } else if (fx==='fireworks') {
+        const dot = p.vx*nx + p.vy*ny;
+        p.vx -= 2*dot*nx*0.55; p.vy -= 2*dot*ny*0.55;
+        p.vx += rand(-0.5,0.5);
+      } else if (fx==='matrix') {
+        if (side==='top') { p.vy=0; p.gravity=0; }
+        else { p.vx=0; }
+      } else {
+        // confetti, hearts, stars — cheerful bounce
+        const dot = p.vx*nx + p.vy*ny;
+        p.vx -= 2*dot*nx*0.5; p.vy -= 2*dot*ny*0.5;
+        p.vx *= 0.88; p.vy *= 0.88;
+      }
+    }
+  }
+
+  // ── SPAWN ─────────────────────────────────────────────────────
+  function spawn(x, y, count) {
+    const fx=S.fx, spd=S.speed, sz=S.size, grav=S.gravity*0.05;
+    count = count ?? (fx==='fireworks' ? S.intensity*2 : S.intensity);
+    for (let i=0; i<count; i++) {
+      let p = {x, y, fx, life:1, decay:rand(.012,.03), drag:.97, vx:0, vy:0, gravity:grav};
+      if (fx==='confetti') {
+        p.vx=rand(-spd*1.4,spd*1.4); p.vy=rand(-spd*2,spd*.3)-1.5;
+        p.color=choice(CONFETTI); p.w=rand(sz*.6,sz*1.4); p.h=rand(sz*.3,sz*.7);
+        p.rot=rand(0,Math.PI*2); p.rotV=rand(-.2,.2);
+        p.shape=choice(['rect','circle','tri']); p.decay=rand(.01,.022);
+      } else if (fx==='fireworks') {
+        const a=rand(0,Math.PI*2), s=rand(1,spd*1.5);
+        p.vx=Math.cos(a)*s; p.vy=Math.sin(a)*s-rand(0,2);
+        p.color=`hsl(${rand(0,360)},100%,70%)`; p.size=rand(2,sz*.7);
+        p.gravity=grav*.5; p.drag=.96; p.decay=rand(.018,.04); p.trail=[];
+      } else if (fx==='sparks') {
+        const a=rand(-Math.PI,0), s=rand(2,spd*1.8);
+        p.vx=Math.cos(a)*s+rand(-2,2); p.vy=Math.sin(a)*s;
+        p.color=choice(SPARKS); p.size=rand(1,sz*.5);
+        p.gravity=grav*1.5; p.drag=.95; p.decay=rand(.03,.07); p.trail=[];
+      } else if (fx==='bubbles') {
+        p.vx=rand(-1,1)*spd*.3; p.vy=-rand(.5,2)*spd*.5;
+        p.color=`rgba(${randInt(80,160)},${randInt(160,255)},255,0.35)`;
+        p.size=rand(sz,sz*3); p.gravity=-grav*.3; p.drag=.99; p.decay=rand(.005,.015);
+        p.wobble=rand(0,Math.PI*2); p.wobbleSpeed=rand(.02,.06);
+      } else if (fx==='smoke') {
+        p.vx=rand(-spd*.5,spd*.5); p.vy=-rand(.5,2)*spd*.4;
+        p.color=choice(SMOKE_C); p.size=rand(sz,sz*2);
+        p.gravity=-grav*.12; p.drag=.985; p.decay=rand(.005,.012); p.grow=rand(.06,.22);
+      } else if (fx==='fire') {
+        p.vx=rand(-spd*.6,spd*.6); p.vy=-rand(1,spd)*.7;
+        p.color=choice(FIRE_C); p.size=rand(sz*.5,sz*1.5);
+        p.gravity=-grav*.5; p.drag=.97; p.decay=rand(.015,.04); p.grow=rand(-.1,.05);
+      } else if (fx==='matrix') {
+        p.vx=0; p.vy=rand(1,spd*.8);
+        p.color=`hsl(${rand(120,160)},100%,${rand(50,80)}%)`;
+        p.char=choice(MTX); p.size=rand(sz*.8,sz*1.5);
+        p.decay=rand(.01,.03); p.gravity=0.02; p.drag=1;
+      } else if (fx==='stars') {
+        const a=rand(0,Math.PI*2), s=rand(.5,spd*.8);
+        p.vx=Math.cos(a)*s; p.vy=Math.sin(a)*s;
+        p.color=choice(STAR_C); p.size=rand(1,sz*.6);
+        p.gravity=0; p.drag=.99; p.decay=rand(.008,.02);
+        p.twinkle=rand(0,Math.PI*2); p.twinkleSpeed=rand(.05,.15);
+      } else if (fx==='snow') {
+        p.vx=rand(-1,1)*spd*.3; p.vy=rand(.5,2)*spd*.4;
+        p.color=`rgba(255,255,255,${rand(.6,1)})`; p.size=rand(2,sz*.8);
+        p.gravity=grav*.3; p.drag=.99; p.decay=rand(.003,.008);
+        p.wobble=rand(0,Math.PI*2); p.wobbleSpeed=rand(.01,.04);
+      } else if (fx==='hearts') {
+        p.vx=rand(-spd*.8,spd*.8); p.vy=-rand(1,spd);
+        p.color=choice(HEART_C); p.size=rand(sz*.8,sz*2);
+        p.gravity=grav*.3; p.drag=.98; p.decay=rand(.01,.025);
+        p.rot=rand(0,Math.PI*2); p.rotV=rand(-.05,.05);
+      }
+      S.particles.push(p);
+    }
+  }
+
+  // ── DRAW HELPERS ──────────────────────────────────────────────
+  function hrt(cx,x,y,s){cx.beginPath();cx.moveTo(x,y-s*.3);cx.bezierCurveTo(x-s*.5,y-s*.8,x-s,y-s*.2,x-s*.5,y+s*.3);cx.bezierCurveTo(x-s*.25,y+s*.6,x,y+s*.8,x,y+s*.8);cx.bezierCurveTo(x,y+s*.8,x+s*.25,y+s*.6,x+s*.5,y+s*.3);cx.bezierCurveTo(x+s,y-s*.2,x+s*.5,y-s*.8,x,y-s*.3);cx.closePath();}
+  function tri(cx,x,y,w,h){cx.beginPath();cx.moveTo(x,y-h/2);cx.lineTo(x+w/2,y+h/2);cx.lineTo(x-w/2,y+h/2);cx.closePath();}
+
+  // ── MAIN LOOP ─────────────────────────────────────────────────
+  function loop() {
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+
+    // Draw blocks on canvas
+    for (const b of S.blocks) {
+      ctx.globalAlpha = 1;
+      const grad = ctx.createLinearGradient(b.x,b.y,b.x,b.y+b.h);
+      grad.addColorStop(0,'rgba(245,158,11,0.18)');
+      grad.addColorStop(1,'rgba(245,158,11,0.06)');
+      ctx.fillStyle = grad;
+      ctx.strokeStyle = 'rgba(245,158,11,0.6)';
+      ctx.lineWidth = 1.5;
+      ctx.shadowBlur = 10; ctx.shadowColor = 'rgba(245,158,11,0.25)';
+      ctx.beginPath();
+      if (ctx.roundRect) ctx.roundRect(b.x,b.y,b.w,b.h,3); else ctx.rect(b.x,b.y,b.w,b.h);
+      ctx.fill(); ctx.stroke(); ctx.shadowBlur=0;
+      // Label
+      ctx.globalAlpha=0.25; ctx.fillStyle='#f59e0b';
+      ctx.font="8px 'Space Mono',monospace";
+      if (b.h>16) ctx.fillText('BLOCK',b.x+4,b.y+12);
+      ctx.globalAlpha=1;
+    }
+
+    // Hold-spray in loop
+    if (S.held && S.mode==='spray') {
+      const now = Date.now();
+      if (now - S.lastSpray > 35) {
+        S.lastSpray = now;
+        spawn(S.mouse.x, S.mouse.y, Math.ceil(S.intensity/7));
+      }
+    }
+
+    // Particles
+    for (let i=S.particles.length-1; i>=0; i--) {
+      const p = S.particles[i];
+      p.life -= p.decay;
+      if (p.life<=0){S.particles.splice(i,1);continue;}
+      p.vx*=p.drag; p.vy*=p.drag; p.vy+=p.gravity; p.x+=p.vx; p.y+=p.vy;
+      if (p.wobble!==undefined){p.wobble+=p.wobbleSpeed;p.x+=Math.sin(p.wobble)*.5;}
+      if (p.trail){p.trail.push({x:p.x,y:p.y});if(p.trail.length>8)p.trail.shift();}
+
+      if (S.blocks.length>0) resolveCollision(p);
+
+      const a=Math.max(0,p.life);
+      ctx.globalAlpha=a;
+
+      if (p.fx==='confetti') {
+        ctx.save();ctx.translate(p.x,p.y);
+        if(p.rot!==undefined){p.rot+=p.rotV;ctx.rotate(p.rot);}
+        ctx.fillStyle=p.color;
+        if(p.shape==='circle'){ctx.beginPath();ctx.arc(0,0,p.w/2,0,Math.PI*2);ctx.fill();}
+        else if(p.shape==='tri'){tri(ctx,0,0,p.w,p.h);ctx.fill();}
+        else ctx.fillRect(-p.w/2,-p.h/2,p.w,p.h);
+        ctx.restore();
+      } else if (p.fx==='fireworks') {
+        if(p.trail&&p.trail.length>1){ctx.strokeStyle=p.color;ctx.lineWidth=p.size*.6;ctx.lineCap='round';ctx.beginPath();p.trail.forEach((pt,idx)=>{ctx.globalAlpha=a*(idx/p.trail.length)*.5;idx===0?ctx.moveTo(pt.x,pt.y):ctx.lineTo(pt.x,pt.y);});ctx.stroke();}
+        ctx.globalAlpha=a;ctx.fillStyle=p.color;ctx.shadowBlur=8;ctx.shadowColor=p.color;
+        ctx.beginPath();ctx.arc(p.x,p.y,p.size,0,Math.PI*2);ctx.fill();ctx.shadowBlur=0;
+      } else if (p.fx==='sparks') {
+        if(p.trail&&p.trail.length>1){ctx.strokeStyle=p.color;ctx.lineWidth=p.size;ctx.lineCap='round';
+          ctx.shadowBlur=4;ctx.shadowColor=p.color;ctx.beginPath();
+          p.trail.forEach((pt,idx)=>idx===0?ctx.moveTo(pt.x,pt.y):ctx.lineTo(pt.x,pt.y));
+          ctx.stroke();ctx.shadowBlur=0;}
+      } else if (p.fx==='bubbles') {
+        const g=ctx.createRadialGradient(p.x-p.size*.3,p.y-p.size*.3,p.size*.1,p.x,p.y,p.size);
+        g.addColorStop(0,'rgba(255,255,255,0.4)');g.addColorStop(.5,p.color);g.addColorStop(1,'rgba(100,200,255,0.04)');
+        ctx.strokeStyle='rgba(150,200,255,0.45)';ctx.lineWidth=1;ctx.fillStyle=g;
+        ctx.beginPath();ctx.arc(p.x,p.y,p.size,0,Math.PI*2);ctx.fill();ctx.stroke();
+      } else if (p.fx==='smoke') {
+        if(p.grow)p.size=Math.min(p.size+p.grow,S.size*7);
+        const g=ctx.createRadialGradient(p.x,p.y,0,p.x,p.y,p.size);
+        g.addColorStop(0,p.color+'55');g.addColorStop(1,'rgba(0,0,0,0)');
+        ctx.fillStyle=g;ctx.beginPath();ctx.arc(p.x,p.y,p.size,0,Math.PI*2);ctx.fill();
+      } else if (p.fx==='fire') {
+        if(p.grow!==undefined)p.size=Math.max(1,p.size+p.grow);
+        const g=ctx.createRadialGradient(p.x,p.y,0,p.x,p.y,p.size*1.5);
+        g.addColorStop(0,'rgba(255,255,200,0.9)');g.addColorStop(.4,p.color+'cc');g.addColorStop(1,'rgba(0,0,0,0)');
+        ctx.fillStyle=g;ctx.beginPath();ctx.arc(p.x,p.y,p.size*1.5,0,Math.PI*2);ctx.fill();
+      } else if (p.fx==='matrix') {
+        ctx.font=`${p.size}px 'Space Mono',monospace`;ctx.fillStyle=p.color;
+        ctx.shadowBlur=5;ctx.shadowColor=p.color;ctx.fillText(p.char,p.x,p.y);ctx.shadowBlur=0;
+        if(Math.random()<.05)p.char=choice(MTX);
+      } else if (p.fx==='stars') {
+        p.twinkle+=p.twinkleSpeed;ctx.globalAlpha=a*(.5+.5*Math.sin(p.twinkle));
+        ctx.fillStyle=p.color;ctx.shadowBlur=p.size*3;ctx.shadowColor=p.color;
+        ctx.beginPath();ctx.arc(p.x,p.y,p.size,0,Math.PI*2);ctx.fill();ctx.shadowBlur=0;
+      } else if (p.fx==='snow') {
+        ctx.fillStyle=p.color;ctx.shadowBlur=2;ctx.shadowColor='rgba(200,220,255,0.3)';
+        ctx.beginPath();ctx.arc(p.x,p.y,p.size,0,Math.PI*2);ctx.fill();ctx.shadowBlur=0;
+      } else if (p.fx==='hearts') {
+        ctx.save();ctx.translate(p.x,p.y);
+        if(p.rot!==undefined){p.rot+=p.rotV;ctx.rotate(p.rot);}
+        ctx.fillStyle=p.color;ctx.shadowBlur=8;ctx.shadowColor=p.color;
+        hrt(ctx,0,0,p.size);ctx.fill();ctx.shadowBlur=0;ctx.restore();
+      }
+      ctx.globalAlpha=1;ctx.shadowBlur=0;
+    }
+
+    requestAnimationFrame(loop);
+  }
+  loop();
+
+  // ── EMITTERS ─────────────────────────────────────────────────
+  function addEmitter(x,y) {
+    const dot=document.createElement('div');
+    dot.className='__vem'; dot.style.left=x+'px'; dot.style.top=y+'px';
+    root.appendChild(dot);
+    const iv=setInterval(()=>spawn(x,y,Math.ceil(S.intensity/5)),80);
+    const em={dot,iv};
+    S.emitters.push(em);
+    dot.addEventListener('contextmenu',e=>{e.preventDefault();e.stopPropagation();removeEmitter(em);flash('EMITTER REMOVED');});
+    dot.addEventListener('click',e=>e.stopPropagation());
+    dot.addEventListener('mousedown',e=>e.stopPropagation());
+  }
+  function clearEmitters(){S.emitters.forEach(e=>{e.dot.remove();clearInterval(e.iv);});S.emitters.length=0;}
+  function removeEmitter(em){em.dot.remove();clearInterval(em.iv);const i=S.emitters.indexOf(em);if(i>-1)S.emitters.splice(i,1);}
+
+  // ── BLOCK DRAW ────────────────────────────────────────────────
+  let drawPreview = null;
+
+  function startDraw(x,y) {
+    S.drawStart={x,y};
+    drawPreview=document.createElement('div');
+    drawPreview.className='__vdp';
+    drawPreview.style.cssText=`left:${x}px;top:${y}px;width:0;height:0;`;
+    root.appendChild(drawPreview);
+  }
+  function updateDraw(x,y) {
+    if(!S.drawStart||!drawPreview) return;
+    const bx=Math.min(x,S.drawStart.x), by=Math.min(y,S.drawStart.y);
+    drawPreview.style.left=bx+'px'; drawPreview.style.top=by+'px';
+    drawPreview.style.width=Math.abs(x-S.drawStart.x)+'px';
+    drawPreview.style.height=Math.abs(y-S.drawStart.y)+'px';
+  }
+  function endDraw(x,y) {
+    if(!S.drawStart) return;
+    const bx=Math.min(x,S.drawStart.x), by=Math.min(y,S.drawStart.y);
+    const bw=Math.abs(x-S.drawStart.x), bh=Math.abs(y-S.drawStart.y);
+    if(bw>10&&bh>10) { S.blocks.push({x:bx,y:by,w:bw,h:bh}); flash(`BLOCK ${Math.round(bw)}×${Math.round(bh)}`); }
+    if(drawPreview){drawPreview.remove();drawPreview=null;}
+    S.drawStart=null;
+  }
+  function tryErase(x,y) {
+    for(let i=S.blocks.length-1;i>=0;i--){
+      const b=S.blocks[i];
+      if(x>=b.x&&x<=b.x+b.w&&y>=b.y&&y<=b.y+b.h){S.blocks.splice(i,1);flash('BLOCK ERASED');return;}
+    }
+  }
+
+  // ── STAGE EVENTS ─────────────────────────────────────────────
+  stage.addEventListener('mousedown', e => {
+    e.preventDefault();
+    S.mouse.x=e.clientX; S.mouse.y=e.clientY;
+    if (S.blockMode)  { startDraw(e.clientX,e.clientY); return; }
+    if (S.eraseMode)  { tryErase(e.clientX,e.clientY); return; }
+    if (S.mode==='spray') {
+      S.held=true;
+      // Burst on initial click too
+      spawn(e.clientX,e.clientY, S.fx==='fireworks'?S.intensity*2:S.intensity);
+    } else if (S.mode==='emitter') {
+      addEmitter(e.clientX,e.clientY);
+    } else if (S.mode==='trail') {
+      S.held=true;
+      spawn(e.clientX,e.clientY,Math.ceil(S.intensity/6));
+    }
+  });
+
+  stage.addEventListener('mousemove', e => {
+    S.mouse.x=e.clientX; S.mouse.y=e.clientY;
+    if (S.blockMode&&S.drawStart) { updateDraw(e.clientX,e.clientY); return; }
+    if (S.mode==='trail'&&S.held) {
+      const now=Date.now();
+      if(now-S.lastTrail>35){S.lastTrail=now;spawn(e.clientX,e.clientY,Math.ceil(S.intensity/8));}
+    }
+  });
+
+  stage.addEventListener('mouseup', e => {
+    if (S.blockMode&&S.drawStart){endDraw(e.clientX,e.clientY);return;}
+    S.held=false;
+  });
+
+  stage.addEventListener('mouseleave', () => {
+    S.held=false;
+    if(S.drawStart){endDraw(S.mouse.x,S.mouse.y);}
+  });
+
+  // ── KEYBOARD ─────────────────────────────────────────────────
+  document.addEventListener('keydown', e => {
+    if(e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA') return;
+    if(e.key==='m'||e.key==='M') setMenu(!menuOpen);
+    if(e.key==='c'||e.key==='C'){S.particles=[];clearEmitters();flash('CLEARED');}
+    if(e.key==='b'||e.key==='B'){S.blockMode=!S.blockMode;S.eraseMode=false;updateBlockBtns();flash(S.blockMode?'BLOCK DRAW MODE':'BLOCK DRAW OFF');}
+    if(e.key==='e'||e.key==='E'){S.eraseMode=!S.eraseMode;S.blockMode=false;updateBlockBtns();flash(S.eraseMode?'ERASE MODE':'ERASE OFF');}
+    if(e.key==='Escape'){clearEmitters();exitBlockModes();flash('RESET');}
+  });
+
+  // ── WELCOME ───────────────────────────────────────────────────
+  const cx=innerWidth/2, cy=innerHeight/2;
+  [0,130,260].forEach(d=>setTimeout(()=>spawn(cx+rand(-130,130),cy+rand(-60,60)),d));
+  flash('VFX PLAYGROUND — hold to spray!');
+  console.log('%c[VFX Playground v3] Active!', 'color:#a78bfa;font-weight:bold;font-size:14px;');
+  console.log('%cHold click = spray continuously | B = draw block | E = erase block | M = menu | C = clear | Esc = reset', 'color:#64748b;');
+  console.log('%cPaste script again to remove.', 'color:#374151;');
+})();
