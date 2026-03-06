@@ -6379,7 +6379,7 @@ function initLunarLander(body, ctrl) {
     // Thrust
     L.thrusting=(keys3['ArrowUp']||keys3['w']||keys3['W']||keys3[' ']||keys3['Space'])&&L.fuel>0;
     if(L.thrusting){
-      L.vx+=Math.sin(L.angle)*thrust*(-1);
+      L.vx+=Math.sin(L.angle)*thrust;
       L.vy-=Math.cos(L.angle)*thrust;
       L.fuel=Math.max(0,L.fuel-1);
       // Exhaust from bottom of lander
