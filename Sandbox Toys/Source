@@ -6596,61 +6596,155 @@ function initMissileCommand(body, ctrl) {
   let difficulty=1;
   const DIFF_NAMES=['Easy','Medium','Hard'];
   const DIFF={
-    missileSpeed:[0.5,0.9,1.5],
-    spawnRate:[0.008,0.016,0.028],
-    interceptorAmmo:[12,10,8],
-    interceptorSpeed:[6,5.5,5],
+    missileSpeed:    [0.5, 0.9, 1.5],
+    spawnRate:       [0.006,0.013,0.022],
+    interceptorAmmo: [12,  10,   8],
+    interceptorSpeed:[6,   5.5,  5],
   };
 
+  // Wave type definitions — cycle as waves progress
+  // 'normal'   : random trickle, business as usual
+  // 'mirv'     : missiles split into 3 at mid-screen (wave 4+)
+  // 'salvo'    : rapid sequential stream, wide spread, forces triage (wave 7+)
+  // 'boss'     : single armoured missile, 3 hits, spawns 2 children on death (every 5th)
+  function waveType(w){
+    if(w%5===0) return 'boss';
+    if(w>=7&&w%3===0) return 'salvo';
+    if(w>=4&&w%2===0) return 'mirv';
+    return 'normal';
+  }
+
   let cities,batteries,missiles,interceptors,explosions4;
-  let score,wave,gameOver,ammo,tick5,waveDelay;
+  let score,wave,gameOver,ammo,tick5;
+  // Wave state machine
+  let wavePhase;   // 'intro' | 'playing' | 'clear'
+  let waveTimer;   // frames remaining in intro/clear pause
+  let waveLabel;   // string shown during intro
+  let salvoQueue;  // pending salvo missile specs [{delay,sx,tx,ty}]
+  let bossAlive;   // true while boss wave boss is in play
+  let waveHadMissiles; // true once first missile spawns this wave
+
+  function groundY(){ return H-28; }
 
   function init(){
     W=c.width=body.clientWidth; H=c.height=body.clientHeight;
-    score=0;wave=1;gameOver=false;tick5=0;waveDelay=0;
+    score=0; wave=1; gameOver=false; tick5=0;
     ammo=DIFF.interceptorAmmo[difficulty]*3;
-    const groundY=H-28;
 
-    // 6 cities spread across bottom
     cities=[];
     const cityPositions=[0.15,0.27,0.38,0.62,0.73,0.85];
-    for(const xf of cityPositions) cities.push({x:W*xf,y:groundY,alive:true,destroyFlash:0});
+    for(const xf of cityPositions)
+      cities.push({x:W*xf, y:groundY(), alive:true, destroyFlash:0});
 
-    // 3 missile batteries
     batteries=[
-      {x:W*0.1,y:groundY,ammo:DIFF.interceptorAmmo[difficulty],flash:0},
-      {x:W*0.5,y:groundY,ammo:DIFF.interceptorAmmo[difficulty],flash:0},
-      {x:W*0.9,y:groundY,ammo:DIFF.interceptorAmmo[difficulty],flash:0},
+      {x:W*0.1, y:groundY(), ammo:DIFF.interceptorAmmo[difficulty], flash:0},
+      {x:W*0.5, y:groundY(), ammo:DIFF.interceptorAmmo[difficulty], flash:0},
+      {x:W*0.9, y:groundY(), ammo:DIFF.interceptorAmmo[difficulty], flash:0},
     ];
 
     missiles=[]; interceptors=[]; explosions4=[];
+    salvoQueue=[]; bossAlive=false;
+    startWaveIntro();
   }
-  init();
+
+  // ── wave intro ──────────────────────────────────────────────────────────
+  function startWaveIntro(){
+    wavePhase='intro';
+    waveTimer=90;
+    tick5=0;
+    waveHadMissiles=false;
+    const t=waveType(wave);
+    if(t==='boss')       waveLabel=`WAVE ${wave}  ★ BOSS INCOMING ★`;
+    else if(t==='mirv')  waveLabel=`WAVE ${wave}  — MIRV ALERT`;
+    else if(t==='salvo') waveLabel=`WAVE ${wave}  — SATURATION VOLLEY`;
+    else                 waveLabel=`WAVE ${wave}`;
+
+    // Pre-build salvo queue if needed
+    salvoQueue=[];
+    if(t==='salvo'){
+      const count=6+wave;
+      for(let i=0;i<count;i++){
+        const aliveCities=cities.filter(c2=>c2.alive);
+        const tgt=aliveCities.length
+          ? aliveCities[Math.floor(Math.random()*aliveCities.length)]
+          : batteries[Math.floor(Math.random()*batteries.length)];
+        // Spread launch X across full width, stagger delay
+        salvoQueue.push({delay:i*18, sx:Math.random()*W, tx:tgt.x, ty:tgt.y});
+      }
+    }
+  }
+
+  // ── wave clear ──────────────────────────────────────────────────────────
+  function startWaveClear(){
+    wavePhase='clear';
+    waveTimer=100;
+    const alive=cities.filter(c2=>c2.alive).length;
+    score += alive*100 + batteries.reduce((s,b)=>s+b.ammo,0)*10;
+    wave++;
+    for(const b of batteries) b.ammo=Math.min(DIFF.interceptorAmmo[difficulty]+Math.floor(wave/2),20);
+    ammo=batteries.reduce((s,b)=>s+b.ammo,0);
+    bossAlive=false;
+  }
+
+  // ── missile factory ─────────────────────────────────────────────────────
+  function makeMissile(sx,sy,tx,ty,opts={}){
+    const spd=(opts.spd||DIFF.missileSpeed[difficulty])*(0.85+Math.random()*0.3)*(1+wave*0.07);
+    const dist=Math.hypot(tx-sx,ty-sy)||1;
+    return Object.assign({
+      x:sx, y:sy,
+      vx:(tx-sx)/dist*spd, vy:(ty-sy)/dist*spd,
+      tx, ty, trail:[], alive:true,
+      hp:1, isBoss:false, isMirv:false, mirvDone:false,
+      col:'#ff4422',
+    }, opts);
+  }
 
   function spawnMissile(){
-    const target=Math.random()<0.7
-      ? cities.filter(c2=>c2.alive)[Math.floor(Math.random()*cities.filter(c2=>c2.alive).length)]
-      : batteries[Math.floor(Math.random()*batteries.length)];
-    if(!target) return;
-    const sx=Math.random()*W, sy=0;
-    const dist=Math.hypot(target.x-sx,target.y-sy)||1;
-    const spd=DIFF.missileSpeed[difficulty]*(0.8+Math.random()*0.4)*(1+wave*0.08);
-    missiles.push({
-      x:sx,y:sy,vx:(target.x-sx)/dist*spd,vy:(target.y-sy)/dist*spd,
-      tx:target.x,ty:target.y, trail:[], alive:true
-    });
+    const aliveCities=cities.filter(c2=>c2.alive);
+    const pool=[...aliveCities,...batteries,...batteries]; // batteries weighted
+    const tgt=pool[Math.floor(Math.random()*pool.length)];
+    if(!tgt) return;
+    const t=waveType(wave);
+    const sx=Math.random()*W;
+    if(t==='mirv'){
+      // MIRV parent targets a mid-screen split point, NOT the ground.
+      // It flies to that point then splits into 3 fast children targeting cities.
+      const splitX=tgt.x+(Math.random()-0.5)*W*0.3; // slight horizontal drift
+      const splitY=H*(0.35+Math.random()*0.15);      // upper-mid screen
+      missiles.push(makeMissile(sx,0,splitX,splitY,{
+        isMirv:true, col:'#ff8822',
+        spd:DIFF.missileSpeed[difficulty]*0.55,
+        hp:1,
+      }));
+    } else {
+      missiles.push(makeMissile(sx,0,tgt.x,tgt.y));
+    }
+  }
+
+  function spawnBoss(){
+    // Boss enters from top-centre, arcs toward a random city
+    bossAlive=true;
+    const aliveCities=cities.filter(c2=>c2.alive);
+    const tgt=aliveCities.length ? aliveCities[Math.floor(Math.random()*aliveCities.length)] : {x:W/2,y:groundY()};
+    const sx=W*0.3+Math.random()*W*0.4;
+    const spd=DIFF.missileSpeed[difficulty]*0.7*(1+wave*0.05);
+    const dist=Math.hypot(tgt.x-sx,tgt.y)||1;
+    missiles.push(makeMissile(sx,0,tgt.x,tgt.y,{
+      spd, hp:3, isBoss:true,
+      col:'#ff2200',
+      w:10, // drawn bigger
+    }));
   }
 
   function fireInterceptor(tx,ty){
-    // pick nearest battery with ammo
     let best=null,bestD=Infinity;
     for(const b of batteries){
       if(b.ammo<=0) continue;
       const d=Math.hypot(tx-b.x,ty-b.y);
       if(d<bestD){bestD=d;best=b;}
     }
-    if(!best){return;}
-    best.ammo--;best.flash=8;ammo--;
+    if(!best) return;
+    best.ammo--; best.flash=8; ammo--;
     const dist=Math.hypot(tx-best.x,ty-best.y)||1;
     const spd=DIFF.interceptorSpeed[difficulty];
     interceptors.push({x:best.x,y:best.y,vx:(tx-best.x)/dist*spd,vy:(ty-best.y)/dist*spd,tx,ty,trail:[]});
@@ -6660,35 +6754,104 @@ function initMissileCommand(body, ctrl) {
     explosions4.push({x,y,r,maxR:r,life:1,col,growing:true});
   }
 
+  // ── step ────────────────────────────────────────────────────────────────
   function step(){
-    tick5++;
-    // Spawn missiles
-    if(Math.random()<DIFF.spawnRate[difficulty]*(1+wave*0.15)) spawnMissile();
+    // ── intro pause ──
+    if(wavePhase==='intro'){
+      waveTimer--;
+      if(waveTimer<=0){
+        wavePhase='playing';
+        tick5=0; // start counting only once playing begins
+        if(waveType(wave)==='boss') spawnBoss();
+      }
+      return;
+    }
 
-    // Move missiles
+    // ── clear pause ──
+    if(wavePhase==='clear'){
+      waveTimer--;
+      if(waveTimer<=0) startWaveIntro();
+      return;
+    }
+
+    // ── playing ──
+    tick5++;
+    const t=waveType(wave);
+
+    // Spawn logic per wave type
+    if(t==='boss'){
+      // Boss wave: only the boss missile; no extra spawns
+    } else if(t==='salvo'){
+      // Drain the salvo queue by delay countdown
+      for(const s of salvoQueue) s.delay--;
+      const ready=salvoQueue.filter(s=>s.delay<=0);
+      salvoQueue=salvoQueue.filter(s=>s.delay>0);
+      for(const s of ready){
+        missiles.push(makeMissile(s.sx,0,s.tx,s.ty));
+      }
+    } else {
+      // Normal / mirv: probabilistic spawn
+      if(Math.random()<DIFF.spawnRate[difficulty]*(1+wave*0.12)) spawnMissile();
+    }
+
+    // Move missiles — use pendingMissiles so children aren't iterated mid-loop
+    const pendingMissiles=[];
     for(const m of missiles){
       if(!m.alive) continue;
       m.trail.push({x:m.x,y:m.y});
-      if(m.trail.length>30) m.trail.shift();
+      if(m.trail.length>35) m.trail.shift();
       m.x+=m.vx; m.y+=m.vy;
+
+      // MIRV split — fires when missile crosses its split Y
+      if(m.isMirv&&!m.mirvDone&&m.y>=m.ty){
+        m.mirvDone=true; m.alive=false;
+        addExplosion(m.x,m.y,28,'#ff8822');
+        // Spawn 3 children targeting 3 different cities
+        const pool=[...cities.filter(c2=>c2.alive)];
+        const targets=[];
+        while(targets.length<3){
+          if(pool.length) targets.push(pool.splice(Math.floor(Math.random()*pool.length),1)[0]);
+          else targets.push(batteries[Math.floor(Math.random()*batteries.length)]);
+        }
+        const childSpd=DIFF.missileSpeed[difficulty]*0.9*(1+wave*0.06);
+        for(const tgt of targets){
+          const dist=Math.hypot(tgt.x-m.x,tgt.y-m.y)||1;
+          pendingMissiles.push({
+            x:m.x, y:m.y,
+            vx:(tgt.x-m.x)/dist*childSpd,
+            vy:(tgt.y-m.y)/dist*childSpd,
+            tx:tgt.x, ty:tgt.y,
+            trail:[], alive:true,
+            hp:1, isBoss:false, isMirv:false, mirvDone:true,
+            col:'#ffcc44', isChild:true,
+            hitBy:new Set(),
+          });
+        }
+        continue;
+      }
+
+      // Reached target
       if(m.y>=m.ty-4){
         m.alive=false;
-        addExplosion(m.tx,m.ty,38,'#ff6622');
-        // damage city/battery at target
+        const expR=m.isBoss?60:m.isChild?24:38;
+        addExplosion(m.tx,m.ty,expR,'#ff6622');
+        const blastR=m.isBoss?70:m.isChild?28:42;
         for(const city of cities){
-          if(city.alive&&Math.hypot(city.x-m.tx,city.y-m.ty)<40){city.alive=false;city.destroyFlash=30;}
+          if(city.alive&&Math.hypot(city.x-m.tx,city.y-m.ty)<blastR){
+            city.alive=false; city.destroyFlash=30;
+          }
         }
+        if(m.isBoss) bossAlive=false;
       }
     }
-    missiles=missiles.filter(m=>m.alive&&m.y<H+20);
+    missiles=missiles.filter(m=>m.alive&&m.y<H+20).concat(pendingMissiles);
 
     // Move interceptors
     for(const iv of interceptors){
       iv.trail.push({x:iv.x,y:iv.y});
       if(iv.trail.length>20) iv.trail.shift();
       iv.x+=iv.vx; iv.y+=iv.vy;
-      const dist=Math.hypot(iv.x-iv.tx,iv.y-iv.ty);
-      if(dist<8){
+      if(Math.hypot(iv.x-iv.tx,iv.y-iv.ty)<8){
         iv.dead=true;
         addExplosion(iv.tx,iv.ty,55,'#44aaff');
       }
@@ -6697,79 +6860,117 @@ function initMissileCommand(body, ctrl) {
 
     // Explosion-missile collisions
     for(const exp of explosions4){
+      if(!exp.id) exp.id=Math.random(); // unique id per explosion
       if(exp.growing) exp.r=Math.min(exp.maxR,exp.r+2);
       else exp.r*=0.96;
       exp.life-=0.018;
       if(exp.r>=exp.maxR) exp.growing=false;
       for(const m of missiles){
         if(!m.alive) continue;
+        if(!m.hitBy) m.hitBy=new Set();
+        if(m.hitBy.has(exp.id)) continue; // this explosion already hit this missile
         if(Math.hypot(m.x-exp.x,m.y-exp.y)<exp.r){
-          m.alive=false; score+=25*(wave);
-          addExplosion(m.x,m.y,30,'#ffaa44');
+          m.hitBy.add(exp.id);
+          m.hp--;
+          if(m.hp<=0){
+            m.alive=false;
+            score+=m.isBoss?200*wave:25*wave;
+            addExplosion(m.x,m.y,m.isBoss?50:30,'#ffaa44');
+            // Boss spawns 2 children on death
+            if(m.isBoss){
+              bossAlive=false;
+              const aliveCities=cities.filter(c2=>c2.alive);
+              for(let i=0;i<2;i++){
+                const tgt=aliveCities.length
+                  ? aliveCities[Math.floor(Math.random()*aliveCities.length)]
+                  : batteries[Math.floor(Math.random()*batteries.length)];
+                if(tgt) missiles.push(makeMissile(m.x,m.y,tgt.x,tgt.y,{
+                  spd:DIFF.missileSpeed[difficulty]*1.3, col:'#ff6600'
+                }));
+              }
+            }
+          } else {
+            // Boss flashes when hit but survives
+            m.col='#ffffff';
+            setTimeout(()=>{if(m.alive)m.col='#ff2200';},80);
+            addExplosion(m.x,m.y,20,'#ffcc44');
+          }
         }
       }
     }
     explosions4=explosions4.filter(e=>e.life>0);
 
-    // Check wave clear
-    if(missiles.length===0&&interceptors.length===0&&tick5>120){
-      const alive=cities.filter(c2=>c2.alive).length;
-      if(alive>0){
-        score+=alive*100+batteries.reduce((s,b)=>s+b.ammo,0)*10;
-        wave++;
-        // Restock ammo each wave
-        for(const b of batteries) b.ammo=Math.min(DIFF.interceptorAmmo[difficulty]+wave,20);
-        ammo=batteries.reduce((s,b)=>s+b.ammo,0);
-        tick5=0;
-      }
+    // Wave clear check
+    // Only consider wave done once at least one missile has actually appeared
+    if(missiles.length>0||interceptors.length>0) waveHadMissiles=true;
+    const allGone=waveHadMissiles&&missiles.length===0&&interceptors.length===0&&salvoQueue.length===0&&tick5>60;
+    if(allGone&&wavePhase==='playing'){
+      if(cities.some(c2=>c2.alive)) startWaveClear();
     }
 
-    // Game over if all cities dead
+    // Game over
     if(cities.every(c2=>!c2.alive)) gameOver=true;
   }
 
+  // ── draw ────────────────────────────────────────────────────────────────
   function draw(){
     raf=requestAnimationFrame(draw);
     W=c.width=body.clientWidth; H=c.height=body.clientHeight;
     const paper=isPaper();
     if(!gameOver) step();
 
-    // Sky gradient
+    // Sky
     const sky=ctx.createLinearGradient(0,0,0,H);
     if(paper){sky.addColorStop(0,'#b0c8e8');sky.addColorStop(1,'#e0d0b0');}
     else{sky.addColorStop(0,'#000818');sky.addColorStop(1,'#0a1428');}
     ctx.fillStyle=sky; ctx.fillRect(0,0,W,H);
 
-    // Stars (dark only)
     if(!paper){
       ctx.fillStyle='rgba(255,255,255,0.6)';
-      for(let i=0;i<80;i++) ctx.fillRect((i*113)%W,(i*71)%H*0.7,1,1);
+      for(let i=0;i<80;i++) ctx.fillRect((i*113)%W,(i*71)%(H*0.7),1,1);
     }
 
     // Ground
-    ctx.fillStyle=paper?'#7a6a40':'#1a3a1a';
-    ctx.fillRect(0,H-28,W,28);
-    ctx.fillStyle=paper?'#8a7a50':'#22441a';
-    ctx.fillRect(0,H-28,W,4);
+    ctx.fillStyle=paper?'#7a6a40':'#1a3a1a'; ctx.fillRect(0,H-28,W,28);
+    ctx.fillStyle=paper?'#8a7a50':'#22441a'; ctx.fillRect(0,H-28,W,4);
 
     // Missile trails
     for(const m of missiles){
       if(m.trail.length<2) continue;
-      const [r2,g2,b2]=paper?[200,100,30]:[255,80,30];
+      const isBoss=m.isBoss, isMirv=m.isMirv||m.col==='#ffaa22';
+      const [r2,g2,b2]=paper?[200,100,30]:isBoss?[255,50,0]:isMirv?[255,160,30]:[255,80,30];
       for(let i=1;i<m.trail.length;i++){
-        const a=(i/m.trail.length)*0.5;
+        const a=(i/m.trail.length)*0.55;
         ctx.strokeStyle=`rgba(${r2},${g2},${b2},${a})`;
-        ctx.lineWidth=1.5;
+        ctx.lineWidth=isBoss?3:1.5;
         ctx.beginPath();ctx.moveTo(m.trail[i-1].x,m.trail[i-1].y);ctx.lineTo(m.trail[i].x,m.trail[i].y);ctx.stroke();
       }
     }
     // Missiles
     for(const m of missiles){
-      ctx.fillStyle=paper?'#cc3322':'#ff4422';
-      ctx.beginPath();ctx.arc(m.x,m.y,3,0,Math.PI*2);ctx.fill();
+      ctx.fillStyle=m.col||(paper?'#cc3322':'#ff4422');
+      const r=m.isBoss?7:m.isMirv&&!m.mirvDone?5:3;
+      ctx.beginPath();ctx.arc(m.x,m.y,r,0,Math.PI*2);ctx.fill();
+      // MIRV parent: pulsing outer ring + small label
+      if(m.isMirv&&!m.mirvDone){
+        const pulse=0.5+0.5*Math.sin(Date.now()*0.008);
+        ctx.strokeStyle=`rgba(255,180,50,${0.4+0.4*pulse})`;
+        ctx.lineWidth=1.5;
+        ctx.beginPath();ctx.arc(m.x,m.y,9+pulse*3,0,Math.PI*2);ctx.stroke();
+        ctx.fillStyle=paper?'rgba(0,0,0,0.7)':'rgba(255,200,80,0.85)';
+        ctx.font=`300 7px 'IBM Plex Mono',monospace`;
+        ctx.textAlign='center';ctx.textBaseline='bottom';
+        ctx.fillText('MIRV',m.x,m.y-8);
+        ctx.textAlign='left';ctx.textBaseline='top';
+      }
+      // Boss HP bar
+      if(m.isBoss&&m.hp>0){
+        ctx.fillStyle='rgba(0,0,0,0.5)';ctx.fillRect(m.x-18,m.y-18,36,5);
+        ctx.fillStyle='#ff4400';ctx.fillRect(m.x-18,m.y-18,36*(m.hp/3),5);
+      }
     }
 
-    // Interceptor trails
+    // Interceptor trails + crosshairs
     for(const iv of interceptors){
       if(iv.trail.length<2) continue;
       for(let i=1;i<iv.trail.length;i++){
@@ -6779,7 +6980,6 @@ function initMissileCommand(body, ctrl) {
         ctx.beginPath();ctx.moveTo(iv.trail[i-1].x,iv.trail[i-1].y);ctx.lineTo(iv.trail[i].x,iv.trail[i].y);ctx.stroke();
       }
     }
-    // Target crosshairs
     for(const iv of interceptors){
       ctx.strokeStyle=paper?'rgba(0,100,200,0.4)':'rgba(100,200,255,0.3)';
       ctx.lineWidth=1; ctx.setLineDash([3,5]);
@@ -6803,13 +7003,11 @@ function initMissileCommand(body, ctrl) {
       if(city.destroyFlash>0){city.destroyFlash--;continue;}
       if(!city.alive) continue;
       ctx.fillStyle=paper?'#44337a':'#8866ff';
-      // Simple building silhouette
       const bx=city.x, by=city.y;
       ctx.fillRect(bx-14,by-20,8,20);
       ctx.fillRect(bx-4,by-28,12,28);
       ctx.fillRect(bx+10,by-16,8,16);
       ctx.fillStyle=paper?'rgba(255,220,100,0.5)':'rgba(255,220,100,0.4)';
-      // windows
       for(let wy=by-24;wy<by;wy+=8)
         for(let wx=bx-2;wx<bx+10;wx+=5)
           if(Math.random()<0.7) ctx.fillRect(wx,wy,3,4);
@@ -6823,15 +7021,14 @@ function initMissileCommand(body, ctrl) {
         ctx.fillStyle=paper?'#5566aa':'#6688ff';
         ctx.fillRect(bat.x-4,bat.y-22,8,12);
       }
-      // Ammo indicator dots
-      for(let i=0;i<bat.ammo;i++){
+      for(let i=0;i<Math.min(bat.ammo,20);i++){
         ctx.fillStyle=paper?'rgba(0,0,0,0.4)':'rgba(100,180,255,0.7)';
         ctx.beginPath();ctx.arc(bat.x-10+i*4,bat.y-6,1.5,0,Math.PI*2);ctx.fill();
       }
     }
 
     // Cursor crosshair
-    if(!gameOver){
+    if(!gameOver&&wavePhase==='playing'){
       ctx.strokeStyle=paper?'rgba(0,0,0,0.5)':'rgba(255,255,255,0.5)';
       ctx.lineWidth=1;
       ctx.beginPath();ctx.moveTo(mouseX-14,mouseY);ctx.lineTo(mouseX+14,mouseY);ctx.stroke();
@@ -6844,8 +7041,50 @@ function initMissileCommand(body, ctrl) {
     ctx.font=`300 11px 'IBM Plex Mono',monospace`; ctx.textAlign='left';ctx.textBaseline='top';
     ctx.fillText(`score: ${score}  wave: ${wave}  ammo: ${ammo}`,8,6);
 
+    // Wave type label (small, top right)
+    const t=waveType(wave);
+    if(t!=='normal'&&wavePhase==='playing'){
+      ctx.textAlign='right';
+      ctx.fillStyle=t==='boss'?'#ff4422':t==='mirv'?'#ff8822':'#22aaff';
+      ctx.font=`300 10px 'IBM Plex Mono',monospace`;
+      ctx.fillText(t==='boss'?'★ BOSS':t==='mirv'?'⚠ MIRV':'⚡ SALVO',W-8,6);
+      ctx.textAlign='left';
+    }
+
+    // Wave intro / clear overlay
+    if(wavePhase==='intro'||wavePhase==='clear'){
+      const alpha=wavePhase==='intro'
+        ? Math.min(1,(90-waveTimer)/15)     // fade in
+        : Math.min(1,waveTimer/15);          // fade out
+      ctx.fillStyle=`rgba(0,0,0,${alpha*0.55})`;
+      ctx.fillRect(0,0,W,H);
+      ctx.globalAlpha=alpha;
+      ctx.textAlign='center'; ctx.textBaseline='middle';
+      if(wavePhase==='intro'){
+        const isBoss=waveType(wave)==='boss';
+        ctx.fillStyle=isBoss?'#ff4422':'rgba(255,255,255,0.9)';
+        ctx.font=`400 ${isBoss?22:18}px 'IBM Plex Mono',monospace`;
+        ctx.fillText(waveLabel,W/2,H/2-10);
+        if(isBoss){
+          ctx.fillStyle='rgba(255,100,50,0.7)';
+          ctx.font=`300 11px 'IBM Plex Mono',monospace`;
+          ctx.fillText('armoured · 3 hits · spawns children',W/2,H/2+16);
+        }
+      } else {
+        // Clear screen — show bonuses
+        const alive=cities.filter(c2=>c2.alive).length;
+        ctx.fillStyle='rgba(100,255,150,0.9)';
+        ctx.font=`400 16px 'IBM Plex Mono',monospace`;
+        ctx.fillText(`WAVE ${wave-1} CLEAR`,W/2,H/2-22);
+        ctx.fillStyle='rgba(255,255,255,0.7)';
+        ctx.font=`300 11px 'IBM Plex Mono',monospace`;
+        ctx.fillText(`${alive} cities saved  +${alive*100}  ·  ammo bonus +${batteries.reduce((s,b)=>s+b.ammo,0)*10}`,W/2,H/2+4);
+      }
+      ctx.globalAlpha=1; ctx.textAlign='left'; ctx.textBaseline='top';
+    }
+
     if(gameOver){
-      ctx.fillStyle='rgba(0,0,0,0.7)'; ctx.fillRect(0,0,W,H);
+      ctx.fillStyle='rgba(0,0,0,0.75)'; ctx.fillRect(0,0,W,H);
       ctx.fillStyle='#ff4422'; ctx.font=`400 20px 'IBM Plex Mono',monospace`;
       ctx.textAlign='center';ctx.textBaseline='middle';
       ctx.fillText('THE CITIES HAVE FALLEN',W/2,H/2-20);
@@ -6859,6 +7098,7 @@ function initMissileCommand(body, ctrl) {
   c.addEventListener('mousemove',e=>{const r=c.getBoundingClientRect();mouseX=e.clientX-r.left;mouseY=e.clientY-r.top;});
   c.addEventListener('click',e=>{
     if(gameOver){init();return;}
+    if(wavePhase!=='playing') return;
     const r=c.getBoundingClientRect();
     fireInterceptor(e.clientX-r.left,e.clientY-r.top);
   });
@@ -6868,6 +7108,7 @@ function initMissileCommand(body, ctrl) {
   mkBtn('Restart',ctrl).addEventListener('click',init);
   mkInfo(ctrl).textContent='click to fire interceptors';
 
+  init();
   requestAnimationFrame(draw);
   return ()=>{cancelAnimationFrame(raf);ro.disconnect();};
 }
