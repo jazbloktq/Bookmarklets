@@ -407,6 +407,9 @@ const TOYS = [
   {name:'Galaga',               init:initGalaga},
   {name:'Missile Command',      init:initMissileCommand},
   {name:'Hangman',              init:initHangman},
+  {name:'Lunar Lander',         init:initLunarLander},
+  {name:'Connect Four',         init:initConnectFour},
+  {name:'Blackjack',            init:initBlackjack},
 ];
 const LIST  = document.getElementById('__SB_LIST__');
 const items = [];
@@ -6261,6 +6264,1010 @@ function initHangman(body, ctrl) {
 
   requestAnimationFrame(draw);
   return ()=>{cancelAnimationFrame(raf);ro.disconnect();document.removeEventListener('keydown',onKey);};
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// TOY 46 — LUNAR LANDER
+// ════════════════════════════════════════════════════════════════════════════
+function initLunarLander(body, ctrl) {
+  const {c,ctx,ro} = mkCanvas(body);
+  let W=c.width,H=c.height,raf;
+
+  let difficulty=1;
+  const DIFF_NAMES=['Easy','Medium','Hard'];
+  const DIFF={
+    fuel:       [600, 400, 250],
+    gravity:    [0.012, 0.018, 0.026],
+    maxLandSpd: [2.2, 1.5, 1.0],
+    maxLandTilt:[25,  18,  10 ],  // degrees
+    thrustPow:  [0.032, 0.028, 0.024],
+  };
+
+  let lander, terrain, pads, particles4, stars4;
+  let gameState; // 'playing' 'landed' 'crashed'
+  let score, bestScore, keys3={};
+  let explosionT=0;
+  let camY=0; // vertical camera offset
+
+  function genTerrain(){
+    const pts=[];
+    const segs=28;
+    const segW=W/segs;
+    // pick 1–2 flat landing pads
+    pads=[];
+    const padSegs=[Math.floor(segs*0.25), Math.floor(segs*0.72)];
+    const padW=difficulty===0?4:difficulty===1?3:2;
+
+    let y=H*0.55+rndf(-H*0.05,H*0.05);
+    for(let i=0;i<=segs;i++){
+      // check if this segment is a pad
+      const isPad=padSegs.some(ps=>i>=ps&&i<ps+padW);
+      const isPadStart=padSegs.some(ps=>i===ps);
+      if(isPadStart){
+        const padIdx=padSegs.indexOf(padSegs.find(ps=>i===ps));
+        const flatY=H*0.58+rndf(-H*0.06,H*0.06);
+        for(let j=0;j<padW;j++) pts.push({x:(i+j)*segW, y:flatY});
+        const pts_=pts[pts.length-1];
+        pads.push({x1:i*segW, x2:(i+padW)*segW, y:flatY,
+          bonus: padIdx===0?2:1, // first pad worth 2x
+          label: padIdx===0?'2×':'1×'});
+        i+=padW-1; y=flatY;
+        continue;
+      }
+      pts.push({x:i*segW, y});
+      y+=rndf(-H*0.08, H*0.08);
+      y=Math.max(H*0.35, Math.min(H*0.78, y));
+    }
+    return pts;
+  }
+
+  function init(){
+    W=c.width=body.clientWidth||400; H=c.height=body.clientHeight||300;
+    terrain=genTerrain();
+    stars4=Array.from({length:80},()=>({x:Math.random()*W, y:Math.random()*H*0.8, r:Math.random()*1.2+0.3}));
+    lander={
+      x:W/2, y:H*0.1,
+      vx:rndf(-0.6,0.6), vy:0.2,
+      angle:0, // radians, 0=upright
+      fuel:DIFF.fuel[difficulty],
+      thrusting:false, rotL:false, rotR:false,
+      w:18, h:22,
+    };
+    particles4=[]; gameState='playing'; camY=0; explosionT=0;
+    if(!bestScore) bestScore=0;
+  }
+  init();
+
+  function spawnThrust(x,y,angle){
+    for(let i=0;i<3;i++){
+      const spread=0.4;
+      const a=angle+Math.PI+rndf(-spread,spread);
+      const spd=rndf(1.5,3.5);
+      particles4.push({x,y,vx:Math.cos(a)*spd,vy:Math.sin(a)*spd,
+        life:1,col:`hsl(${30+rndf(-10,30)},100%,${55+rndf(0,30)}%)`});
+    }
+  }
+  function spawnExplosion(x,y){
+    for(let i=0;i<40;i++){
+      const a=Math.random()*Math.PI*2, spd=rndf(1,8);
+      particles4.push({x,y,vx:Math.cos(a)*spd,vy:Math.sin(a)*spd,
+        life:1,col:`hsl(${rndf(0,50)},100%,${rndf(50,80)}%)`});
+    }
+  }
+
+  function getTerrainY(px){
+    for(let i=0;i<terrain.length-1;i++){
+      const a=terrain[i],b=terrain[i+1];
+      if(px>=a.x&&px<=b.x){
+        const t=(px-a.x)/(b.x-a.x);
+        return a.y+(b.y-a.y)*t;
+      }
+    }
+    return H*0.8;
+  }
+
+  function step(){
+    const g=DIFF.gravity[difficulty];
+    const thrust=DIFF.thrustPow[difficulty];
+    const L=lander;
+
+    // Rotation
+    const rotSpd=0.03;
+    if(keys3['ArrowLeft']||keys3['a']||keys3['A'])  L.angle-=rotSpd;
+    if(keys3['ArrowRight']||keys3['d']||keys3['D']) L.angle+=rotSpd;
+
+    // Thrust
+    L.thrusting=(keys3['ArrowUp']||keys3['w']||keys3['W']||keys3[' ']||keys3['Space'])&&L.fuel>0;
+    if(L.thrusting){
+      L.vx+=Math.sin(L.angle)*thrust*(-1);
+      L.vy-=Math.cos(L.angle)*thrust;
+      L.fuel=Math.max(0,L.fuel-1);
+      // Exhaust from bottom of lander
+      const ex=L.x+Math.sin(L.angle)*L.h*0.6;
+      const ey=L.y-Math.cos(L.angle)*L.h*0.6;
+      spawnThrust(ex,ey,L.angle);
+    }
+
+    // Gravity
+    L.vy+=g;
+
+    // Integrate
+    L.x+=L.vx; L.y+=L.vy;
+
+    // Wrap horizontal
+    if(L.x<-20) L.x=W+20;
+    if(L.x>W+20) L.x=-20;
+
+    // Terrain collision — check corners + centre bottom
+    const checkPts=[
+      {x:L.x+Math.cos(L.angle)*L.w/2-Math.sin(L.angle)*L.h/2,
+       y:L.y+Math.sin(L.angle)*L.w/2+Math.cos(L.angle)*L.h/2},
+      {x:L.x-Math.cos(L.angle)*L.w/2-Math.sin(L.angle)*L.h/2,
+       y:L.y-Math.sin(L.angle)*L.w/2+Math.cos(L.angle)*L.h/2},
+      {x:L.x, y:L.y+L.h/2},
+    ];
+
+    for(const pt of checkPts){
+      const ty=getTerrainY(pt.x);
+      if(pt.y>=ty){
+        // Check landing conditions
+        const spd=Math.hypot(L.vx,L.vy);
+        const tiltDeg=Math.abs(L.angle*(180/Math.PI))%360;
+        const normalTilt=tiltDeg>180?360-tiltDeg:tiltDeg;
+        const onPad=pads.some(p=>L.x>=p.x1&&L.x<=p.x2);
+        const goodSpd=spd<DIFF.maxLandSpd[difficulty];
+        const goodTilt=normalTilt<DIFF.maxLandTilt[difficulty];
+
+        if(onPad&&goodSpd&&goodTilt){
+          gameState='landed';
+          const pad=pads.find(p=>L.x>=p.x1&&L.x<=p.x2);
+          const fuelBonus=Math.floor(L.fuel*0.5);
+          const spdBonus=Math.floor((DIFF.maxLandSpd[difficulty]-spd)*200);
+          const pts=(1000+fuelBonus+spdBonus)*(pad?.bonus||1)*(difficulty+1);
+          score=pts;
+          if(pts>bestScore) bestScore=pts;
+        } else {
+          gameState='crashed';
+          spawnExplosion(L.x,L.y);
+          explosionT=0;
+        }
+        L.vy=0; L.vx=0; L.y=ty-L.h/2;
+        return;
+      }
+    }
+
+    // Particles
+    for(const p of particles4){
+      p.x+=p.vx; p.y+=p.vy; p.vy+=0.05; p.vx*=0.97; p.life-=0.04;
+    }
+    particles4=particles4.filter(p=>p.life>0);
+  }
+
+  function draw(){
+    raf=requestAnimationFrame(draw);
+    const newW=body.clientWidth||400, newH=body.clientHeight||300;
+    if(newW!==W||newH!==H){ W=c.width=newW; H=c.height=newH; init(); return; }
+
+    if(gameState==='playing') step();
+    if(gameState==='crashed') explosionT+=0.04;
+
+    const paper=isPaper();
+    // Space background
+    ctx.fillStyle=paper?'#1a1428':'#05030e';
+    ctx.fillRect(0,0,W,H);
+
+    // Stars
+    ctx.fillStyle='rgba(255,255,255,0.7)';
+    for(const s of stars4) ctx.fillRect(s.x,s.y,s.r,s.r);
+
+    // Terrain
+    ctx.beginPath();
+    ctx.moveTo(0,H);
+    for(const pt of terrain) ctx.lineTo(pt.x,pt.y);
+    ctx.lineTo(W,H);
+    ctx.closePath();
+    ctx.fillStyle=paper?'#556644':'#334422';
+    ctx.fill();
+    ctx.strokeStyle=paper?'#889966':'#557733';
+    ctx.lineWidth=1.5; ctx.stroke();
+
+    // Landing pads
+    for(const p of pads){
+      ctx.strokeStyle='#44ffaa'; ctx.lineWidth=3;
+      ctx.beginPath();ctx.moveTo(p.x1,p.y);ctx.lineTo(p.x2,p.y);ctx.stroke();
+      // Pad lights
+      for(let lx=p.x1;lx<=p.x2;lx+=(p.x2-p.x1)/4){
+        ctx.fillStyle=`hsl(${Date.now()*0.05%360},100%,60%)`;
+        ctx.beginPath();ctx.arc(lx,p.y,2.5,0,Math.PI*2);ctx.fill();
+      }
+      ctx.fillStyle='#44ffaa'; ctx.font=`300 9px 'IBM Plex Mono',monospace`;
+      ctx.textAlign='center'; ctx.textBaseline='bottom';
+      ctx.fillText(p.label,(p.x1+p.x2)/2,p.y-6);
+    }
+
+    // Particles
+    for(const p of particles4){
+      ctx.globalAlpha=p.life; ctx.fillStyle=p.col;
+      ctx.beginPath();ctx.arc(p.x,p.y,2*p.life,0,Math.PI*2);ctx.fill();
+    }
+    ctx.globalAlpha=1;
+
+    // Lander
+    if(gameState!=='crashed'||(gameState==='crashed'&&explosionT<0.3)){
+      const L=lander;
+      ctx.save();
+      ctx.translate(L.x,L.y); ctx.rotate(L.angle);
+      // Body
+      const lcol=gameState==='landed'?'#44ffaa':paper?'#aabbcc':'#88aacc';
+      if(!paper){ctx.save();ctx.shadowColor=lcol;ctx.shadowBlur=8;}
+      ctx.fillStyle=lcol;
+      ctx.beginPath();
+      ctx.moveTo(0,-L.h/2);
+      ctx.lineTo(L.w/2,L.h/4);
+      ctx.lineTo(L.w*0.3,L.h/2);
+      ctx.lineTo(-L.w*0.3,L.h/2);
+      ctx.lineTo(-L.w/2,L.h/4);
+      ctx.closePath(); ctx.fill();
+      if(!paper)ctx.restore();
+      // Legs
+      ctx.strokeStyle=paper?'#8899aa':'#667788'; ctx.lineWidth=1.5;
+      ctx.beginPath();ctx.moveTo(L.w*0.3,L.h/2);ctx.lineTo(L.w*0.55,L.h/2+6);ctx.stroke();
+      ctx.beginPath();ctx.moveTo(-L.w*0.3,L.h/2);ctx.lineTo(-L.w*0.55,L.h/2+6);ctx.stroke();
+      // Thruster flame
+      if(L.thrusting){
+        ctx.fillStyle=`hsl(${30+rndf(0,30)},100%,60%)`;
+        ctx.beginPath();
+        ctx.moveTo(-5,L.h/2);
+        ctx.lineTo(0,L.h/2+rndf(8,18));
+        ctx.lineTo(5,L.h/2);
+        ctx.closePath(); ctx.fill();
+      }
+      // Window
+      ctx.fillStyle=paper?'rgba(180,220,255,0.6)':'rgba(100,200,255,0.5)';
+      ctx.beginPath();ctx.arc(0,-L.h*0.1,4,0,Math.PI*2);ctx.fill();
+      ctx.restore();
+    }
+
+    // HUD
+    const L=lander;
+    const fuelPct=L.fuel/DIFF.fuel[difficulty];
+    const spd=Math.hypot(L.vx,L.vy);
+    const tiltDeg=Math.abs(L.angle*(180/Math.PI))%360;
+    const dispTilt=tiltDeg>180?360-tiltDeg:tiltDeg;
+    const spdOk=spd<DIFF.maxLandSpd[difficulty];
+    const tiltOk=dispTilt<DIFF.maxLandTilt[difficulty];
+
+    ctx.textAlign='left'; ctx.textBaseline='top';
+    ctx.font=`300 10px 'IBM Plex Mono',monospace`;
+
+    // Fuel bar
+    ctx.fillStyle=paper?'rgba(255,255,255,0.15)':'rgba(255,255,255,0.1)';
+    ctx.fillRect(8,8,80,8);
+    ctx.fillStyle=fuelPct>0.3?'#44cc66':fuelPct>0.1?'#ffcc44':'#ff4444';
+    ctx.fillRect(8,8,80*fuelPct,8);
+    ctx.fillStyle=paper?'rgba(255,255,255,0.5)':'rgba(255,255,255,0.5)';
+    ctx.fillText(`fuel`,8,20);
+
+    // Speed & tilt readouts
+    ctx.fillStyle=spdOk?(paper?'rgba(255,255,255,0.5)':'rgba(100,255,150,0.8)'):'#ff4444';
+    ctx.fillText(`spd ${spd.toFixed(1)}`,8,32);
+    ctx.fillStyle=tiltOk?(paper?'rgba(255,255,255,0.5)':'rgba(100,255,150,0.8)'):'#ff4444';
+    ctx.fillText(`tilt ${dispTilt.toFixed(0)}°`,8,44);
+
+    ctx.fillStyle=paper?'rgba(255,255,255,0.4)':'rgba(255,255,255,0.35)';
+    ctx.fillText(`best: ${bestScore}`,8,56);
+
+    ctx.textAlign='right';
+    ctx.fillText(`W/↑ thrust  ·  A/D rotate`,W-8,8);
+
+    // Game state overlay
+    if(gameState==='landed'){
+      ctx.fillStyle='rgba(0,0,0,0.55)'; ctx.fillRect(0,0,W,H);
+      ctx.fillStyle='#44ffaa'; ctx.font=`400 18px 'IBM Plex Mono',monospace`;
+      ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillText('LANDED!',W/2,H/2-22);
+      ctx.font=`300 11px 'IBM Plex Mono',monospace`;
+      ctx.fillStyle='rgba(255,255,255,0.7)';
+      ctx.fillText(`score: ${score}  ·  press R or click to retry`,W/2,H/2+8);
+    } else if(gameState==='crashed'){
+      ctx.fillStyle=`rgba(0,0,0,${Math.min(0.6,explosionT*0.8)})`;
+      ctx.fillRect(0,0,W,H);
+      if(explosionT>0.4){
+        ctx.fillStyle='#ff4422'; ctx.font=`400 18px 'IBM Plex Mono',monospace`;
+        ctx.textAlign='center'; ctx.textBaseline='middle';
+        ctx.fillText('CRASHED',W/2,H/2-22);
+        ctx.font=`300 11px 'IBM Plex Mono',monospace`;
+        ctx.fillStyle='rgba(255,255,255,0.6)';
+        ctx.fillText(`press R or click to retry`,W/2,H/2+8);
+      }
+    }
+    ctx.textAlign='left'; ctx.textBaseline='top';
+  }
+
+  const onKey=e=>{
+    keys3[e.key]=e.type==='keydown';
+    if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' ','Space'].includes(e.key)) e.preventDefault();
+    if(e.type==='keydown'&&(e.key==='r'||e.key==='R')&&gameState!=='playing') init();
+  };
+  document.addEventListener('keydown',onKey);
+  document.addEventListener('keyup',onKey);
+  c.addEventListener('click',()=>{ if(gameState!=='playing') init(); });
+
+  const diffBtn=mkBtn(DIFF_NAMES[difficulty],ctrl);
+  diffBtn.addEventListener('click',()=>{difficulty=(difficulty+1)%3;diffBtn.textContent=DIFF_NAMES[difficulty];init();});
+  mkBtn('Restart',ctrl).addEventListener('click',init);
+
+  requestAnimationFrame(draw);
+  return ()=>{cancelAnimationFrame(raf);ro.disconnect();document.removeEventListener('keydown',onKey);document.removeEventListener('keyup',onKey);};
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// TOY 47 — CONNECT FOUR
+// ════════════════════════════════════════════════════════════════════════════
+function initConnectFour(body, ctrl) {
+  const {c,ctx,ro} = mkCanvas(body);
+  let W=c.width,H=c.height,raf;
+
+  let difficulty=1;
+  const DIFF_NAMES=['Easy','Medium','Hard'];
+  const DIFF_DEPTH=[1,4,7];
+
+  const COLS=7, ROWS=6;
+  let board, turn, gameState, winCells, scores, hoverCol, dropAnim, thinking4;
+
+  // board[row][col]: 0=empty 1=player 2=AI
+  function emptyBoard(){ return Array.from({length:ROWS},()=>Array(COLS).fill(0)); }
+
+  function init(){
+    W=c.width=body.clientWidth||400; H=c.height=body.clientHeight||300;
+    board=emptyBoard(); turn=1; gameState='playing';
+    winCells=null; hoverCol=3; dropAnim=null; thinking4=false;
+    if(!scores) scores={player:0,ai:0,draws:0};
+  }
+  init();
+
+  function getDropRow(col){
+    for(let r=ROWS-1;r>=0;r--) if(board[r][col]===0) return r;
+    return -1;
+  }
+
+  function checkWin(b,player){
+    const dirs=[[0,1],[1,0],[1,1],[1,-1]];
+    for(let r=0;r<ROWS;r++) for(let c2=0;c2<COLS;c2++){
+      if(b[r][c2]!==player) continue;
+      for(const [dr,dc] of dirs){
+        const cells=[[r,c2]];
+        for(let k=1;k<4;k++){
+          const nr=r+dr*k,nc=c2+dc*k;
+          if(nr<0||nr>=ROWS||nc<0||nc>=COLS||b[nr][nc]!==player) break;
+          cells.push([nr,nc]);
+        }
+        if(cells.length===4) return cells;
+      }
+    }
+    return null;
+  }
+
+  function isDraw(b){ return b[0].every(v=>v!==0); }
+
+  // Heuristic score for a window of 4
+  function scoreWindow(w,p){
+    const mine=w.filter(v=>v===p).length;
+    const opp=w.filter(v=>v===3-p).length;
+    const empty=w.filter(v=>v===0).length;
+    if(mine===4) return 1000;
+    if(opp===4) return -1000;
+    if(mine===3&&empty===1) return 8;
+    if(mine===2&&empty===2) return 3;
+    if(opp===3&&empty===1) return -7;
+    return 0;
+  }
+
+  function heuristic(b,p){
+    let score=0;
+    // Centre column bias
+    const centreCol=b.map(r=>r[Math.floor(COLS/2)]);
+    score+=centreCol.filter(v=>v===p).length*3;
+    // Horizontal
+    for(let r=0;r<ROWS;r++) for(let c2=0;c2<=COLS-4;c2++)
+      score+=scoreWindow([b[r][c2],b[r][c2+1],b[r][c2+2],b[r][c2+3]],p);
+    // Vertical
+    for(let r=0;r<=ROWS-4;r++) for(let c2=0;c2<COLS;c2++)
+      score+=scoreWindow([b[r][c2],b[r+1][c2],b[r+2][c2],b[r+3][c2]],p);
+    // Diagonals
+    for(let r=0;r<=ROWS-4;r++) for(let c2=0;c2<=COLS-4;c2++)
+      score+=scoreWindow([b[r][c2],b[r+1][c2+1],b[r+2][c2+2],b[r+3][c2+3]],p);
+    for(let r=3;r<ROWS;r++) for(let c2=0;c2<=COLS-4;c2++)
+      score+=scoreWindow([b[r][c2],b[r-1][c2+1],b[r-2][c2+2],b[r-3][c2+3]],p);
+    return score;
+  }
+
+  function minimax4(b,depth,alpha,beta,isMax){
+    const w1=checkWin(b,1), w2=checkWin(b,2);
+    if(w2) return 100000+depth;
+    if(w1) return -(100000+depth);
+    if(isDraw(b)||depth===0) return heuristic(b,2);
+    const cols=[3,2,4,1,5,0,6]; // centre-first order
+    if(isMax){
+      let best=-Infinity;
+      for(const col of cols){
+        const r=getDropRow(b.map(row=>[...row]).map((row,ri)=>ri===0?[...row]:row),col);
+        // inline drop check
+        let dropR=-1;
+        for(let ri=ROWS-1;ri>=0;ri--) if(b[ri][col]===0){dropR=ri;break;}
+        if(dropR===-1) continue;
+        b[dropR][col]=2;
+        best=Math.max(best,minimax4(b,depth-1,alpha,beta,false));
+        b[dropR][col]=0;
+        alpha=Math.max(alpha,best);
+        if(beta<=alpha) break;
+      }
+      return best;
+    } else {
+      let best=Infinity;
+      for(const col of cols){
+        let dropR=-1;
+        for(let ri=ROWS-1;ri>=0;ri--) if(b[ri][col]===0){dropR=ri;break;}
+        if(dropR===-1) continue;
+        b[dropR][col]=1;
+        best=Math.min(best,minimax4(b,depth-1,alpha,beta,true));
+        b[dropR][col]=0;
+        beta=Math.min(beta,best);
+        if(beta<=alpha) break;
+      }
+      return best;
+    }
+  }
+
+  function aiDrop(){
+    thinking4=true;
+    setTimeout(()=>{
+      if(gameState!=='playing'){thinking4=false;return;}
+      const depth=DIFF_DEPTH[difficulty];
+      let bestScore2=-Infinity, bestCol=3;
+      const cols=[3,2,4,1,5,0,6];
+      for(const col of cols){
+        let dropR=-1;
+        for(let ri=ROWS-1;ri>=0;ri--) if(board[ri][col]===0){dropR=ri;break;}
+        if(dropR===-1) continue;
+        board[dropR][col]=2;
+        const s=minimax4(board,depth-1,-Infinity,Infinity,false);
+        board[dropR][col]=0;
+        if(s>bestScore2){bestScore2=s;bestCol=col;}
+      }
+      drop(bestCol,2);
+      thinking4=false;
+    },difficulty===0?200:350);
+  }
+
+  function drop(col,player){
+    const r=getDropRow(col);
+    if(r===-1||gameState!=='playing') return;
+    // animate
+    dropAnim={col,fromY:-1,toRow:r,player,t:0};
+  }
+
+  function commitDrop(){
+    if(!dropAnim) return;
+    const {col,toRow,player}=dropAnim;
+    board[toRow][col]=player;
+    dropAnim=null;
+    const w=checkWin(board,player);
+    if(w){ gameState='win'; winCells=w; winPlayer=player;
+      if(player===1)scores.player++;else scores.ai++;
+      return;
+    }
+    if(isDraw(board)){gameState='draw';scores.draws++;return;}
+    turn=player===1?2:1;
+    if(turn===2) aiDrop();
+  }
+
+  let winPlayer=0;
+
+  // Grid geometry
+  function cellR(){ return Math.min((W-20)/(COLS+1)*0.46, (H-80)/(ROWS+1)*0.46); }
+  function gridX(col,r){ return (W-(COLS*2*r+(COLS-1)*2))/2 + col*(r*2+2) + r; }
+  function cellX(col){ const r=cellR(); return (W-COLS*(r*2+2))/2+col*(r*2+2)+r+1; }
+  function cellY(row){ const r=cellR(); return 50+(row*(r*2+2)+r+1); }
+
+  function draw(){
+    raf=requestAnimationFrame(draw);
+    const nW=body.clientWidth||400,nH=body.clientHeight||300;
+    if(nW!==W||nH!==H){W=c.width=nW;H=c.height=nH;}
+    const paper=isPaper();
+    ctx.fillStyle=bgClr(); ctx.fillRect(0,0,W,H);
+
+    const r=cellR();
+    const boardW=COLS*(r*2+2), boardH=ROWS*(r*2+2);
+    const bx=(W-boardW)/2, by=50;
+
+    // Advance drop animation
+    if(dropAnim){
+      dropAnim.t=Math.min(1,dropAnim.t+0.14);
+      if(dropAnim.t>=1) commitDrop();
+    }
+
+    // Hover column highlight
+    if(gameState==='playing'&&turn===1&&!dropAnim&&!thinking4){
+      ctx.fillStyle=paper?'rgba(0,0,0,0.04)':'rgba(255,255,255,0.04)';
+      ctx.fillRect(bx+hoverCol*(r*2+2),by,r*2+2,boardH);
+      // Preview disc top
+      const px=cellX(hoverCol), py=by-r-4;
+      ctx.globalAlpha=0.5;
+      ctx.fillStyle='#ffcc44';
+      ctx.beginPath();ctx.arc(px,py,r,0,Math.PI*2);ctx.fill();
+      ctx.globalAlpha=1;
+    }
+
+    // Board background
+    ctx.fillStyle=paper?'#2244aa':'#1a2e88';
+    ctx.beginPath(); roundRect(ctx,bx-4,by-4,boardW+8,boardH+8,8); ctx.fill();
+
+    // Cells
+    for(let row=0;row<ROWS;row++){
+      for(let col=0;col<COLS;col++){
+        const cx=cellX(col), cy=cellY(row);
+        // Hole
+        ctx.fillStyle=bgClr();
+        ctx.beginPath();ctx.arc(cx,cy,r,0,Math.PI*2);ctx.fill();
+        // Disc
+        const v=board[row][col];
+        if(v===0) continue;
+        const isWinCell=winCells&&winCells.some(([wr,wc])=>wr===row&&wc===col);
+        const col2=v===1?'#ffcc44':'#ff4444';
+        if(!paper){ctx.save();ctx.shadowColor=isWinCell?'#ffffff':col2;ctx.shadowBlur=isWinCell?16:6;}
+        ctx.fillStyle=isWinCell?'#ffffff':col2;
+        ctx.beginPath();ctx.arc(cx,cy,r*0.88,0,Math.PI*2);ctx.fill();
+        if(!paper)ctx.restore();
+      }
+    }
+
+    // Animated dropping disc
+    if(dropAnim){
+      const {col,fromY,toRow,player,t}=dropAnim;
+      const targetY=cellY(toRow);
+      const startY=by-r*2;
+      const cy2=startY+(targetY-startY)*Math.pow(t,0.6);
+      const cx2=cellX(col);
+      const dcol=player===1?'#ffcc44':'#ff4444';
+      if(!paper){ctx.save();ctx.shadowColor=dcol;ctx.shadowBlur=8;}
+      ctx.fillStyle=dcol;
+      ctx.beginPath();ctx.arc(cx2,cy2,r*0.88,0,Math.PI*2);ctx.fill();
+      if(!paper)ctx.restore();
+    }
+
+    // Column click arrows (only player's turn)
+    if(gameState==='playing'&&turn===1&&!dropAnim&&!thinking4){
+      for(let col=0;col<COLS;col++){
+        if(getDropRow(col)===-1) continue;
+        const cx=cellX(col);
+        ctx.fillStyle=col===hoverCol?'#ffcc44':(paper?'rgba(0,0,0,0.2)':'rgba(255,255,255,0.2)');
+        ctx.beginPath();
+        ctx.moveTo(cx,by-8);ctx.lineTo(cx-6,by-18);ctx.lineTo(cx+6,by-18);
+        ctx.closePath();ctx.fill();
+      }
+    }
+
+    // HUD
+    ctx.textAlign='left'; ctx.textBaseline='top';
+    ctx.fillStyle=paper?'rgba(0,0,0,0.4)':'rgba(255,255,255,0.4)';
+    ctx.font=`300 9px 'IBM Plex Mono',monospace`;
+    ctx.fillText(`You(●) ${scores.player}  AI(●) ${scores.ai}  Draws ${scores.draws}`,8,6);
+
+    if(thinking4){
+      ctx.textAlign='right';
+      ctx.fillText('AI thinking…',W-8,6);
+      ctx.textAlign='left';
+    }
+
+    if(gameState==='win'){
+      ctx.fillStyle='rgba(0,0,0,0.55)'; ctx.fillRect(0,0,W,H);
+      ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillStyle=winPlayer===1?'#ffcc44':'#ff4444';
+      ctx.font=`400 18px 'IBM Plex Mono',monospace`;
+      ctx.fillText(winPlayer===1?'You win!':'AI wins!',W/2,H/2-16);
+      ctx.fillStyle='rgba(255,255,255,0.5)'; ctx.font=`300 10px 'IBM Plex Mono',monospace`;
+      ctx.fillText('click to play again',W/2,H/2+8);
+    } else if(gameState==='draw'){
+      ctx.fillStyle='rgba(0,0,0,0.55)'; ctx.fillRect(0,0,W,H);
+      ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillStyle='rgba(255,255,255,0.8)'; ctx.font=`400 18px 'IBM Plex Mono',monospace`;
+      ctx.fillText('Draw!',W/2,H/2-16);
+      ctx.fillStyle='rgba(255,255,255,0.5)'; ctx.font=`300 10px 'IBM Plex Mono',monospace`;
+      ctx.fillText('click to play again',W/2,H/2+8);
+    }
+    ctx.textAlign='left'; ctx.textBaseline='top';
+  }
+
+  c.addEventListener('click',e=>{
+    if(gameState!=='playing'){init();return;}
+    if(turn!==1||dropAnim||thinking4) return;
+    const r=cellR();
+    const bx=(W-COLS*(r*2+2))/2;
+    const rc=c.getBoundingClientRect();
+    const mx=e.clientX-rc.left;
+    const col=Math.floor((mx-bx)/(r*2+2));
+    if(col>=0&&col<COLS) drop(col,1);
+  });
+  c.addEventListener('mousemove',e=>{
+    const r=cellR();
+    const bx=(W-COLS*(r*2+2))/2;
+    const rc=c.getBoundingClientRect();
+    const mx=e.clientX-rc.left;
+    const col=Math.floor((mx-bx)/(r*2+2));
+    if(col>=0&&col<COLS) hoverCol=col;
+  });
+
+  const diffBtn=mkBtn(DIFF_NAMES[difficulty],ctrl);
+  diffBtn.addEventListener('click',()=>{difficulty=(difficulty+1)%3;diffBtn.textContent=DIFF_NAMES[difficulty];scores={player:0,ai:0,draws:0};init();});
+  mkBtn('New Game',ctrl).addEventListener('click',()=>init());
+
+  requestAnimationFrame(draw);
+  return ()=>{cancelAnimationFrame(raf);ro.disconnect();};
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// TOY 48 — BLACKJACK
+// ════════════════════════════════════════════════════════════════════════════
+function initBlackjack(body, ctrl) {
+  const {c,ctx,ro} = mkCanvas(body);
+  let W=c.width,H=c.height,raf;
+
+  let difficulty=1;
+  const DIFF_NAMES=['Easy','Medium','Hard'];
+  // Easy: dealer stands on soft 17, no hole card peek
+  // Medium: dealer peeks, standard rules
+  // Hard: dealer hits soft 17, 6-deck shoe, no resplit
+  const DIFF={
+    decks:        [1,2,6],
+    dealerHitSoft:[false,false,true],
+    doubleAny:    [true,true,false],  // easy allows double on any, hard only 9/10/11
+  };
+
+  const SUITS=['♠','♥','♦','♣'];
+  const RANKS=['A','2','3','4','5','6','7','8','9','10','J','Q','K'];
+
+  let shoe, playerHands, dealerHand, currentHand, bets, chips, gameState;
+  let currentBet, animCards, msgFade;
+
+  function makeShoe(){
+    const deck=[];
+    for(let d=0;d<DIFF.decks[difficulty];d++)
+      for(const s of SUITS) for(const r of RANKS) deck.push({rank:r,suit:s,faceUp:true});
+    // Fisher-Yates shuffle
+    for(let i=deck.length-1;i>0;i--){
+      const j=Math.floor(Math.random()*(i+1));[deck[i],deck[j]]=[deck[j],deck[i]];
+    }
+    return deck;
+  }
+
+  function cardVal(rank){
+    if(rank==='A') return 11;
+    if(['J','Q','K'].includes(rank)) return 10;
+    return parseInt(rank);
+  }
+
+  function handValue(hand){
+    let total=hand.filter(c2=>c2.faceUp).reduce((s,c2)=>s+cardVal(c2.rank),0);
+    let aces=hand.filter(c2=>c2.faceUp&&c2.rank==='A').length;
+    while(total>21&&aces>0){total-=10;aces--;}
+    return total;
+  }
+
+  function handValueFull(hand){
+    let total=hand.reduce((s,c2)=>s+cardVal(c2.rank),0);
+    let aces=hand.filter(c2=>c2.rank==='A').length;
+    while(total>21&&aces>0){total-=10;aces--;}
+    return total;
+  }
+
+  function isSoft(hand){
+    let total=hand.reduce((s,c2)=>s+cardVal(c2.rank),0);
+    let aces=hand.filter(c2=>c2.rank==='A').length;
+    let soft=false;
+    while(total>21&&aces>0){total-=10;aces--;}
+    // still has an ace counted as 11?
+    if(aces>0) soft=true;
+    return soft;
+  }
+
+  function deal(){
+    if(shoe.length<15) shoe=makeShoe();
+    animCards=[];
+    playerHands=[[shoe.pop(),shoe.pop()]];
+    const hole={...shoe.pop(),faceUp:false};
+    dealerHand=[hole,shoe.pop()];
+    currentHand=0; bets=[currentBet]; gameState='player';
+    // Check natural blackjack
+    if(handValueFull(playerHands[0])===21){
+      revealDealer();
+      const dv=handValueFull(dealerHand);
+      if(dv===21){ gameState='push'; chips+=currentBet; }
+      else { gameState='bj'; chips+=Math.floor(currentBet*2.5); }
+    }
+  }
+
+  function revealDealer(){
+    dealerHand.forEach(c2=>c2.faceUp=true);
+  }
+
+  function dealerPlay(){
+    revealDealer();
+    const hitSoft=DIFF.dealerHitSoft[difficulty];
+    while(true){
+      const v=handValueFull(dealerHand);
+      if(v>21) break; // bust
+      if(v>17) break;
+      if(v===17&&!isSoft(dealerHand)) break;
+      if(v===17&&isSoft(dealerHand)&&!hitSoft) break;
+      dealerHand.push(shoe.pop());
+    }
+  }
+
+  function settle(){
+    const dv=handValueFull(dealerHand);
+    const dBust=dv>21;
+    let msg='';
+    for(let hi=0;hi<playerHands.length;hi++){
+      const pv=handValueFull(playerHands[hi]);
+      const bet=bets[hi];
+      if(pv>21){ msg+='Bust! '; } // already lost bet
+      else if(dBust||pv>dv){ chips+=bet*2; msg+='Win! '; }
+      else if(pv===dv){ chips+=bet; msg+='Push '; }
+      else { msg+='Lose '; }
+    }
+    gameState='settle'; settleMsg=msg.trim(); msgFade=1;
+    if(chips<=0){ chips=200; gameState='broke'; }
+  }
+
+  let settleMsg='';
+
+  function hit(){
+    if(gameState!=='player') return;
+    const hand=playerHands[currentHand];
+    hand.push(shoe.pop());
+    if(handValueFull(hand)>=21) stand();
+  }
+
+  function stand(){
+    if(gameState!=='player') return;
+    currentHand++;
+    if(currentHand>=playerHands.length){
+      dealerPlay(); settle();
+    }
+  }
+
+  function doubleDown(){
+    if(gameState!=='player') return;
+    const hand=playerHands[currentHand];
+    if(hand.length!==2) return;
+    const v=handValueFull(hand);
+    if(!DIFF.doubleAny[difficulty]&&![9,10,11].includes(v)) return;
+    if(chips<bets[currentHand]) return;
+    chips-=bets[currentHand]; bets[currentHand]*=2;
+    hand.push(shoe.pop());
+    stand();
+  }
+
+  function split(){
+    if(gameState!=='player') return;
+    const hand=playerHands[currentHand];
+    if(hand.length!==2||hand[0].rank!==hand[1].rank) return;
+    if(chips<bets[currentHand]) return;
+    chips-=bets[currentHand];
+    const newHand=[hand.pop(),shoe.pop()];
+    playerHands.splice(currentHand+1,0,newHand);
+    bets.splice(currentHand+1,0,bets[currentHand]);
+    hand.push(shoe.pop());
+  }
+
+  function init(){
+    W=c.width=body.clientWidth||400; H=c.height=body.clientHeight||300;
+    shoe=makeShoe();
+    if(!chips||chips<=0) chips=500;
+    currentBet=25; gameState='bet'; playerHands=[]; dealerHand=[];
+    bets=[]; animCards=[]; settleMsg=''; msgFade=0;
+  }
+  init();
+
+  // Card drawing
+  function drawCard(card,x,y,w,h){
+    const paper=isPaper();
+    const isRed=card.suit==='♥'||card.suit==='♦';
+    // Card bg
+    ctx.fillStyle='#ffffff'; roundRect(ctx,x,y,w,h,4); ctx.fill();
+    ctx.strokeStyle='rgba(0,0,0,0.15)'; ctx.lineWidth=0.8;
+    roundRect(ctx,x,y,w,h,4); ctx.stroke();
+
+    if(!card.faceUp){
+      // Back pattern
+      ctx.fillStyle='#1a44aa'; roundRect(ctx,x+2,y+2,w-4,h-4,3); ctx.fill();
+      ctx.strokeStyle='rgba(255,255,255,0.2)'; ctx.lineWidth=1;
+      for(let i=0;i<4;i++){
+        roundRect(ctx,x+2+i*2,y+2+i*2,w-4-i*4,h-4-i*4,3); ctx.stroke();
+      }
+      return;
+    }
+
+    ctx.fillStyle=isRed?'#cc2222':'#111111';
+    ctx.font=`600 ${Math.floor(h*0.22)}px sans-serif`;
+    ctx.textAlign='left'; ctx.textBaseline='top';
+    ctx.fillText(card.rank,x+3,y+2);
+    ctx.font=`${Math.floor(h*0.18)}px sans-serif`;
+    ctx.fillText(card.suit,x+3,y+h*0.22);
+    // Centre suit
+    ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.font=`${Math.floor(h*0.3)}px sans-serif`;
+    ctx.fillText(card.suit,x+w/2,y+h/2);
+  }
+
+  function drawHand(hand,cx,cy,label,isActive,bet){
+    const cw=Math.min(52,(W*0.8)/(Math.max(hand.length,4)+1));
+    const ch=Math.floor(cw*1.4);
+    const overlap=cw*0.65;
+    const totalW=(hand.length-1)*overlap+cw;
+    const sx=cx-totalW/2;
+    const paper=isPaper();
+
+    if(isActive){
+      ctx.fillStyle=paper?'rgba(0,0,100,0.06)':'rgba(255,220,50,0.06)';
+      roundRect(ctx,sx-8,cy-ch/2-8,totalW+16,ch+16,6);ctx.fill();
+      ctx.strokeStyle=paper?'rgba(0,0,200,0.2)':'rgba(255,220,50,0.3)';
+      ctx.lineWidth=1.5; roundRect(ctx,sx-8,cy-ch/2-8,totalW+16,ch+16,6);ctx.stroke();
+    }
+
+    for(let i=0;i<hand.length;i++)
+      drawCard(hand[i],sx+i*overlap,cy-ch/2,cw,ch);
+
+    // Value label
+    const v=handValue(hand);
+    const vf=handValueFull(hand);
+    const bust=vf>21;
+    ctx.textAlign='center'; ctx.textBaseline='top';
+    ctx.fillStyle=bust?'#ff4444':(paper?'rgba(0,0,0,0.5)':'rgba(255,255,255,0.6)');
+    ctx.font=`300 10px 'IBM Plex Mono',monospace`;
+    ctx.fillText(`${label}${bust?' BUST':' '+vf}${bet?' · bet:'+bet:''}`,cx,cy+ch/2+4);
+  }
+
+  // Chip button helper
+  function chipBtnCoords(){
+    const chips2=[5,10,25,50,100];
+    const total=chips2.length;
+    const bw=36,bh=22,gap=6;
+    const totalW=total*(bw+gap)-gap;
+    const sx=(W-totalW)/2;
+    const y=H-38;
+    return chips2.map((v,i)=>({v,x:sx+i*(bw+gap),y,w:bw,h:bh}));
+  }
+
+  function draw(){
+    raf=requestAnimationFrame(draw);
+    const nW=body.clientWidth||400,nH=body.clientHeight||300;
+    if(nW!==W||nH!==H){W=c.width=nW;H=c.height=nH;}
+    const paper=isPaper();
+    if(msgFade>0) msgFade-=0.008;
+
+    // Felt background
+    ctx.fillStyle=paper?'#2d6a2d':'#1a4d1a';
+    ctx.fillRect(0,0,W,H);
+    // Felt grain
+    ctx.strokeStyle=paper?'rgba(255,255,255,0.03)':'rgba(255,255,255,0.02)';
+    ctx.lineWidth=1;
+    for(let y=0;y<H;y+=12){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke();}
+
+    // Table arc
+    ctx.strokeStyle=paper?'rgba(255,255,255,0.1)':'rgba(255,255,255,0.07)';
+    ctx.lineWidth=3;
+    ctx.beginPath();ctx.arc(W/2,H+H*0.3,W*0.7,Math.PI,0);ctx.stroke();
+
+    // Dealer hand
+    if(dealerHand.length){
+      drawHand(dealerHand,W/2,H*0.22,'Dealer',false,0);
+    }
+
+    // Player hands
+    if(playerHands.length){
+      const spacing=W/(playerHands.length+1);
+      for(let hi=0;hi<playerHands.length;hi++){
+        drawHand(playerHands[hi],spacing*(hi+1),H*0.62,`Hand ${hi+1}`,hi===currentHand&&gameState==='player',bets[hi]);
+      }
+    }
+
+    // Chips & bet display
+    ctx.textAlign='center'; ctx.textBaseline='top';
+    ctx.fillStyle='rgba(255,255,255,0.7)';
+    ctx.font=`300 11px 'IBM Plex Mono',monospace`;
+    ctx.fillText(`chips: ${chips}  ·  bet: ${currentBet}`,W/2,8);
+
+    // Chip buttons (bet phase)
+    if(gameState==='bet'){
+      const cbs=chipBtnCoords();
+      for(const cb of cbs){
+        ctx.fillStyle='rgba(255,255,255,0.12)';
+        roundRect(ctx,cb.x,cb.y,cb.w,cb.h,4);ctx.fill();
+        ctx.fillStyle='rgba(255,255,255,0.7)';ctx.font=`300 9px 'IBM Plex Mono',monospace`;
+        ctx.textAlign='center';ctx.textBaseline='middle';
+        ctx.fillText(`+${cb.v}`,cb.x+cb.w/2,cb.y+cb.h/2);
+      }
+      ctx.textAlign='center';ctx.textBaseline='top';
+      ctx.fillStyle='rgba(255,255,255,0.5)';ctx.font=`300 9px 'IBM Plex Mono',monospace`;
+      ctx.fillText('click chips to adjust bet, then Deal',W/2,H-16);
+    }
+
+    // Action buttons drawn in ctrl — show hand value hint
+    if(gameState==='player'){
+      const hand=playerHands[currentHand];
+      const v=handValueFull(hand);
+      ctx.fillStyle='rgba(255,255,255,0.5)'; ctx.font=`300 9px 'IBM Plex Mono',monospace`;
+      ctx.textAlign='center'; ctx.textBaseline='top';
+      ctx.fillText(hand.length===2&&hand[0].rank===hand[1].rank?'can split · ':'',W/2,H*0.78);
+    }
+
+    // Settle message
+    if(settleMsg&&msgFade>0){
+      ctx.globalAlpha=Math.min(1,msgFade*3);
+      ctx.fillStyle=settleMsg.includes('Win')?'#44ff88':settleMsg.includes('Bust')||settleMsg.includes('Lose')?'#ff4444':'#ffcc44';
+      ctx.font=`400 22px 'IBM Plex Mono',monospace`;
+      ctx.textAlign='center';ctx.textBaseline='middle';
+      ctx.fillText(settleMsg,W/2,H*0.42);
+      ctx.globalAlpha=1;
+    }
+
+    if(gameState==='broke'){
+      ctx.fillStyle='rgba(0,0,0,0.6)';ctx.fillRect(0,0,W,H);
+      ctx.fillStyle='#ff4444';ctx.font=`400 18px 'IBM Plex Mono',monospace`;
+      ctx.textAlign='center';ctx.textBaseline='middle';
+      ctx.fillText('Broke!',W/2,H/2-16);
+      ctx.fillStyle='rgba(255,255,255,0.5)';ctx.font=`300 10px 'IBM Plex Mono',monospace`;
+      ctx.fillText('click to get a fresh stack',W/2,H/2+8);
+    }
+    ctx.textAlign='left';ctx.textBaseline='top';
+  }
+
+  // Click handling
+  c.addEventListener('click',e=>{
+    if(gameState==='broke'){chips=500;currentBet=25;gameState='bet';playerHands=[];dealerHand=[];return;}
+    if(gameState==='settle'||gameState==='bj'||gameState==='push'){
+      gameState='bet'; playerHands=[]; dealerHand=[]; return;
+    }
+    if(gameState==='bet'){
+      const cbs=chipBtnCoords();
+      const rc=c.getBoundingClientRect();
+      const mx=e.clientX-rc.left,my=e.clientY-rc.top;
+      for(const cb of cbs){
+        if(mx>=cb.x&&mx<=cb.x+cb.w&&my>=cb.y&&my<=cb.y+cb.h){
+          if(currentBet+cb.v<=chips) currentBet+=cb.v;
+          return;
+        }
+      }
+    }
+  });
+
+  // Action buttons
+  const dealBtn=mkBtn('Deal',ctrl);
+  dealBtn.addEventListener('click',()=>{
+    if(gameState==='bet'&&currentBet<=chips&&currentBet>0){chips-=currentBet;deal();}
+    else if(gameState==='settle'||gameState==='bj'||gameState==='push'){gameState='bet';playerHands=[];dealerHand=[];}
+  });
+  const hitBtn=mkBtn('Hit',ctrl);
+  hitBtn.addEventListener('click',()=>{if(gameState==='player')hit();});
+  const standBtn=mkBtn('Stand',ctrl);
+  standBtn.addEventListener('click',()=>{if(gameState==='player')stand();});
+  const dblBtn=mkBtn('Double',ctrl);
+  dblBtn.addEventListener('click',()=>{if(gameState==='player')doubleDown();});
+  const splitBtn=mkBtn('Split',ctrl);
+  splitBtn.addEventListener('click',()=>{if(gameState==='player')split();});
+
+  const diffBtn=mkBtn(DIFF_NAMES[difficulty],ctrl);
+  diffBtn.addEventListener('click',()=>{difficulty=(difficulty+1)%3;diffBtn.textContent=DIFF_NAMES[difficulty];chips=500;currentBet=25;init();});
+
+  mkBtn('Reset',ctrl).addEventListener('click',()=>{chips=500;currentBet=25;init();});
+
+  const betInfo=mkInfo(ctrl);
+  betInfo.textContent='click table chips to bet';
+
+  requestAnimationFrame(draw);
+  return ()=>{cancelAnimationFrame(raf);ro.disconnect();};
 }
 
 // ── final init ────────────────────────────────────────────────────────────────
