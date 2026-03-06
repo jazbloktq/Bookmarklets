@@ -5560,8 +5560,12 @@ function initGalaga(body, ctrl) {
     const pspd=5;
     const goLeft  = keys2['ArrowLeft'] ||keys2['a']||keys2['A'];
     const goRight = keys2['ArrowRight']||keys2['d']||keys2['D'];
+    const goUp    = keys2['ArrowUp']   ||keys2['w']||keys2['W'];
+    const goDown  = keys2['ArrowDown'] ||keys2['s']||keys2['S'];
     if(goLeft)  player.x=Math.max(player.w/2,        player.x-pspd);
     if(goRight) player.x=Math.min(W-player.w/2,      player.x+pspd);
+    if(goUp)    player.y=Math.max(H*0.35,             player.y-pspd);
+    if(goDown)  player.y=Math.min(H-player.h/2-4,    player.y+pspd);
     if(player.fireCD>0) player.fireCD--;
     if(player.invincible>0) player.invincible--;
 
@@ -5715,7 +5719,7 @@ function initGalaga(body, ctrl) {
   mkBtn('Restart',ctrl).addEventListener('click',init);
 
   const hint=mkInfo(ctrl);
-  hint.textContent='← → move · Space fire';
+  hint.textContent='WASD / arrows · Space to fire';
 
   requestAnimationFrame(draw);
   return ()=>{cancelAnimationFrame(raf);ro.disconnect();document.removeEventListener('keydown',onKey);document.removeEventListener('keyup',onKey);};
