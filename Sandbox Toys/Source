@@ -20,6 +20,7 @@ document.querySelectorAll('[data-sb-wiggle]').forEach(el => {
 
 // ── theme ────────────────────────────────────────────────────────────────────
 let theme = 'dark';
+let twoPlayer = false;
 
 // ── styles ───────────────────────────────────────────────────────────────────
 const STYLE = document.createElement('style');
@@ -411,6 +412,8 @@ const TOYS = [
   {name:'Connect Four',         init:initConnectFour},
   {name:'Blackjack',            init:initBlackjack},
   {name:'Solitaire',            init:initSolitaire},
+  {name:'Backgammon',           init:initBackgammon},
+  {name:'Bouncing DVD',         init:initBouncingDVD},
 ];
 const LIST  = document.getElementById('__SB_LIST__');
 const items = [];
@@ -431,6 +434,18 @@ const themeBtnEl=document.createElement('button'); themeBtnEl.className='sb-btn'
 themeBtnEl.style.cssText='width:100%;text-align:center;display:block;'; themeBtnEl.textContent='Paper ○';
 themeBtnEl.addEventListener('click',()=>{ theme=theme==='dark'?'paper':'dark'; applyTheme(); });
 themeRow.appendChild(themeBtnEl);
+
+const tpRow=document.createElement('div'); tpRow.style.padding='0 14px 10px'; LIST.appendChild(tpRow);
+const tpBtnEl=document.createElement('button'); tpBtnEl.className='sb-btn';
+tpBtnEl.style.cssText='width:100%;text-align:center;display:block;'; tpBtnEl.textContent='2 Player ○';
+tpBtnEl.addEventListener('click',()=>{
+  twoPlayer=!twoPlayer;
+  tpBtnEl.textContent=twoPlayer?'2 Player ●':'2 Player ○';
+  setLit(tpBtnEl, twoPlayer);
+  // close any open toy so user re-opens with new setting
+  if(activeWin) closeWin(activeWin);
+});
+tpRow.appendChild(tpBtnEl);
 
 // ════════════════════════════════════════════════════════════════════════════
 // TOY 1 — PARTICLE FIELD  (logic verbatim from reference)
@@ -1205,7 +1220,6 @@ function initPong(body, ctrl) {
   const {c,ctx,ro} = mkCanvas(body);
   let W=c.width, H=c.height;
   const PW=10, PH=60, BR=6, RR=4;
-  // difficulty: cpu lerp speed, initial ball speed
   const DIFFS = {
     easy:   {cpu:0.04, spd:3.0},
     medium: {cpu:0.07, spd:4.0},
@@ -1213,6 +1227,11 @@ function initPong(body, ctrl) {
   };
   let diff='medium';
   let p1,p2,ball,score1,score2,raf,mouseY;
+  // 2P keyboard state
+  const keys={};
+  const onKey=e=>{ keys[e.key]=e.type==='keydown'; };
+  document.addEventListener('keydown',onKey); document.addEventListener('keyup',onKey);
+  const PSPD=5;
 
   function init() {
     W=c.width=body.clientWidth; H=c.height=body.clientHeight;
@@ -1226,17 +1245,25 @@ function initPong(body, ctrl) {
     raf=requestAnimationFrame(step);
     W=c.width=body.clientWidth; H=c.height=body.clientHeight;
     const cpu=DIFFS[diff].cpu;
-    // player
-    p1.y+=(mouseY-PH/2-p1.y)*0.15;
+    if(twoPlayer){
+      // P1: W/S keys
+      if(keys['w']||keys['W']) p1.y-=PSPD;
+      if(keys['s']||keys['S']) p1.y+=PSPD;
+      // P2: arrow keys
+      if(keys['ArrowUp']) p2.y-=PSPD;
+      if(keys['ArrowDown']) p2.y+=PSPD;
+    } else {
+      // P1: mouse
+      p1.y+=(mouseY-PH/2-p1.y)*0.15;
+      // P2: cpu
+      p2.y+=(ball.y-PH/2-p2.y)*cpu;
+    }
     p1.y=Math.max(0,Math.min(H-PH,p1.y));
-    // cpu
-    p2.y+=(ball.y-PH/2-p2.y)*cpu;
     p2.y=Math.max(0,Math.min(H-PH,p2.y));
     // ball
     ball.x+=ball.vx; ball.y+=ball.vy;
     if(ball.y-BR<0){ball.y=BR;ball.vy=Math.abs(ball.vy);}
     if(ball.y+BR>H){ball.y=H-BR;ball.vy=-Math.abs(ball.vy);}
-    // paddle collisions — matching reference exactly
     if(ball.x-BR<p1.x+PW&&ball.y>p1.y&&ball.y<p1.y+PH&&ball.vx<0){
       ball.vx=Math.abs(ball.vx)*1.05;
       ball.vy+=((ball.y-(p1.y+PH/2))/(PH/2))*2;
@@ -1247,7 +1274,6 @@ function initPong(body, ctrl) {
       ball.vy+=((ball.y-(p2.y+PH/2))/(PH/2))*2;
       ball.x=p2.x-BR;
     }
-    // scoring
     const spd=DIFFS[diff].spd;
     if(ball.x<0){score2++;ball={x:W/2,y:H/2,vx:-spd,vy:rndf(-2,2)};scoreEl.textContent=score1+' — '+score2;}
     if(ball.x>W){score1++;ball={x:W/2,y:H/2,vx: spd,vy:rndf(-2,2)};scoreEl.textContent=score1+' — '+score2;}
@@ -1259,11 +1285,19 @@ function initPong(body, ctrl) {
     ctx.fillStyle=fgClr();
     [[p1.x,p1.y],[p2.x,p2.y]].forEach(([x,y])=>{ roundRect(ctx,x,y,PW,PH,RR); ctx.fill(); });
     ctx.beginPath(); ctx.arc(ball.x,ball.y,BR,0,Math.PI*2); ctx.fill();
+    // 2P labels
+    if(twoPlayer){
+      ctx.fillStyle=isPaper()?'rgba(0,0,0,0.25)':'rgba(255,255,255,0.25)';
+      ctx.font=`300 9px 'IBM Plex Mono',monospace`;
+      ctx.textAlign='center'; ctx.textBaseline='top';
+      ctx.fillText('W/S',p1.x+PW/2+20,8);
+      ctx.fillText('↑/↓',p2.x+PW/2-20,8);
+      ctx.textAlign='left';
+    }
   }
   const scoreEl=mkInfo(ctrl);
-  const onMove = e => { const r=c.getBoundingClientRect(); mouseY=e.clientY-r.top; };
+  const onMove = e => { if(!twoPlayer){const r=c.getBoundingClientRect(); mouseY=e.clientY-r.top;} };
   c.addEventListener('mousemove',onMove);
-  // difficulty buttons
   const diffBtns={};
   ['easy','medium','hard'].forEach(k=>{
     const b=mkBtn(k,ctrl,k===diff);
@@ -1276,7 +1310,7 @@ function initPong(body, ctrl) {
   });
   mkBtn('New',ctrl).addEventListener('click',init);
   init(); requestAnimationFrame(step);
-  return ()=>{ cancelAnimationFrame(raf); ro.disconnect(); c.removeEventListener('mousemove',onMove); };
+  return ()=>{ cancelAnimationFrame(raf); ro.disconnect(); c.removeEventListener('mousemove',onMove); document.removeEventListener('keydown',onKey); document.removeEventListener('keyup',onKey); };
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -2558,9 +2592,11 @@ function initChess(body, ctrl) {
     animBoard=cloneBoard(board);
     anims=[{piece:movingPiece,captured:capturedPiece,fr,fc,tr,tc,t:0,dur:18}];
     checkGameOver();
-    if(col==='b'){
+    if(col==='b' && !twoPlayer){
       // animation ends → hand to white
       setTimeout(()=>{aiThinking=false;turn='w';},350);
+    } else if(col==='b' && twoPlayer){
+      setTimeout(()=>{aiThinking=false;},200);
     }
   }
 
@@ -2620,7 +2656,7 @@ function initChess(body, ctrl) {
     }
 
     // selected + legal moves
-    if(selected&&turn==='w'&&!aiThinking){
+    if(selected&&(twoPlayer||turn==='w')&&!aiThinking){
       ctx.fillStyle='rgba(80,160,255,0.4)';
       ctx.fillRect(ox+selected[1]*sq,oy+selected[0]*sq,sq,sq);
       getMoves(board,selected[0],selected[1]).forEach(([tr2,tc2])=>{
@@ -2682,16 +2718,22 @@ function initChess(body, ctrl) {
       ctx.font=`300 11px 'IBM Plex Mono',monospace`;ctx.fillStyle='rgba(255,255,255,0.6)';
       ctx.fillText('click New Game to play again',ox+SZ/2,oy+SZ/2+14);
     }
-    if(aiThinking&&!gameStatus){
+    if(aiThinking&&!gameStatus&&!twoPlayer){
       const fg=paper?'rgba(0,0,0,0.45)':'rgba(255,255,255,0.45)';
       const dots='.'.repeat(1+Math.floor(Date.now()/400)%3);
       ctx.fillStyle=fg;ctx.font=`300 10px 'IBM Plex Mono',monospace`;ctx.textAlign='left';ctx.textBaseline='top';
       ctx.fillText(`thinking${dots}`,ox,oy+SZ+8);
     }
+    if(twoPlayer&&!gameStatus){
+      const fg=paper?'rgba(0,0,0,0.4)':'rgba(255,255,255,0.4)';
+      ctx.fillStyle=fg;ctx.font=`300 10px 'IBM Plex Mono',monospace`;ctx.textAlign='left';ctx.textBaseline='top';
+      ctx.fillText(`${turn==='w'?'White':'Black'}'s turn`,ox,oy+SZ+8);
+    }
   }
 
   c.addEventListener('click',e=>{
-    if(turn!=='w'||aiThinking||gameStatus||anims.some(a=>a.t<a.dur))return;
+    if(aiThinking||gameStatus||anims.some(a=>a.t<a.dur))return;
+    if(!twoPlayer && turn!=='w') return;
     const SZ=Math.min(W,H)-20,sq=SZ/8,ox=(W-SZ)/2,oy=(H-SZ)/2;
     const r=Math.floor((e.clientY-c.getBoundingClientRect().top-oy)/sq);
     const cc=Math.floor((e.clientX-c.getBoundingClientRect().left-ox)/sq);
@@ -2700,12 +2742,14 @@ function initChess(body, ctrl) {
       const legal=getMoves(board,selected[0],selected[1]);
       if(legal.some(([tr,tc])=>tr===r&&tc===cc)){
         const [fr,fc]=selected;
-        selected=null;turn='b';
-        startAnim(fr,fc,r,cc,'w');
+        selected=null;
+        const nextTurn=turn==='w'?'b':'w';
+        turn=nextTurn;
+        startAnim(fr,fc,r,cc,turn==='b'?'w':'b');
         checkGameOver();
-        if(!gameStatus)aiMove();
-      } else {selected=color(board[r][cc])==='w'?[r,cc]:null;}
-    } else {if(color(board[r][cc])==='w')selected=[r,cc];}
+        if(!gameStatus && !twoPlayer) aiMove();
+      } else {selected=color(board[r][cc])===turn?[r,cc]:null;}
+    } else {if(color(board[r][cc])===turn)selected=[r,cc];}
   });
 
   mkBtn('New Game',ctrl).addEventListener('click',()=>{init();});
@@ -5277,7 +5321,7 @@ function initTicTacToe(body, ctrl) {
       else scores.draws++;
     } else {
       turn=turn==='X'?'O':'X';
-      if(turn==='O'&&!gameOver){ thinking=true; aiMove(); }
+      if(!twoPlayer && turn==='O'&&!gameOver){ thinking=true; aiMove(); }
     }
     thinking=false;
   }
@@ -5349,20 +5393,21 @@ function initTicTacToe(body, ctrl) {
     const statusY=oy+S+12;
     let status;
     if(gameOver) status=winner==='draw'?'Draw!':`${winner} wins!  ·  click to play again`;
+    else if(twoPlayer) status=`Player ${turn==='X'?'1 (X)':'2 (O)'}'s turn`;
     else status=turn==='X'?'Your turn (X)':(thinking?'AI thinking…':'AI\'s turn (O)');
     ctx.fillText(status,W/2,statusY);
 
-    // Scores
     ctx.font=`300 9px 'IBM Plex Mono',monospace`;
     ctx.fillStyle=paper?'rgba(0,0,0,0.3)':'rgba(255,255,255,0.3)';
-    ctx.fillText(`You(X) ${scores.X}  ·  AI(O) ${scores.O}  ·  Draws ${scores.draws}`,W/2,statusY+20);
+    if(twoPlayer) ctx.fillText(`P1(X) ${scores.X}  ·  P2(O) ${scores.O}  ·  Draws ${scores.draws}`,W/2,statusY+20);
+    else ctx.fillText(`You(X) ${scores.X}  ·  AI(O) ${scores.O}  ·  Draws ${scores.draws}`,W/2,statusY+20);
 
     ctx.textAlign='left';
   }
 
   c.addEventListener('click',e=>{
     if(gameOver){init();return;}
-    if(turn!=='X'||thinking) return;
+    if(!twoPlayer && (turn!=='X'||thinking)) return;
     const {ox,oy,cs}=cellRect();
     const r2=c.getBoundingClientRect();
     const mx=e.clientX-r2.left-ox, my=e.clientY-r2.top-oy;
@@ -6765,7 +6810,7 @@ function initConnectFour(body, ctrl) {
     }
     if(isDraw(board)){gameState='draw';scores.draws++;return;}
     turn=player===1?2:1;
-    if(turn===2) aiDrop();
+    if(!twoPlayer && turn===2) aiDrop();
   }
 
   let winPlayer=0;
@@ -6858,7 +6903,8 @@ function initConnectFour(body, ctrl) {
     ctx.textAlign='left'; ctx.textBaseline='top';
     ctx.fillStyle=paper?'rgba(0,0,0,0.4)':'rgba(255,255,255,0.4)';
     ctx.font=`300 9px 'IBM Plex Mono',monospace`;
-    ctx.fillText(`You(●) ${scores.player}  AI(●) ${scores.ai}  Draws ${scores.draws}`,8,6);
+    if(twoPlayer) ctx.fillText(`P1(●) ${scores.player}  P2(●) ${scores.ai}  Draws ${scores.draws}`,8,6);
+    else ctx.fillText(`You(●) ${scores.player}  AI(●) ${scores.ai}  Draws ${scores.draws}`,8,6);
 
     if(thinking4){
       ctx.textAlign='right';
@@ -6871,7 +6917,7 @@ function initConnectFour(body, ctrl) {
       ctx.textAlign='center'; ctx.textBaseline='middle';
       ctx.fillStyle=winPlayer===1?'#ffcc44':'#ff4444';
       ctx.font=`400 18px 'IBM Plex Mono',monospace`;
-      ctx.fillText(winPlayer===1?'You win!':'AI wins!',W/2,H/2-16);
+      ctx.fillText(twoPlayer?(winPlayer===1?'Player 1 wins!':'Player 2 wins!'):(winPlayer===1?'You win!':'AI wins!'),W/2,H/2-16);
       ctx.fillStyle='rgba(255,255,255,0.5)'; ctx.font=`300 10px 'IBM Plex Mono',monospace`;
       ctx.fillText('click to play again',W/2,H/2+8);
     } else if(gameState==='draw'){
@@ -6887,13 +6933,17 @@ function initConnectFour(body, ctrl) {
 
   c.addEventListener('click',e=>{
     if(gameState!=='playing'){init();return;}
-    if(turn!==1||dropAnim||thinking4) return;
+    if(twoPlayer){
+      if(dropAnim||thinking4) return;
+    } else {
+      if(turn!==1||dropAnim||thinking4) return;
+    }
     const r=cellR();
     const bx=(W-COLS*(r*2+2))/2;
     const rc=c.getBoundingClientRect();
     const mx=e.clientX-rc.left;
     const col=Math.floor((mx-bx)/(r*2+2));
-    if(col>=0&&col<COLS) drop(col,1);
+    if(col>=0&&col<COLS) drop(col,turn);
   });
   c.addEventListener('mousemove',e=>{
     const r=cellR();
@@ -7846,8 +7896,684 @@ function initSolitaire(body, ctrl) {
   return () => { cancelAnimationFrame(raf); ro.disconnect(); };
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+// TOY — BACKGAMMON
+// ════════════════════════════════════════════════════════════════════════════
+function initBackgammon(body, ctrl) {
+  const {c,ctx,ro} = mkCanvas(body);
+  let W=c.width, H=c.height, raf;
+
+  // Difficulties for AI
+  const DIFF_NAMES=['Easy','Medium','Hard'];
+  let difficulty=1;
+
+  // ── board state ───────────────────────────────────────────────────────────
+  // points[0..23]: positive=white, negative=black (from white's perspective)
+  // bar: {w:n, b:n}  off: {w:n, b:n}
+  let points, bar, off, dice, diceUsed, turn, selected, gameOver, aiThinking2;
+  let msg='', msgTimer=0;
+  let scores={w:0,b:0};
+
+  function initGame(){
+    points=Array(24).fill(0);
+    // standard backgammon setup (white moves 24→1, black moves 1→24)
+    points[0]=2; points[5]=-5; points[7]=-3; points[11]=5;
+    points[12]=-5; points[16]=3; points[18]=5; points[23]=-2;
+    bar={w:0,b:0}; off={w:0,b:0};
+    dice=[]; diceUsed=[]; turn='w'; selected=null; gameOver=false; aiThinking2=false;
+    msg='Click dice to roll'; msgTimer=120;
+    rollPhase=true;
+  }
+  let rollPhase=true;
+  initGame();
+
+  function rollDice(){
+    const d1=Math.floor(Math.random()*6)+1;
+    const d2=Math.floor(Math.random()*6)+1;
+    dice=d1===d2?[d1,d1,d1,d1]:[d1,d2];
+    diceUsed=Array(dice.length).fill(false);
+    rollPhase=false;
+    msg='';
+    // check if any moves exist
+    if(!hasAnyMove()){
+      msg='No moves! Turn passes.';
+      msgTimer=90;
+      setTimeout(endTurn,1500);
+    }
+  }
+
+  function endTurn(){
+    turn=turn==='w'?'b':'w';
+    dice=[]; diceUsed=[]; selected=null; rollPhase=true;
+    msg=twoPlayer?`${turn==='w'?'White':'Black'} to roll`:`${turn==='w'?'Your':'AI'} turn — roll`;
+    msgTimer=90;
+    if(!twoPlayer && turn==='b') setTimeout(aiTurn, 600);
+  }
+
+  function remainingDice(){
+    return dice.filter((_,i)=>!diceUsed[i]);
+  }
+
+  function pointFor(col, player){
+    // Convert board point index to visual position
+    return player==='w' ? (23-col) : col;
+  }
+
+  function canBearOff(player){
+    const sign=player==='w'?1:-1;
+    const homeStart=player==='w'?0:18;
+    const homeEnd=player==='w'?5:23;
+    // all pieces in home board or off
+    let total=0;
+    for(let i=0;i<24;i++){
+      if(sign>0?points[i]>0:points[i]<0) total+=Math.abs(points[i]);
+    }
+    total+=bar[player];
+    let inHome=0;
+    for(let i=homeStart;i<=homeEnd;i++){
+      if(sign>0?points[i]>0:points[i]<0) inHome+=Math.abs(points[i]);
+    }
+    inHome+=off[player];
+    return inHome===total+off[player];
+  }
+
+  function validMoves(fromPt, player){
+    // fromPt: -1 = bar
+    const sign=player==='w'?1:-1;
+    const rem=remainingDice();
+    const moves=[];
+    const seen=new Set();
+
+    for(let di=0;di<dice.length;di++){
+      if(diceUsed[di]) continue;
+      const d=dice[di];
+      if(seen.has(d)) continue;
+      seen.add(d);
+
+      if(fromPt===-1){
+        // entering from bar
+        const to=player==='w'?(24-d):(d-1);
+        if(to>=0&&to<24){
+          const occ=points[to]*sign;
+          if(occ>=-1) moves.push({die:di,to});
+        }
+      } else {
+        const to=player==='w'?(fromPt-d):(fromPt+d);
+        if(to>=0&&to<24){
+          const occ=points[to]*sign;
+          if(occ>=-1) moves.push({die:di,to});
+        } else if(canBearOff(player)){
+          // bearing off
+          const homeStart=player==='w'?0:18;
+          const homeEnd=player==='w'?5:23;
+          const exact=player==='w'?(fromPt===d-1):(fromPt===24-d);
+          if(exact) moves.push({die:di,to:'off'});
+          else {
+            // can use higher die if no pieces on higher points
+            const higher=rem.filter(r=>r>d).length>0||exact;
+            if(higher){
+              // check no pieces further from home
+              let canUse=true;
+              if(player==='w'){
+                for(let p=fromPt+1;p<=5;p++) if(points[p]>0){canUse=false;break;}
+              } else {
+                for(let p=fromPt-1;p>=18;p--) if(points[p]<0){canUse=false;break;}
+              }
+              if(canUse) moves.push({die:di,to:'off'});
+            }
+          }
+        }
+      }
+    }
+    return moves;
+  }
+
+  function hasAnyMove(){
+    const player=turn;
+    const sign=player==='w'?1:-1;
+    if(bar[player]>0) return validMoves(-1,player).length>0;
+    for(let i=0;i<24;i++){
+      if(sign>0?points[i]>0:points[i]<0){
+        if(validMoves(i,player).length>0) return true;
+      }
+    }
+    return false;
+  }
+
+  function applyMove(fromPt, mv, player){
+    const sign=player==='w'?1:-1;
+    diceUsed[mv.die]=true;
+
+    // Remove from source
+    if(fromPt===-1) bar[player]--;
+    else points[fromPt]-=sign;
+
+    if(mv.to==='off'){
+      off[player]++;
+    } else {
+      const occ=points[mv.to]*sign;
+      if(occ===-1){
+        // hit! send opponent to bar
+        const opp=player==='w'?'b':'w';
+        bar[opp]++;
+        points[mv.to]=sign; // place our piece
+      } else {
+        points[mv.to]+=sign;
+      }
+    }
+
+    selected=null;
+
+    // check win
+    if(off[player]===15){
+      gameOver=true;
+      scores[player]++;
+      msg=player==='w'?(twoPlayer?'White wins!':'You win!'):(twoPlayer?'Black wins!':'AI wins!');
+      msgTimer=999;
+      return;
+    }
+
+    // check if any dice remain
+    const rem=remainingDice();
+    if(rem.length===0 || !hasAnyMove()){
+      setTimeout(endTurn, 300);
+    }
+  }
+
+  // ── AI ────────────────────────────────────────────────────────────────────
+  function aiTurn(){
+    if(turn!=='b'||rollPhase===false&&dice.length===0) return;
+    aiThinking2=true;
+    rollDice();
+    setTimeout(aiMakeMove, 800);
+  }
+
+  function aiMakeMove(){
+    if(turn!=='b'||gameOver){aiThinking2=false;return;}
+    if(remainingDice().length===0){aiThinking2=false;return;}
+
+    // collect all legal moves
+    const player='b';
+    const sign=-1;
+    let sources=[];
+    if(bar[player]>0) sources=[-1];
+    else for(let i=0;i<24;i++) if(points[i]<0) sources.push(i);
+
+    let bestFrom=-1, bestMv=null;
+    let bestScore=-Infinity;
+
+    for(const from of sources){
+      const mvs=validMoves(from,player);
+      for(const mv of mvs){
+        let score=0;
+        if(mv.to==='off') score=100;
+        else {
+          const occ=points[mv.to]*sign;
+          if(occ===-1) score=50+(difficulty*20); // hit
+          score+=difficulty===0?rndf(-10,10):difficulty===1?rndf(-3,3):0;
+          // prefer moving pieces further along
+          score+=mv.to; // higher index = further for black
+        }
+        if(score>bestScore){bestScore=score;bestFrom=from;bestMv=mv;}
+      }
+    }
+
+    if(bestFrom!==-1&&bestMv){
+      applyMove(bestFrom,bestMv,player);
+      if(!gameOver && remainingDice().length>0 && hasAnyMove()){
+        setTimeout(aiMakeMove,600);
+      } else {
+        aiThinking2=false;
+      }
+    } else {
+      aiThinking2=false;
+      setTimeout(endTurn,400);
+    }
+  }
+
+  // ── drawing ───────────────────────────────────────────────────────────────
+  function layout(){
+    const pad=16;
+    const bw=Math.min(W-pad*2,560);
+    const bh=Math.min(H-80,380);
+    const bx=(W-bw)/2;
+    const by=36;
+    const ptW=bw/13; // 12 points + bar
+    const ptH=bh*0.42;
+    const barW=ptW;
+    return {pad,bw,bh,bx,by,ptW,ptH,barW};
+  }
+
+  function ptX(i, lo){
+    // i=0..11 bottom-right to bottom-left, i=12..23 top-left to top-right
+    const {bx,bw,ptW,barW}=lo;
+    const barCenter=bx+bw/2;
+    if(i<6) return bx+bw-ptW*(i+0.5); // bottom right
+    if(i<12) return bx+bw-ptW*(i+1.5)-barW; // bottom left (skip bar)
+    if(i<18) return bx+ptW*(i-12+0.5); // top left
+    return bx+ptW*(i-18+0.5)+barW; // top right — wait, fix indices
+  }
+
+  function draw(){
+    raf=requestAnimationFrame(draw);
+    const nW=body.clientWidth||500, nH=body.clientHeight||400;
+    if(nW!==W||nH!==H){W=c.width=nW;H=c.height=nH;}
+    const paper=isPaper();
+    const lo=layout();
+    const {bx,by,bw,bh,ptW,ptH,barW}=lo;
+
+    ctx.fillStyle=bgClr(); ctx.fillRect(0,0,W,H);
+
+    // Board background
+    ctx.fillStyle=paper?'#8B4513':'#2a1a08';
+    roundRect(ctx,bx,by,bw,bh,6); ctx.fill();
+
+    // Board felt
+    ctx.fillStyle=paper?'#2e7d2e':'#1a5c1a';
+    roundRect(ctx,bx+6,by+6,bw-12,bh-12,4); ctx.fill();
+
+    // Bar
+    ctx.fillStyle=paper?'#8B4513':'#2a1a08';
+    ctx.fillRect(bx+bw/2-barW/2,by,barW,bh);
+
+    // Points
+    for(let i=0;i<24;i++){
+      const isBottom=i<12;
+      // point x: standard backgammon layout
+      // Bottom: 24..13 left to right (from white's perspective: 24 at far right bottom)
+      // Top: 1..12 left to right
+      let px;
+      const half=bw/2-barW/2;
+      const pIdx=i<12?(11-i):i; // visual column 0..11
+      const col=pIdx%6;
+      const side=pIdx<6?1:0; // 0=left half, 1=right half
+      px=side===1?(bx+half+barW+col*ptW+ptW/2):(bx+(5-col)*ptW+ptW/2);
+
+      const py=isBottom?(by+bh-4):(by+4);
+      const tipY=isBottom?(py-ptH):(py+ptH);
+
+      ctx.beginPath();
+      ctx.moveTo(px-ptW*0.45,py);
+      ctx.lineTo(px+ptW*0.45,py);
+      ctx.lineTo(px,tipY);
+      ctx.closePath();
+      ctx.fillStyle=(i%2===0)?(paper?'#cc4422':'#cc3311'):(paper?'#f0e8d0':'#f0d9b5');
+      ctx.fill();
+
+      // point number label
+      ctx.fillStyle='rgba(255,255,255,0.3)';
+      ctx.font=`300 7px 'IBM Plex Mono',monospace`;
+      ctx.textAlign='center'; ctx.textBaseline=isBottom?'bottom':'top';
+      ctx.fillText(isBottom?(i+1):(24-i),px,isBottom?by+bh-2:by+2);
+
+      // Pieces on this point
+      const cnt=points[i];
+      const n=Math.abs(cnt);
+      const isWhite=cnt>0;
+      const pColor=isWhite?(paper?'#fffbe6':'#f8f6f0'):(paper?'#1a1208':'#111');
+      const pStroke=isWhite?(paper?'#8a6a3a':'rgba(0,0,0,0.3)'):(paper?'rgba(255,255,255,0.4)':'rgba(255,255,255,0.2)');
+      const r2=ptW*0.36;
+      for(let k=0;k<Math.min(n,5);k++){
+        const cy=isBottom?(py-r2-k*r2*2.1):(py+r2+k*r2*2.1);
+        if(!paper){ctx.save();ctx.shadowColor=isWhite?'rgba(255,255,255,0.2)':'rgba(0,0,0,0.5)';ctx.shadowBlur=4;}
+        ctx.beginPath();ctx.arc(px,cy,r2,0,Math.PI*2);
+        ctx.fillStyle=pColor;ctx.fill();
+        ctx.strokeStyle=pStroke;ctx.lineWidth=1.5;ctx.stroke();
+        if(!paper)ctx.restore();
+        if(n>5&&k===4){ctx.fillStyle='rgba(255,255,255,0.8)';ctx.font=`600 8px 'IBM Plex Mono',monospace`;ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(n,px,cy);}
+      }
+
+      // Selection highlight
+      if(selected===i){
+        ctx.strokeStyle='#ffcc44'; ctx.lineWidth=2;
+        ctx.beginPath();ctx.arc(px,py-(isBottom?r2:-(r2)),r2*1.3,0,Math.PI*2);ctx.stroke();
+        // show valid move targets
+        const mvs=validMoves(i,turn);
+        // handled below
+      }
+    }
+
+    // Bar pieces
+    const barX=bx+bw/2;
+    ['w','b'].forEach((pl,pi)=>{
+      const n=bar[pl];
+      if(!n) return;
+      const isW=pl==='w';
+      const pColor=isW?(paper?'#fffbe6':'#f8f6f0'):(paper?'#1a1208':'#111');
+      const pStroke=isW?(paper?'#8a6a3a':'rgba(0,0,0,0.3)'):(paper?'rgba(255,255,255,0.4)':'rgba(255,255,255,0.2)');
+      const r2=ptW*0.36;
+      const startY=isW?(by+bh/2+r2):(by+bh/2-r2);
+      for(let k=0;k<Math.min(n,5);k++){
+        const cy=isW?(startY+k*r2*2.1):(startY-k*r2*2.1);
+        ctx.beginPath();ctx.arc(barX,cy,r2,0,Math.PI*2);
+        ctx.fillStyle=pColor;ctx.fill();
+        ctx.strokeStyle=pStroke;ctx.lineWidth=1.5;ctx.stroke();
+      }
+      if(selected===-1&&turn===pl){
+        ctx.strokeStyle='#ffcc44';ctx.lineWidth=2;
+        ctx.beginPath();ctx.arc(barX,startY,r2*1.3,0,Math.PI*2);ctx.stroke();
+      }
+    });
+
+    // Bear-off areas
+    ctx.fillStyle=paper?'rgba(0,0,0,0.1)':'rgba(255,255,255,0.08)';
+    ctx.fillRect(bx+bw+4,by+bh*0.52,28,bh*0.46);
+    ctx.fillRect(bx+bw+4,by+2,28,bh*0.46);
+    ctx.fillStyle=paper?'rgba(0,0,0,0.4)':'rgba(255,255,255,0.5)';
+    ctx.font=`300 8px 'IBM Plex Mono',monospace`; ctx.textAlign='center'; ctx.textBaseline='top';
+    ctx.fillText(`W:${off.w}`,bx+bw+18,by+bh*0.52+2);
+    ctx.fillText(`B:${off.b}`,bx+bw+18,by+2);
+
+    // Valid move highlights
+    if(selected!==null){
+      const mvs=validMoves(selected,turn);
+      const half=bw/2-barW/2;
+      mvs.forEach(mv=>{
+        if(mv.to==='off') return;
+        const i=mv.to;
+        const isBottom=i<12;
+        const pIdx=i<12?(11-i):i;
+        const col=pIdx%6;
+        const side=pIdx<6?1:0;
+        const px=side===1?(bx+half+barW+col*ptW+ptW/2):(bx+(5-col)*ptW+ptW/2);
+        const py=isBottom?(by+bh-4):(by+4);
+        ctx.strokeStyle='rgba(255,220,50,0.7)'; ctx.lineWidth=2;
+        ctx.beginPath();ctx.arc(px,py,ptW*0.4,0,Math.PI*2);ctx.stroke();
+      });
+    }
+
+    // Dice
+    const diceY=by+bh+10;
+    dice.forEach((d,i)=>{
+      const dx=W/2+(i-dice.length/2+0.5)*36;
+      roundRect(ctx,dx-14,diceY,28,28,4);
+      ctx.fillStyle=diceUsed[i]?'rgba(100,100,100,0.4)':(paper?'#fffbe6':'#f8f6f0');
+      ctx.fill();
+      ctx.strokeStyle=paper?'rgba(0,0,0,0.2)':'rgba(255,255,255,0.2)'; ctx.lineWidth=1; ctx.stroke();
+      // pips
+      const pip=(px2,py2)=>{ctx.beginPath();ctx.arc(dx-14+px2,diceY+py2,2.5,0,Math.PI*2);ctx.fillStyle=diceUsed[i]?'rgba(150,150,150,0.5)':'#333';ctx.fill();};
+      const pipPos=[[],[],[],[],[],[]][d-1]; // define per face
+      const faces=[[14],[7,21],[7,21,14],[7,7,21,21],[7,7,14,21,21],[7,7,14,21,21,14]];
+      const xs=[7,21,7,21,14,7,21]; const ys=[7,7,14,14,14,21,21];
+      const patterns=[[4],[0,3],[0,3,4],[0,1,2,3],[0,1,4,2,3],[0,1,4,2,3,6]]; // using xs/ys indices
+      // simplified pip drawing
+      const pts2=[[14,8],[14,20],[8,8],[20,8],[8,20],[20,20]];
+      const patsSimple=[[0],[2,5],[2,0,5],[2,3,4,5],[2,3,0,4,5],[2,3,0,4,5,1]];
+      patsSimple[d-1].forEach(pi2=>pip(pts2[pi2][0],pts2[pi2][1]));
+    });
+
+    // Roll button
+    if(rollPhase&&(twoPlayer||turn==='w')){
+      const ry=diceY;
+      roundRect(ctx,W/2-30,ry,60,28,4);
+      ctx.fillStyle=paper?'rgba(0,0,0,0.08)':'rgba(255,255,255,0.1)'; ctx.fill();
+      ctx.strokeStyle=paper?'rgba(0,0,0,0.25)':'rgba(255,255,255,0.35)'; ctx.lineWidth=1; ctx.stroke();
+      ctx.fillStyle=paper?'rgba(0,0,0,0.7)':'rgba(255,255,255,0.8)';
+      ctx.font=`300 10px 'IBM Plex Mono',monospace`; ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillText('Roll Dice',W/2,ry+14);
+    }
+
+    // Status
+    if(msgTimer>0) msgTimer--;
+    ctx.fillStyle=paper?'rgba(0,0,0,0.5)':'rgba(255,255,255,0.6)';
+    ctx.font=`300 10px 'IBM Plex Mono',monospace`; ctx.textAlign='center'; ctx.textBaseline='top';
+    ctx.fillText(msg||(!rollPhase?`${turn==='w'?'White':'Black'} to move`:''),W/2,4);
+
+    // Scores
+    ctx.fillStyle=paper?'rgba(0,0,0,0.3)':'rgba(255,255,255,0.3)';
+    ctx.font=`300 9px 'IBM Plex Mono',monospace`; ctx.textAlign='left'; ctx.textBaseline='top';
+    ctx.fillText(`W ${scores.w} — B ${scores.b}`,bx,4);
+
+    if(aiThinking2){
+      ctx.textAlign='right';
+      ctx.fillText('AI thinking…',bx+bw,4);
+      ctx.textAlign='left';
+    }
+
+    if(gameOver){
+      ctx.fillStyle='rgba(0,0,0,0.6)';ctx.fillRect(0,0,W,H);
+      ctx.fillStyle='#44ff88';ctx.font=`400 22px 'IBM Plex Mono',monospace`;
+      ctx.textAlign='center';ctx.textBaseline='middle';
+      ctx.fillText(msg,W/2,H/2-14);
+      ctx.fillStyle='rgba(255,255,255,0.5)';ctx.font=`300 10px 'IBM Plex Mono',monospace`;
+      ctx.fillText('click to play again',W/2,H/2+10);
+    }
+    ctx.textAlign='left';ctx.textBaseline='top';
+  }
+
+  // ── click handling ────────────────────────────────────────────────────────
+  c.addEventListener('click',e=>{
+    if(gameOver){initGame();return;}
+    if(!twoPlayer&&turn==='b') return;
+    if(aiThinking2) return;
+
+    const lo=layout();
+    const {bx,by,bw,bh,ptW,ptH,barW}=lo;
+    const rc=c.getBoundingClientRect();
+    const mx=e.clientX-rc.left, my=e.clientY-rc.top;
+    const diceY=by+bh+10;
+
+    // Roll button
+    if(rollPhase){
+      if(mx>=W/2-30&&mx<=W/2+30&&my>=diceY&&my<=diceY+28){
+        rollDice();
+        if(!twoPlayer&&turn==='b') setTimeout(aiTurn,600);
+      }
+      return;
+    }
+
+    if(remainingDice().length===0) return;
+
+    // Hit test points
+    const half=bw/2-barW/2;
+    function hitPoint(i){
+      const isBottom=i<12;
+      const pIdx=i<12?(11-i):i;
+      const col=pIdx%6;
+      const side=pIdx<6?1:0;
+      const px=side===1?(bx+half+barW+col*ptW+ptW/2):(bx+(5-col)*ptW+ptW/2);
+      const py=isBottom?(by+bh-4):(by+4);
+      return Math.abs(mx-px)<ptW*0.5&&Math.abs(my-py)<ptW*2.5;
+    }
+
+    // Bar hit
+    const barX=bx+bw/2;
+    const hitBar=Math.abs(mx-barX)<barW/2&&my>by&&my<by+bh;
+
+    const sign=turn==='w'?1:-1;
+
+    // If on bar, must enter first
+    if(bar[turn]>0){
+      if(hitBar){selected=-1;return;}
+      if(selected===-1){
+        // try to apply move to clicked point
+        for(let i=0;i<24;i++){
+          if(hitPoint(i)){
+            const mvs=validMoves(-1,turn);
+            const mv=mvs.find(m=>m.to===i);
+            if(mv) applyMove(-1,mv,turn);
+            return;
+          }
+        }
+      }
+      return;
+    }
+
+    // Select a piece
+    for(let i=0;i<24;i++){
+      if(hitPoint(i)){
+        if(selected===i){selected=null;return;}
+        if(selected!==null){
+          // try to move
+          const mvs=validMoves(selected,turn);
+          const mv=mvs.find(m=>m.to===i);
+          if(mv){applyMove(selected,mv,turn);return;}
+        }
+        if(sign>0?points[i]>0:points[i]<0) selected=i;
+        return;
+      }
+    }
+
+    // Bear off click (right side)
+    if(selected!==null&&mx>bx+bw){
+      const mvs=validMoves(selected,turn);
+      const mv=mvs.find(m=>m.to==='off');
+      if(mv) applyMove(selected,mv,turn);
+      return;
+    }
+
+    selected=null;
+  });
+
+  // ctrl
+  const diffBtn=mkBtn(DIFF_NAMES[difficulty],ctrl);
+  diffBtn.addEventListener('click',()=>{
+    difficulty=(difficulty+1)%3;
+    diffBtn.textContent=DIFF_NAMES[difficulty];
+    initGame();
+  });
+  mkBtn('New Game',ctrl).addEventListener('click',()=>initGame());
+  const info=mkInfo(ctrl);
+  info.textContent='select piece → click dest';
+
+  requestAnimationFrame(draw);
+  return ()=>{cancelAnimationFrame(raf);ro.disconnect();};
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// TOY — BOUNCING DVD
+// ════════════════════════════════════════════════════════════════════════════
+function initBouncingDVD(body, ctrl) {
+  const {c,ctx,ro} = mkCanvas(body);
+  let W=c.width, H=c.height, raf;
+
+  const COLORS=['#ff3333','#ff9900','#ffff00','#33ff33','#3399ff','#cc33ff','#ff33cc','#00ffcc'];
+  let colorIdx=0;
+  let cornerHits=0;
+
+  const logoW=120, logoH=60;
+  let x=W/2-logoW/2, y=H/2-logoH/2;
+  let vx=2.1, vy=1.7;
+  let trail=[];
+  const TRAIL_LEN=18;
+  let showTrail=true;
+
+  function drawLogo(lx,ly,col,alpha){
+    ctx.save();
+    ctx.globalAlpha=alpha||1;
+    const r=6;
+    roundRect(ctx,lx,ly,logoW,logoH,r);
+    ctx.fillStyle='rgba(0,0,0,0.25)';
+    ctx.fill();
+    // DVD text
+    ctx.fillStyle=col;
+    ctx.font=`700 ${logoH*0.55}px 'IBM Plex Mono',monospace`;
+    ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillText('DVD',lx+logoW/2,ly+logoH*0.4);
+    // underline bar
+    ctx.fillStyle=col;
+    ctx.fillRect(lx+logoW*0.12,ly+logoH*0.72,logoW*0.76,logoH*0.1);
+    // Video text
+    ctx.font=`300 ${logoH*0.22}px 'IBM Plex Mono',monospace`;
+    ctx.fillStyle=col;
+    ctx.fillText('Video',lx+logoW/2,ly+logoH*0.86);
+    ctx.restore();
+  }
+
+  function step(){
+    raf=requestAnimationFrame(step);
+    const nW=body.clientWidth||400, nH=body.clientHeight||300;
+    if(nW!==W||nH!==H){W=c.width=nW;H=c.height=nH;}
+
+    let hitCorner=false;
+    let bounced=false;
+
+    x+=vx; y+=vy;
+
+    let hitX=false,hitY=false;
+    if(x<=0){x=0;vx=Math.abs(vx);hitX=true;}
+    if(x+logoW>=W){x=W-logoW;vx=-Math.abs(vx);hitX=true;}
+    if(y<=0){y=0;vy=Math.abs(vy);hitY=true;}
+    if(y+logoH>=H){y=H-logoH;vy=-Math.abs(vy);hitY=true;}
+
+    if(hitX||hitY){
+      bounced=true;
+      colorIdx=(colorIdx+1)%COLORS.length;
+      if(hitX&&hitY){cornerHits++;hitCorner=true;}
+    }
+
+    // Trail
+    if(showTrail) trail.push({x,y,col:COLORS[colorIdx]});
+    while(trail.length>TRAIL_LEN) trail.shift();
+
+    // Draw
+    ctx.fillStyle='#0a0a0a';
+    ctx.fillRect(0,0,W,H);
+    // scanlines for TV effect
+    ctx.fillStyle='rgba(0,0,0,0.08)';
+    for(let sy=0;sy<H;sy+=3){ctx.fillRect(0,sy,W,1);}
+
+    // Trail
+    if(showTrail){
+      trail.forEach((t,i)=>{
+        drawLogo(t.x,t.y,t.col,(i/trail.length)*0.25);
+      });
+    }
+
+    // Corner flash
+    if(hitCorner){
+      ctx.fillStyle='rgba(255,255,255,0.15)';
+      ctx.fillRect(0,0,W,H);
+    }
+
+    // Main logo
+    drawLogo(x,y,COLORS[colorIdx],1);
+
+    // Corner hit glow
+    if(hitCorner){
+      ctx.save();
+      ctx.shadowColor=COLORS[colorIdx];
+      ctx.shadowBlur=60;
+      drawLogo(x,y,COLORS[colorIdx],1);
+      ctx.restore();
+    }
+
+    // Corner counter
+    ctx.fillStyle='rgba(255,255,255,0.2)';
+    ctx.font=`300 10px 'IBM Plex Mono',monospace`;
+    ctx.textAlign='left'; ctx.textBaseline='top';
+    ctx.fillText(`corner hits: ${cornerHits}`,8,8);
+  }
+
+  const trailBtn=mkBtn('Trail: On',ctrl,true);
+  trailBtn.addEventListener('click',()=>{
+    showTrail=!showTrail;
+    if(!showTrail) trail=[];
+    trailBtn.textContent=`Trail: ${showTrail?'On':'Off'}`;
+    setLit(trailBtn,showTrail);
+  });
+
+  // Speed slider
+  const speedLbl=document.createElement('span'); speedLbl.className='sb-info'; speedLbl.style.marginLeft='4px'; speedLbl.textContent='speed'; ctrl.appendChild(speedLbl);
+  const speedSl=document.createElement('input'); speedSl.type='range'; speedSl.className='sb-slider'; speedSl.min=5; speedSl.max=60; speedSl.step=1; speedSl.value=21; ctrl.appendChild(speedSl); styleSlider(speedSl);
+  speedSl.addEventListener('input',()=>{
+    const spd=speedSl.value/10;
+    const ang=Math.atan2(vy,vx);
+    vx=Math.cos(ang)*spd; vy=Math.sin(ang)*spd;
+  });
+
+  mkBtn('Reset',ctrl).addEventListener('click',()=>{
+    x=W/2-logoW/2; y=H/2-logoH/2; vx=2.1; vy=1.7;
+    cornerHits=0; colorIdx=0; trail=[];
+  });
+
+  requestAnimationFrame(step);
+  return ()=>{cancelAnimationFrame(raf);ro.disconnect();};
+}
+
 // ── final init ────────────────────────────────────────────────────────────────
 applyTheme();
 styleBtn(themeBtnEl);
+styleBtn(tpBtnEl);
 console.log('%c ◈ sandbox ready ', 'background:#0a0a09;color:#a8e6a0;font-family:monospace;padding:4px 12px;font-size:11px;');
 })();
