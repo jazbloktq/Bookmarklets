@@ -7141,8 +7141,21 @@ function initBlackjack(body, ctrl) {
     const bw=36,bh=22,gap=6;
     const totalW=total*(bw+gap)-gap;
     const sx=(W-totalW)/2;
+    const y=H-66;
+    return chips2.map((v,i)=>({v,x:sx+i*(bw+gap),y,w:bw,h:bh}));
+  }
+  function chipMinusBtnCoords(){
+    const chips2=[5,10,25,50,100];
+    const total=chips2.length;
+    const bw=36,bh=22,gap=6;
+    const totalW=total*(bw+gap)-gap;
+    const sx=(W-totalW)/2;
     const y=H-38;
     return chips2.map((v,i)=>({v,x:sx+i*(bw+gap),y,w:bw,h:bh}));
+  }
+  function clearBtnCoords(){
+    const bw=50,bh=22;
+    return {x:W/2-bw/2,y:H-38,w:bw,h:bh};
   }
 
   function draw(){
@@ -7194,6 +7207,27 @@ function initBlackjack(body, ctrl) {
         ctx.textAlign='center';ctx.textBaseline='middle';
         ctx.fillText(`+${cb.v}`,cb.x+cb.w/2,cb.y+cb.h/2);
       }
+      const mcbs=chipMinusBtnCoords();
+      for(const cb of mcbs){
+        ctx.fillStyle='rgba(255,255,255,0.08)';
+        roundRect(ctx,cb.x,cb.y,cb.w,cb.h,4);ctx.fill();
+        ctx.fillStyle=currentBet>=cb.v?'rgba(255,255,255,0.7)':'rgba(255,255,255,0.2)';
+        ctx.font=`300 9px 'IBM Plex Mono',monospace`;
+        ctx.textAlign='center';ctx.textBaseline='middle';
+        ctx.fillText(`-${cb.v}`,cb.x+cb.w/2,cb.y+cb.h/2);
+      }
+      // Clear button (centered below minus row, but only if bet > 0)
+      if(currentBet>0){
+        const clr=clearBtnCoords();
+        // shift it right of minus row
+        const mcbsLast=mcbs[mcbs.length-1];
+        const clrX=mcbsLast.x+mcbsLast.w+10;
+        ctx.fillStyle='rgba(255,100,100,0.18)';
+        roundRect(ctx,clrX,mcbsLast.y,50,22,4);ctx.fill();
+        ctx.fillStyle='rgba(255,180,180,0.85)';ctx.font=`300 9px 'IBM Plex Mono',monospace`;
+        ctx.textAlign='center';ctx.textBaseline='middle';
+        ctx.fillText('clear',clrX+25,mcbsLast.y+11);
+      }
       ctx.textAlign='center';ctx.textBaseline='top';
       ctx.fillStyle='rgba(255,255,255,0.5)';ctx.font=`300 9px 'IBM Plex Mono',monospace`;
       ctx.fillText('click chips to adjust bet, then Deal',W/2,H-16);
@@ -7243,6 +7277,22 @@ function initBlackjack(body, ctrl) {
         if(mx>=cb.x&&mx<=cb.x+cb.w&&my>=cb.y&&my<=cb.y+cb.h){
           if(currentBet+cb.v<=chips) currentBet+=cb.v;
           return;
+        }
+      }
+      const mcbs=chipMinusBtnCoords();
+      for(const cb of mcbs){
+        if(mx>=cb.x&&mx<=cb.x+cb.w&&my>=cb.y&&my<=cb.y+cb.h){
+          if(currentBet>=cb.v) currentBet-=cb.v;
+          return;
+        }
+      }
+      // Clear button
+      if(currentBet>0){
+        const mcbsLast=mcbs[mcbs.length-1];
+        const clrX=mcbsLast.x+mcbsLast.w+10;
+        const clrY=mcbsLast.y;
+        if(mx>=clrX&&mx<=clrX+50&&my>=clrY&&my<=clrY+22){
+          currentBet=0; return;
         }
       }
     }
