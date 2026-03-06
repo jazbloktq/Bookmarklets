@@ -410,6 +410,7 @@ const TOYS = [
   {name:'Lunar Lander',         init:initLunarLander},
   {name:'Connect Four',         init:initConnectFour},
   {name:'Blackjack',            init:initBlackjack},
+  {name:'Solitaire',            init:initSolitaire},
 ];
 const LIST  = document.getElementById('__SB_LIST__');
 const items = [];
@@ -7323,6 +7324,526 @@ function initBlackjack(body, ctrl) {
 
   requestAnimationFrame(draw);
   return ()=>{cancelAnimationFrame(raf);ro.disconnect();};
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// TOY — SOLITAIRE (Klondike)
+// ════════════════════════════════════════════════════════════════════════════
+function initSolitaire(body, ctrl) {
+  const {c, ctx, ro} = mkCanvas(body);
+  let W = c.width, H = c.height;
+  let raf;
+
+  // ── card constants ────────────────────────────────────────────────────────
+  const SUITS = ['♠','♥','♦','♣'];
+  const RANKS = ['A','2','3','4','5','6','7','8','9','10','J','Q','K'];
+  const RED = new Set(['♥','♦']);
+
+  function isRed(suit) { return RED.has(suit); }
+
+  // card: {suit, rank, faceUp}
+  function makeDeck() {
+    const d = [];
+    for (const s of SUITS) for (const r of RANKS) d.push({suit:s, rank:r, faceUp:false});
+    for (let i = d.length-1; i > 0; i--) {
+      const j = Math.floor(Math.random()*(i+1)); [d[i],d[j]]=[d[j],d[i]];
+    }
+    return d;
+  }
+
+  // ── state ────────────────────────────────────────────────────────────────
+  let stock, waste, foundations, tableau;
+  // drag state
+  let drag = null; // {cards, fromPile, fromIdx, x, y, ox, oy}
+  let won = false;
+  let moves = 0, startTime = 0;
+
+  function newGame() {
+    const deck = makeDeck();
+    stock = [];
+    waste = [];
+    foundations = [[],[],[],[]]; // one per suit A→K
+    tableau = Array.from({length:7}, () => []);
+    let idx = 0;
+    for (let col = 0; col < 7; col++) {
+      for (let row = 0; row <= col; row++) {
+        const card = deck[idx++];
+        card.faceUp = (row === col);
+        tableau[col].push(card);
+      }
+    }
+    while (idx < deck.length) stock.push(deck[idx++]);
+    won = false;
+    moves = 0;
+    startTime = Date.now();
+    drag = null;
+  }
+
+  newGame();
+
+  // ── layout helpers ───────────────────────────────────────────────────────
+  function layout() {
+    const pad = Math.max(6, W * 0.018);
+    const cw = Math.max(36, Math.min(72, (W - pad * 8) / 7));
+    const ch = Math.round(cw * 1.4);
+    const topY = pad + 28; // leave room for status bar
+    return {pad, cw, ch, topY};
+  }
+
+  function pileX(col, pad, cw) {
+    return pad + col * (cw + pad);
+  }
+
+  // ── card drawing ─────────────────────────────────────────────────────────
+  function drawCard(card, x, y, cw, ch, highlight) {
+    const paper = isPaper();
+    const r = Math.max(3, cw * 0.08);
+
+    // shadow
+    ctx.save();
+    ctx.shadowColor = paper ? 'rgba(0,0,0,0.18)' : 'rgba(0,0,0,0.5)';
+    ctx.shadowBlur = 6;
+    ctx.shadowOffsetY = 2;
+
+    // card face
+    roundRect(ctx, x, y, cw, ch, r);
+    if (!card.faceUp) {
+      // card back
+      ctx.fillStyle = paper ? '#3a5fa0' : '#1e4080';
+      ctx.fill();
+      ctx.restore();
+      // hatching pattern
+      ctx.save();
+      ctx.beginPath(); roundRect(ctx, x+2, y+2, cw-4, ch-4, r-1); ctx.clip();
+      ctx.strokeStyle = paper ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.1)';
+      ctx.lineWidth = 1;
+      for (let i = -ch; i < cw+ch; i += 6) {
+        ctx.beginPath(); ctx.moveTo(x+i, y); ctx.lineTo(x+i+ch, y+ch); ctx.stroke();
+      }
+      ctx.restore();
+      // border
+      roundRect(ctx, x, y, cw, ch, r);
+      ctx.strokeStyle = paper ? 'rgba(0,0,0,0.15)' : 'rgba(255,255,255,0.1)';
+      ctx.lineWidth = 1; ctx.stroke();
+      return;
+    }
+
+    // face-up
+    ctx.fillStyle = highlight ? (paper ? '#fffbe6' : '#2a3a5a') : (paper ? '#faf8f3' : '#f8f6f0');
+    ctx.fill();
+    ctx.restore();
+
+    roundRect(ctx, x, y, cw, ch, r);
+    ctx.strokeStyle = highlight ? (paper ? '#b8960a' : '#6699ff') : (paper ? 'rgba(0,0,0,0.12)' : 'rgba(0,0,0,0.25)');
+    ctx.lineWidth = highlight ? 2 : 1;
+    ctx.stroke();
+
+    const color = isRed(card.suit) ? '#cc2222' : (paper ? '#111' : '#111');
+    const fs = Math.max(8, Math.min(14, cw * 0.22));
+    ctx.fillStyle = color;
+    ctx.font = `600 ${fs}px 'IBM Plex Mono', monospace`;
+    ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+    ctx.fillText(card.rank, x + 3, y + 2);
+
+    const sf = Math.max(8, Math.min(13, cw * 0.2));
+    ctx.font = `${sf}px serif`;
+    ctx.fillText(card.suit, x + 3, y + 2 + fs + 1);
+
+    // center symbol for larger cards
+    if (cw > 48) {
+      ctx.font = `${Math.round(cw * 0.38)}px serif`;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(card.suit, x + cw/2, y + ch/2);
+    }
+  }
+
+  function drawEmptyPile(x, y, cw, ch, label) {
+    const paper = isPaper();
+    const r = Math.max(3, cw * 0.08);
+    roundRect(ctx, x, y, cw, ch, r);
+    ctx.strokeStyle = paper ? 'rgba(0,0,0,0.15)' : 'rgba(255,255,255,0.12)';
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([4, 3]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    if (label) {
+      ctx.fillStyle = paper ? 'rgba(0,0,0,0.18)' : 'rgba(255,255,255,0.18)';
+      ctx.font = `300 ${Math.max(9, cw*0.18)}px 'IBM Plex Mono', monospace`;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(label, x + cw/2, y + ch/2);
+    }
+  }
+
+  // ── hit testing ──────────────────────────────────────────────────────────
+  function cardOverlap(ch, isTableau) {
+    return isTableau ? Math.max(14, Math.min(28, ch * 0.28)) : 0;
+  }
+
+  function hitTest(mx, my) {
+    const {pad, cw, ch, topY} = layout();
+    const overlap = cardOverlap(ch, true);
+
+    // stock
+    const sx = pileX(0, pad, cw);
+    if (mx >= sx && mx <= sx+cw && my >= topY && my <= topY+ch) return {type:'stock'};
+
+    // waste
+    const wx = pileX(1, pad, cw);
+    if (waste.length > 0) {
+      if (mx >= wx && mx <= wx+cw && my >= topY && my <= topY+ch) return {type:'waste'};
+    }
+
+    // foundations
+    for (let f = 0; f < 4; f++) {
+      const fx = pileX(3+f, pad, cw);
+      if (mx >= fx && mx <= fx+cw && my >= topY && my <= topY+ch) return {type:'foundation', idx:f};
+    }
+
+    // tableau
+    for (let col = 0; col < 7; col++) {
+      const tx = pileX(col, pad, cw);
+      const pile = tableau[col];
+      if (pile.length === 0) {
+        if (mx >= tx && mx <= tx+cw && my >= topY+ch+pad && my <= topY+ch+pad+ch)
+          return {type:'tableau', col, cardIdx:-1};
+        continue;
+      }
+      const baseY = topY + ch + pad;
+      for (let i = pile.length-1; i >= 0; i--) {
+        const cy = baseY + i * overlap;
+        const cardH = (i === pile.length-1) ? ch : overlap;
+        if (mx >= tx && mx <= tx+cw && my >= cy && my <= cy+cardH) {
+          return {type:'tableau', col, cardIdx:i};
+        }
+      }
+    }
+    return null;
+  }
+
+  // ── game logic ───────────────────────────────────────────────────────────
+  function rankIdx(r) { return RANKS.indexOf(r); }
+
+  function canPlaceOnFoundation(card, fIdx) {
+    const f = foundations[fIdx];
+    if (f.length === 0) return card.rank === 'A';
+    const top = f[f.length-1];
+    return top.suit === card.suit && rankIdx(card.rank) === rankIdx(top.rank) + 1;
+  }
+
+  function canPlaceOnTableau(card, col) {
+    const pile = tableau[col];
+    if (pile.length === 0) return card.rank === 'K';
+    const top = pile[pile.length-1];
+    if (!top.faceUp) return false;
+    return isRed(card.suit) !== isRed(top.suit) && rankIdx(card.rank) === rankIdx(top.rank) - 1;
+  }
+
+  function checkWin() {
+    return foundations.every(f => f.length === 13);
+  }
+
+  function autoComplete() {
+    // Try to move cards to foundations automatically
+    let moved = true;
+    while (moved) {
+      moved = false;
+      // from waste
+      if (waste.length > 0) {
+        const card = waste[waste.length-1];
+        for (let f = 0; f < 4; f++) {
+          if (canPlaceOnFoundation(card, f)) {
+            foundations[f].push(waste.pop());
+            moves++; moved = true; break;
+          }
+        }
+      }
+      // from tableau tops
+      for (let col = 0; col < 7; col++) {
+        const pile = tableau[col];
+        if (pile.length > 0 && pile[pile.length-1].faceUp) {
+          const card = pile[pile.length-1];
+          for (let f = 0; f < 4; f++) {
+            if (canPlaceOnFoundation(card, f)) {
+              foundations[f].push(pile.pop());
+              if (pile.length > 0 && !pile[pile.length-1].faceUp) pile[pile.length-1].faceUp = true;
+              moves++; moved = true; break;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // ── draw ─────────────────────────────────────────────────────────────────
+  function draw() {
+    raf = requestAnimationFrame(draw);
+    const nW = body.clientWidth || 500, nH = body.clientHeight || 400;
+    if (nW !== W || nH !== H) { W = c.width = nW; H = c.height = nH; }
+    const paper = isPaper();
+    const {pad, cw, ch, topY} = layout();
+    const overlap = cardOverlap(ch, true);
+
+    // background
+    ctx.fillStyle = paper ? '#2e7d2e' : '#1a5c1a';
+    ctx.fillRect(0, 0, W, H);
+    // subtle felt lines
+    ctx.strokeStyle = paper ? 'rgba(255,255,255,0.025)' : 'rgba(255,255,255,0.02)';
+    ctx.lineWidth = 1;
+    for (let y = 0; y < H; y += 10) { ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke(); }
+
+    // status bar
+    ctx.fillStyle = 'rgba(255,255,255,0.65)';
+    ctx.font = `300 10px 'IBM Plex Mono', monospace`;
+    ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+    const elapsed = won ? '' : `  ${Math.floor((Date.now()-startTime)/1000)}s`;
+    ctx.fillText(`moves: ${moves}${elapsed}`, pad, 8);
+
+    // ── stock ──────────────────────────────────────────────────────────────
+    const sx = pileX(0, pad, cw);
+    if (stock.length > 0) {
+      drawCard({faceUp:false}, sx, topY, cw, ch, false);
+      // count badge
+      ctx.fillStyle = 'rgba(255,255,255,0.55)';
+      ctx.font = `300 8px 'IBM Plex Mono', monospace`;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+      ctx.fillText(stock.length, sx+cw/2, topY+ch+2);
+    } else {
+      drawEmptyPile(sx, topY, cw, ch, '↺');
+    }
+
+    // ── waste ──────────────────────────────────────────────────────────────
+    const wx = pileX(1, pad, cw);
+    if (waste.length > 0) {
+      // show top 3 fanned slightly
+      const show = Math.min(3, waste.length);
+      const fanOff = Math.min(14, cw * 0.2);
+      for (let i = show-1; i >= 0; i--) {
+        const card = waste[waste.length - show + i];
+        const wfx = wx + (show-1-i) * 0; // stack, no fan horizontally
+        // just show top card plainly (or top 3 slightly stacked)
+        if (i < show-1) {
+          // draw peek cards slightly shifted
+          drawCard({...card, faceUp:true}, wx + (i-(show-1))*Math.min(8,cw*0.12), topY, cw, ch, false);
+        }
+      }
+      drawCard(waste[waste.length-1], wx, topY, cw, ch, false);
+    } else {
+      drawEmptyPile(wx, topY, cw, ch, '');
+    }
+
+    // ── foundations ────────────────────────────────────────────────────────
+    const suitLabels = ['♠','♥','♦','♣'];
+    for (let f = 0; f < 4; f++) {
+      const fx = pileX(3+f, pad, cw);
+      if (foundations[f].length > 0) {
+        drawCard(foundations[f][foundations[f].length-1], fx, topY, cw, ch, false);
+      } else {
+        drawEmptyPile(fx, topY, cw, ch, suitLabels[f]);
+      }
+    }
+
+    // ── tableau ────────────────────────────────────────────────────────────
+    const baseY = topY + ch + pad;
+    for (let col = 0; col < 7; col++) {
+      const tx = pileX(col, pad, cw);
+      const pile = tableau[col];
+      if (pile.length === 0) {
+        drawEmptyPile(tx, baseY, cw, ch, '');
+      } else {
+        for (let i = 0; i < pile.length; i++) {
+          const card = pile[i];
+          const cy = baseY + i * overlap;
+          // skip cards being dragged
+          if (drag && drag.fromPile === 'tableau' && drag.fromCol === col && i >= drag.fromIdx) continue;
+          drawCard(card, tx, cy, cw, ch, false);
+        }
+      }
+    }
+
+    // ── drag cards ─────────────────────────────────────────────────────────
+    if (drag) {
+      for (let i = 0; i < drag.cards.length; i++) {
+        drawCard(drag.cards[i], drag.x, drag.y + i * overlap, cw, ch, true);
+      }
+    }
+
+    // ── win overlay ────────────────────────────────────────────────────────
+    if (won) {
+      ctx.fillStyle = 'rgba(0,0,0,0.45)';
+      ctx.fillRect(0, 0, W, H);
+      ctx.fillStyle = '#44ff88';
+      ctx.font = `400 26px 'IBM Plex Mono', monospace`;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('You Win! 🎉', W/2, H/2 - 18);
+      ctx.fillStyle = 'rgba(255,255,255,0.6)';
+      ctx.font = `300 11px 'IBM Plex Mono', monospace`;
+      ctx.fillText(`${moves} moves · click to play again`, W/2, H/2 + 14);
+    }
+
+    ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+  }
+
+  // ── mouse events ─────────────────────────────────────────────────────────
+  function getXY(e) {
+    const rc = c.getBoundingClientRect();
+    const touch = e.touches ? e.touches[0] : e;
+    return [touch.clientX - rc.left, touch.clientY - rc.top];
+  }
+
+  c.addEventListener('mousedown', e => {
+    if (won) { newGame(); return; }
+    const [mx, my] = getXY(e);
+    const hit = hitTest(mx, my);
+    if (!hit) return;
+
+    const {pad, cw, ch, topY} = layout();
+    const overlap = cardOverlap(ch, true);
+
+    if (hit.type === 'stock') {
+      if (stock.length > 0) {
+        const card = stock.pop();
+        card.faceUp = true;
+        waste.push(card);
+        moves++;
+      } else {
+        // reset waste to stock
+        while (waste.length) { const c2 = waste.pop(); c2.faceUp = false; stock.push(c2); }
+        moves++;
+      }
+      return;
+    }
+
+    // pick up cards for drag
+    let cards = [], fromPile, fromCol, fromIdx;
+    if (hit.type === 'waste' && waste.length > 0) {
+      cards = [waste[waste.length-1]];
+      fromPile = 'waste'; fromCol = -1; fromIdx = waste.length-1;
+    } else if (hit.type === 'foundation') {
+      const f = foundations[hit.idx];
+      if (f.length > 0) {
+        cards = [f[f.length-1]];
+        fromPile = 'foundation'; fromCol = hit.idx; fromIdx = f.length-1;
+      }
+    } else if (hit.type === 'tableau') {
+      const pile = tableau[hit.col];
+      if (hit.cardIdx >= 0 && pile[hit.cardIdx]) {
+        if (!pile[hit.cardIdx].faceUp) {
+          // flip face-down card if it's the top
+          if (hit.cardIdx === pile.length-1) { pile[hit.cardIdx].faceUp = true; moves++; }
+          return;
+        }
+        cards = pile.slice(hit.cardIdx);
+        fromPile = 'tableau'; fromCol = hit.col; fromIdx = hit.cardIdx;
+      }
+    }
+
+    if (cards.length === 0) return;
+
+    // card top-left position
+    let cardX, cardY;
+    if (fromPile === 'waste') { cardX = pileX(1, pad, cw); cardY = topY; }
+    else if (fromPile === 'foundation') { cardX = pileX(3+fromCol, pad, cw); cardY = topY; }
+    else { cardX = pileX(fromCol, pad, cw); cardY = topY + ch + pad + fromIdx * overlap; }
+
+    drag = {
+      cards, fromPile, fromCol, fromIdx,
+      x: cardX, y: cardY,
+      ox: mx - cardX, oy: my - cardY
+    };
+  });
+
+  c.addEventListener('mousemove', e => {
+    if (!drag) return;
+    const [mx, my] = getXY(e);
+    drag.x = mx - drag.ox;
+    drag.y = my - drag.oy;
+  });
+
+  c.addEventListener('mouseup', e => {
+    if (!drag) return;
+    const {pad, cw, ch, topY} = layout();
+    const [mx, my] = getXY(e);
+    const hit = hitTest(mx, my);
+    let placed = false;
+
+    if (hit && drag.cards.length === 1) {
+      // try foundation
+      if (hit.type === 'foundation') {
+        if (canPlaceOnFoundation(drag.cards[0], hit.idx)) {
+          // remove from source
+          if (drag.fromPile === 'waste') waste.pop();
+          else if (drag.fromPile === 'foundation') foundations[drag.fromCol].pop();
+          else tableau[drag.fromCol].splice(drag.fromIdx);
+          foundations[hit.idx].push(drag.cards[0]);
+          moves++; placed = true;
+        }
+      }
+    }
+
+    if (!placed && hit && hit.type === 'tableau') {
+      if (canPlaceOnTableau(drag.cards[0], hit.col)) {
+        if (drag.fromPile === 'waste') waste.pop();
+        else if (drag.fromPile === 'foundation') foundations[drag.fromCol].pop();
+        else tableau[drag.fromCol].splice(drag.fromIdx);
+        for (const card of drag.cards) tableau[hit.col].push(card);
+        moves++; placed = true;
+      }
+    }
+
+    // auto-flip revealed tableau card
+    if (placed && drag.fromPile === 'tableau') {
+      const pile = tableau[drag.fromCol];
+      if (pile.length > 0 && !pile[pile.length-1].faceUp) {
+        pile[pile.length-1].faceUp = true;
+      }
+    }
+
+    drag = null;
+    autoComplete();
+    if (checkWin()) won = true;
+  });
+
+  // double-click: auto-send to foundation
+  c.addEventListener('dblclick', e => {
+    if (won) return;
+    const [mx, my] = getXY(e);
+    const hit = hitTest(mx, my);
+    if (!hit) return;
+    let card = null, removeFn = null;
+
+    if (hit.type === 'waste' && waste.length > 0) {
+      card = waste[waste.length-1];
+      removeFn = () => waste.pop();
+    } else if (hit.type === 'tableau') {
+      const pile = tableau[hit.col];
+      if (hit.cardIdx === pile.length-1 && pile[hit.cardIdx]?.faceUp) {
+        card = pile[hit.cardIdx];
+        removeFn = () => { pile.pop(); if(pile.length>0&&!pile[pile.length-1].faceUp) pile[pile.length-1].faceUp=true; };
+      }
+    }
+
+    if (card) {
+      for (let f = 0; f < 4; f++) {
+        if (canPlaceOnFoundation(card, f)) {
+          removeFn();
+          foundations[f].push(card);
+          moves++;
+          autoComplete();
+          if (checkWin()) won = true;
+          return;
+        }
+      }
+    }
+  });
+
+  requestAnimationFrame(draw);
+
+  // ctrl buttons
+  mkBtn('New Game', ctrl).addEventListener('click', () => newGame());
+  const info = mkInfo(ctrl);
+  info.textContent = 'drag cards · dbl-click → foundation';
+
+  return () => { cancelAnimationFrame(raf); ro.disconnect(); };
 }
 
 // ── final init ────────────────────────────────────────────────────────────────
