@@ -2976,7 +2976,7 @@ function initPacman(body, ctrl) {
         } else if(map[pac.ty]&&map[pac.ty][pac.tx]===3){
           map[pac.ty][pac.tx]=2; score+=50; scoreEl.textContent=score;
           powerTimer=400; eatCombo=0;
-          ghosts.forEach(g=>{if(!g.eaten&&!g.inPen){g.scared=true;}});
+          ghosts.forEach(g=>{ if(!g.eaten){ g.scared=true; } });
         }
         // Immediately try to continue in queued dir or same dir
       }
@@ -3009,14 +3009,33 @@ function initPacman(body, ctrl) {
       return;
     }
 
-    // ── Eaten: race back to pen ──
+    // ── Eaten: race directly back to pen entrance (13,11) ──
     if(g.eaten){
-      if(!g.moving){ ghostChooseDir(g); g.moving=true; g.frac=0; }
+      const homeCol=13, homeRow=11;
+      if(!g.moving){
+        // Pick the direction that reduces Manhattan distance most, avoiding walls
+        const dirs=[{dx:0,dy:-1},{dx:0,dy:1},{dx:-1,dy:0},{dx:1,dy:0}];
+        // Don't reverse unless stuck
+        const fwd=dirs.filter(d=>!(d.dx===-g.dx&&d.dy===-g.dy));
+        const open=fwd.filter(d=>!wallG(wrapCol(g.tx+d.dx,g.ty+d.dy),g.ty+d.dy));
+        const choices=open.length?open:dirs.filter(d=>!wallG(wrapCol(g.tx+d.dx,g.ty+d.dy),g.ty+d.dy));
+        if(choices.length){
+          // pick closest to home
+          choices.sort((a,b2)=>{
+            const da=Math.abs(g.tx+a.dx-homeCol)+Math.abs(g.ty+a.dy-homeRow);
+            const db=Math.abs(g.tx+b2.dx-homeCol)+Math.abs(g.ty+b2.dy-homeRow);
+            return da-db;
+          });
+          g.dx=choices[0].dx; g.dy=choices[0].dy;
+        }
+        g.moving=true; g.frac=0;
+      }
       g.frac+=spd;
       if(g.frac>=1){
         g.tx=wrapCol(g.tx+g.dx,g.ty+g.dy); g.ty+=g.dy; g.frac=0; g.moving=false;
-        if(g.tx===13&&g.ty===11){ g.eaten=false; g.scared=false; g.inPen=true; g.penTimer=60; }
-        else { ghostChooseDir(g); g.moving=true; }
+        if(g.tx===homeCol&&g.ty===homeRow){
+          g.eaten=false; g.scared=false; g.inPen=true; g.penTimer=60;
+        }
       }
       return;
     }
@@ -3063,12 +3082,10 @@ function initPacman(body, ctrl) {
 
     // Collisions — check current tile and interpolated tile
     ghosts.forEach(g=>{
-      if(g.inPen) return;
+      if(g.inPen||g.eaten) return;
       const sameTile=g.tx===pac.tx&&g.ty===pac.ty;
-      // Also check if they crossed each other mid-tile (pac going right, ghost going left etc)
       const crossed=(pac.tx===g.tx+g.dx&&pac.ty===g.ty+g.dy&&g.tx===pac.tx+pac.dx&&g.ty===pac.ty+pac.dy);
       if(sameTile||crossed){
-        if(g.eaten) return;
         if(g.scared){
           g.scared=false; g.eaten=true; eatCombo++;
           score+=200*Math.pow(2,eatCombo-1); scoreEl.textContent=score;
@@ -3090,42 +3107,56 @@ function initPacman(body, ctrl) {
   function entityPy(e,sc){ return (e.ty + (e.moving?e.dy*e.frac:0))*sc + sc/2; }
 
   function drawWalls(ox,oy,sc,paper){
-    // Draw walls as filled blue blocks with a brighter inner border
+    // Dark navy background — no wall fills, just lines
+    ctx.fillStyle=paper?'#0d0d2b':'#00001a';
+    ctx.fillRect(ox,oy,sc*COLS,sc*ROWS);
+
+    function isW(c2,r2){ return c2<0||c2>=COLS||r2<0||r2>=ROWS||BASE[r2][c2]===1; }
+
+    // Each wall cell: draw a bright blue line on every face that borders open space.
+    // Lines are drawn at the wall/corridor boundary (the corridor side of the wall cell).
+    // Line is offset inward by half linewidth so it sits just inside the wall tile.
+    const lw = Math.max(2, sc*0.18);
+    const wallLine = paper?'#5c6bc0':'#2929ff';
+    ctx.strokeStyle=wallLine;
+    ctx.lineWidth=lw;
+    ctx.lineCap='square';
+
     for(let r=0;r<ROWS;r++){
       for(let cc=0;cc<COLS;cc++){
-        if(BASE[r][cc]!==1) continue;
+        if(!isW(cc,r)) continue;
         const x=ox+cc*sc, y=oy+r*sc;
-        ctx.fillStyle=paper?'#1a237e':'#0000cc';
-        ctx.fillRect(x,y,sc+0.5,sc+0.5);
-        // bright edge lines on sides adjacent to open corridors
-        ctx.strokeStyle=paper?'#7986cb':'#4488ff';
-        ctx.lineWidth=Math.max(1,sc*0.15);
-        const adj=[[0,-1,'T'],[0,1,'B'],[-1,0,'L'],[1,0,'R']];
-        for(const [dc2,dr,side] of adj){
-          const nc=cc+dc2,nr=r+dr;
-          const nv=(nr<0||nr>=ROWS||nc<0||nc>=COLS)?1:BASE[nr][nc];
-          if(nv!==1){
-            ctx.beginPath();
-            if(side==='T'){ctx.moveTo(x,y+0.5);ctx.lineTo(x+sc,y+0.5);}
-            else if(side==='B'){ctx.moveTo(x,y+sc-0.5);ctx.lineTo(x+sc,y+sc-0.5);}
-            else if(side==='L'){ctx.moveTo(x+0.5,y);ctx.lineTo(x+0.5,y+sc);}
-            else{ctx.moveTo(x+sc-0.5,y);ctx.lineTo(x+sc-0.5,y+sc);}
-            ctx.stroke();
-          }
+        const h=lw*0.5; // half-linewidth inset so line centre sits on the boundary
+
+        // Top face borders open space above → draw horizontal line near top of this cell
+        if(!isW(cc,r-1)){
+          ctx.beginPath(); ctx.moveTo(x,y+h); ctx.lineTo(x+sc,y+h); ctx.stroke();
+        }
+        // Bottom face
+        if(!isW(cc,r+1)){
+          ctx.beginPath(); ctx.moveTo(x,y+sc-h); ctx.lineTo(x+sc,y+sc-h); ctx.stroke();
+        }
+        // Left face
+        if(!isW(cc-1,r)){
+          ctx.beginPath(); ctx.moveTo(x+h,y); ctx.lineTo(x+h,y+sc); ctx.stroke();
+        }
+        // Right face
+        if(!isW(cc+1,r)){
+          ctx.beginPath(); ctx.moveTo(x+sc-h,y); ctx.lineTo(x+sc-h,y+sc); ctx.stroke();
         }
       }
     }
-    // Ghost door
-    ctx.strokeStyle='#ffb8ff'; ctx.lineWidth=Math.max(1,sc*0.18);
-    for(let r=0;r<ROWS;r++) for(let cc=0;cc<COLS;cc++){
-      if(map[r][cc]===4&&BASE[r][cc]===4){
-        // draw door only on top of pen (row 13)
-        if(r===13){
-          ctx.beginPath();
-          ctx.moveTo(ox+cc*sc,oy+r*sc+sc*0.5);
-          ctx.lineTo(ox+(cc+1)*sc,oy+r*sc+sc*0.5);
-          ctx.stroke();
-        }
+
+    // Ghost pen door — pink horizontal line
+    ctx.strokeStyle='#ffb8ff';
+    ctx.lineWidth=Math.max(2, sc*0.2);
+    ctx.lineCap='butt';
+    for(let cc=0;cc<COLS;cc++){
+      if(BASE[13][cc]===4){
+        ctx.beginPath();
+        ctx.moveTo(ox+cc*sc, oy+13*sc+sc*0.5);
+        ctx.lineTo(ox+(cc+1)*sc, oy+13*sc+sc*0.5);
+        ctx.stroke();
       }
     }
   }
@@ -3186,59 +3217,63 @@ function initPacman(body, ctrl) {
     const cx=ox+entityPx(g,sc), cy=oy+entityPy(g,sc);
     const r=sc*0.44;
     const now=Date.now();
-    const flashing=g.scared&&powerTimer>0&&powerTimer<150&&Math.floor(now/180)%2===0;
+    const flashing=g.scared&&powerTimer<150&&Math.floor(now/180)%2===0;
+
+    // Eaten ghost: just a pair of eyes travelling back to the pen
+    if(g.eaten){
+      const eyeL=cx-r*0.28, eyeR=cx+r*0.28, eyeY=cy-r*0.1;
+      ctx.fillStyle='#fff';
+      ctx.beginPath(); ctx.ellipse(eyeL,eyeY,r*0.2,r*0.26,0,0,Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(eyeR,eyeY,r*0.2,r*0.26,0,0,Math.PI*2); ctx.fill();
+      ctx.fillStyle='#44f';
+      const pu=r*0.08;
+      ctx.beginPath(); ctx.arc(eyeL+g.dx*pu,eyeY+g.dy*pu,r*0.11,0,Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.arc(eyeR+g.dx*pu,eyeY+g.dy*pu,r*0.11,0,Math.PI*2); ctx.fill();
+      return;
+    }
+
+    // Body color
     let fill;
-    if(g.eaten) fill='rgba(0,0,0,0)';
-    else if(flashing) fill='#ffffff';
+    if(flashing) fill='#ffffff';
     else if(g.scared) fill='#0000bb';
     else fill=g.col;
 
-    if(!g.eaten){
-      ctx.fillStyle=fill;
-      ctx.beginPath();
-      ctx.arc(cx,cy-r*0.05,r,Math.PI,0);
-      // Wavy bottom skirt
-      const bot=cy+r*0.85;
-      ctx.lineTo(cx+r,bot);
-      const wc=4, ww=(r*2)/wc;
-      for(let i=wc;i>0;i--){
-        const wx=cx-r+i*ww;
-        ctx.quadraticCurveTo(wx-ww*0.2,bot+(i%2?r*0.22:-r*0.15),wx-ww*0.5,bot);
-        ctx.quadraticCurveTo(wx-ww*0.8,bot+(i%2?-r*0.15:r*0.22),wx-ww,bot);
-      }
-      ctx.closePath(); ctx.fill();
+    // Ghost body
+    ctx.fillStyle=fill;
+    ctx.beginPath();
+    ctx.arc(cx,cy-r*0.05,r,Math.PI,0);
+    const bot=cy+r*0.85;
+    ctx.lineTo(cx+r,bot);
+    const wc=4, ww=(r*2)/wc;
+    for(let i=wc;i>0;i--){
+      const wx=cx-r+i*ww;
+      ctx.quadraticCurveTo(wx-ww*0.2,bot+(i%2?r*0.22:-r*0.15),wx-ww*0.5,bot);
+      ctx.quadraticCurveTo(wx-ww*0.8,bot+(i%2?-r*0.15:r*0.22),wx-ww,bot);
     }
+    ctx.closePath(); ctx.fill();
 
     // Eyes
     const eyeL=cx-r*0.28, eyeR=cx+r*0.28, eyeY=cy-r*0.15;
-    if(g.scared&&!g.eaten){
-      // Scared eyes: two white dots + squiggly mouth
-      ctx.fillStyle='#fff';
-      ctx.beginPath(); ctx.arc(eyeL,eyeY,r*0.1,0,Math.PI*2); ctx.fill();
-      ctx.beginPath(); ctx.arc(eyeR,eyeY,r*0.1,0,Math.PI*2); ctx.fill();
-      ctx.strokeStyle='#fff'; ctx.lineWidth=1.2;
+    if(g.scared){
+      // Scared: white dots + zigzag mouth
+      ctx.fillStyle='rgba(255,255,255,0.7)';
+      ctx.beginPath(); ctx.arc(eyeL,eyeY,r*0.09,0,Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.arc(eyeR,eyeY,r*0.09,0,Math.PI*2); ctx.fill();
+      ctx.strokeStyle='rgba(255,255,255,0.7)'; ctx.lineWidth=Math.max(1,r*0.12);
       ctx.beginPath();
-      const my=cy+r*0.3;
-      ctx.moveTo(cx-r*0.35,my);
-      for(let i=0;i<=4;i++) ctx.lineTo(cx-r*0.35+i*r*0.175, my+(i%2?r*0.12:-r*0.12));
+      const my=cy+r*0.28;
+      ctx.moveTo(cx-r*0.32,my);
+      for(let i=0;i<=4;i++) ctx.lineTo(cx-r*0.32+i*r*0.16, my+(i%2?r*0.11:-r*0.11));
       ctx.stroke();
-    } else if(!g.eaten){
-      // Normal eyes
-      ctx.fillStyle='#fff';
-      ctx.beginPath(); ctx.ellipse(eyeL,eyeY,r*0.2,r*0.25,0,0,Math.PI*2); ctx.fill();
-      ctx.beginPath(); ctx.ellipse(eyeR,eyeY,r*0.2,r*0.25,0,0,Math.PI*2); ctx.fill();
-      ctx.fillStyle='#00f';
-      const pu=r*0.1;
-      ctx.beginPath(); ctx.arc(eyeL+g.dx*pu,eyeY+g.dy*pu,r*0.12,0,Math.PI*2); ctx.fill();
-      ctx.beginPath(); ctx.arc(eyeR+g.dx*pu,eyeY+g.dy*pu,r*0.12,0,Math.PI*2); ctx.fill();
     } else {
-      // Eaten — just eyes floating
+      // Normal eyes: white ellipse + blue iris
       ctx.fillStyle='#fff';
-      ctx.beginPath(); ctx.ellipse(eyeL,eyeY,r*0.2,r*0.25,0,0,Math.PI*2); ctx.fill();
-      ctx.beginPath(); ctx.ellipse(eyeR,eyeY,r*0.2,r*0.25,0,0,Math.PI*2); ctx.fill();
-      ctx.fillStyle='#00f';
-      ctx.beginPath(); ctx.arc(eyeL+g.dx*r*0.1,eyeY+g.dy*r*0.1,r*0.12,0,Math.PI*2); ctx.fill();
-      ctx.beginPath(); ctx.arc(eyeR+g.dx*r*0.1,eyeY+g.dy*r*0.1,r*0.12,0,Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(eyeL,eyeY,r*0.19,r*0.24,0,0,Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(eyeR,eyeY,r*0.19,r*0.24,0,0,Math.PI*2); ctx.fill();
+      ctx.fillStyle='#33f';
+      const pu=r*0.09;
+      ctx.beginPath(); ctx.arc(eyeL+g.dx*pu,eyeY+g.dy*pu,r*0.11,0,Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.arc(eyeR+g.dx*pu,eyeY+g.dy*pu,r*0.11,0,Math.PI*2); ctx.fill();
     }
   }
 
