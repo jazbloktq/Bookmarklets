@@ -278,42 +278,83 @@ function makeResizable(win, handle) {
 }
 
 // ── window manager ────────────────────────────────────────────────────────────
+// Game state is preserved between open/close by caching the DOM subtree.
+// Each cache entry: { body, ctrl, destroy, dc } — kept alive off-screen.
+const _winCache = new Map(); // toyIdx → { body, ctrl, rz, destroy, dc, savedW, savedH, savedL, savedT }
+
 let activeWin = null;
 function openWin(i, toy) {
+  const cached = _winCache.get(i);
   const W = Math.min(640, window.innerWidth-220);
   const H = Math.min(500, window.innerHeight-60);
-  // always open centred in the space to the right of the panel
-  const left = 216 + Math.round((window.innerWidth - 216 - W) / 2);
-  const top  = Math.round((window.innerHeight - H) / 2);
+  const left = 216 + Math.round((window.innerWidth - 216 - (cached ? parseInt(cached.savedW) : W)) / 2);
+  const top  = Math.round((window.innerHeight - (cached ? parseInt(cached.savedH) : H)) / 2);
+  const w    = cached ? cached.savedW : W+'px';
+  const h    = cached ? cached.savedH : H+'px';
+
   const win = document.createElement('div'); win.className='sb-win'; win._toyIdx=i;
-  win.style.cssText = `left:${left}px;top:${top}px;width:${W}px;height:${H}px;`;
+  win.style.cssText = `left:${left}px;top:${top}px;width:${w};height:${h};`;
   const bar  = document.createElement('div'); bar.className='sb-win-bar';
   const nm   = document.createElement('span'); nm.className='sb-win-name'; nm.textContent=toy.name;
   const cl   = document.createElement('button'); cl.className='sb-win-close'; cl.textContent='—'; cl.title='Close';
   bar.appendChild(nm); bar.appendChild(cl);
-  const body = document.createElement('div'); body.className='sb-win-body';
-  const ctrl = document.createElement('div'); ctrl.className='sb-win-ctrl';
-  const rz   = document.createElement('div'); rz.className='sb-win-resize';
-  win.appendChild(bar); win.appendChild(body); win.appendChild(ctrl); win.appendChild(rz);
+
+  let body, ctrl, destroy, dc;
+  if (cached) {
+    body = cached.body; ctrl = cached.ctrl;
+    destroy = cached.destroy;
+  } else {
+    body = document.createElement('div'); body.className='sb-win-body';
+    ctrl = document.createElement('div'); ctrl.className='sb-win-ctrl';
+  }
+
+  win.appendChild(bar); win.appendChild(body); win.appendChild(ctrl);
   ROOT.appendChild(win); styleWin(win);
-  activeWin=win; items[i].classList.add('active'); refreshItem(items[i]);
+
+  if (!cached) {
+    // Init after body is in the DOM so clientWidth/Height are valid
+    destroy = toy.init(body, ctrl);
+  } else {
+    // Re-sync canvases now that body is back in the DOM with real dimensions
+    body.querySelectorAll('canvas').forEach(cv => {
+      cv.width = body.clientWidth; cv.height = body.clientHeight;
+    });
+  }
+  activeWin = win; items[i].classList.add('active'); refreshItem(items[i]);
   cl.addEventListener('click', ()=>closeWin(win));
-  cl.setAttribute('tabindex','-1'); // prevent close button from stealing Enter
-  win._dc=makeDraggable(win,bar); makeResizable(win,rz);
-  win._destroy=toy.init(body,ctrl);
-  // Blur any focused element so keyboard games work immediately
-  if(document.activeElement&&document.activeElement!==document.body) document.activeElement.blur();
+  cl.setAttribute('tabindex','-1');
+  dc = makeDraggable(win, bar);
+  win._body = body; win._ctrl = ctrl;
+  win._destroy = destroy; win._dc = dc;
+  if (document.activeElement && document.activeElement !== document.body) document.activeElement.blur();
 }
 function closeWin(win) {
-  if(!win)return; win._destroy?.(); win._dc?.();
-  items[win._toyIdx].classList.remove('active'); refreshItem(items[win._toyIdx]);
-  win.remove(); if(activeWin===win)activeWin=null;
+  if (!win) return;
+  const i = win._toyIdx;
+  _winCache.set(i, {
+    body:    win._body,
+    ctrl:    win._ctrl,
+    destroy: win._destroy,
+    savedW:  win.offsetWidth  + 'px',
+    savedH:  win.offsetHeight + 'px',
+  });
+  win._dc?.();
+  items[i].classList.remove('active'); refreshItem(items[i]);
+  win.remove();
+  if (activeWin === win) activeWin = null;
 }
 function toggleToy(i) {
-  if(activeWin&&activeWin._toyIdx===i){ closeWin(activeWin); return; }
-  if(activeWin) closeWin(activeWin);
+  if (activeWin && activeWin._toyIdx === i) { closeWin(activeWin); return; }
+  if (activeWin) closeWin(activeWin);
   openWin(i, TOYS[i]);
 }
+
+// Shift+X or Alt+X — close the active game and collapse the sidebar (works even inside inputs)
+document.addEventListener('keydown', e => {
+  if ((e.key==='x'||e.key==='X') && (e.shiftKey||e.altKey) && !e.ctrlKey && !e.metaKey) {
+    if (activeWin) { e.preventDefault(); closeWin(activeWin); PANEL.classList.add('hidden'); TAB.classList.add('visible'); }
+  }
+});
 
 // keyboard — type a number (1–29) to open that toy; multi-digit buffered within KB_MULTI_DIGIT_MS
 // Suppressed when an active toy window is open (digits go to the toy instead)
@@ -427,7 +468,6 @@ const TOYS = [
   {name:'Memory Pattern',       init:initMemoryPattern,  game:true},
   {name:'Wordle',               init:initWordle,         game:true},
   {name:'Word Search',          init:initWordSearch,     game:true},
-  {name:'Crossword',            init:initCrossword,      game:true},
   {name:'Mahjong Solitaire',    init:initMahjong,        game:true},
   {name:'Lights Out',           init:initLightsOut,      game:true},
   {name:'Poker',                init:initPoker,          game:true},
@@ -6765,7 +6805,7 @@ function initMissileCommand(body, ctrl) {
   }
 
   function addExplosion(x,y,r,col){
-    explosions4.push({x,y,r,maxR:r,life:1,col,growing:true});
+    explosions4.push({x,y,r,maxR:r,life:1,col,growing:true,id:Math.random()});
   }
 
   // ── step ────────────────────────────────────────────────────────────────
@@ -6816,8 +6856,8 @@ function initMissileCommand(body, ctrl) {
       if(m.trail.length>35) m.trail.shift();
       m.x+=m.vx; m.y+=m.vy;
 
-      // MIRV split — fires when missile crosses its split Y
-      if(m.isMirv&&!m.mirvDone&&m.y>=m.ty){
+      // MIRV split — fires when missile reaches its split Y (same tolerance as target check)
+      if(m.isMirv&&!m.mirvDone&&m.y>=m.ty-4){
         m.mirvDone=true; m.alive=false;
         // Create birth explosion with a known ID so children are immune to it
         const birthExpId=Math.random();
@@ -6882,7 +6922,6 @@ function initMissileCommand(body, ctrl) {
     // Explosion-missile collisions
     const bossChildren=[];
     for(const exp of explosions4){
-      if(!exp.id) exp.id=Math.random(); // unique id per explosion
       if(exp.growing) exp.r=Math.min(exp.maxR,exp.r+2);
       else exp.r*=0.96;
       exp.life-=0.018;
@@ -13322,542 +13361,226 @@ function initWordSearch(body,ctrl){
 
 
 // ════════════════════════════════════════════════════════════════════════════
-// TOY — CROSSWORD
-// ════════════════════════════════════════════════════════════════════════════
-function initCrossword(body,ctrl){
-  const {c,ctx,ro}=mkCanvas(body);
-  let W=c.width,H=c.height,raf;
-
-  // Curated mini crossword puzzles — each has a grid template and clues
-  const PUZZLES=[
-    { // Puzzle 1 — 7x7
-      size:7,
-      // grid: '#' = black, '.' = white cell
-      template:[
-        '#...###',
-        '....###',
-        '...####',
-        '.......',
-        '####...',
-        '###....',
-        '###...#',
-      ],
-      across:[
-        {num:1,clue:'Feline pet',answer:'CAT',r:0,c:1},
-        {num:2,clue:'Illumination',answer:'LIGHT',r:1,c:0},
-        {num:4,clue:'Full row across middle',answer:'NETWORK',r:3,c:0},
-        {num:6,clue:'Body of water',answer:'LAKE',r:4,c:4},
-        {num:7,clue:'Small insect',answer:'ANT',r:5,c:3},
-        {num:8,clue:'Combustion result',answer:'ASH',r:6,c:3},
-      ],
-      down:[
-        {num:1,clue:'Automobile',answer:'CAR',r:0,c:1},
-        {num:2,clue:'Illuminated',answer:'LIT',r:1,c:0},
-        {num:3,clue:'Feathered creature',answer:'HEN',r:1,c:1},
-        {num:4,clue:'Nocturnal creature',answer:'NET',r:3,c:0},
-        {num:5,clue:'Part of a tree',answer:'OAK',r:3,c:4},
-      ],
-    },
-    { // Puzzle 2 — 7x7
-      size:7,
-      template:[
-        '...#...',
-        '.#...#.',
-        '.......',
-        '#.###.#',
-        '.......',
-        '.#...#.',
-        '...#...',
-      ],
-      across:[
-        {num:1,clue:'Heavenly body',answer:'SUN',r:0,c:0},
-        {num:3,clue:'Nocturnal flier',answer:'BAT',r:0,c:4},
-        {num:4,clue:'Travel on water',answer:'VOYAGE',r:2,c:0},
-        {num:5,clue:'Reptile',answer:'LIZARD',r:4,c:0},
-        {num:6,clue:'Not cold',answer:'HOT',r:6,c:0},
-        {num:7,clue:'Chopping tool',answer:'AXE',r:6,c:4},
-      ],
-      down:[
-        {num:1,clue:'Slide on snow',answer:'SKI',r:0,c:0},
-        {num:2,clue:'Baby dog',answer:'PUP',r:0,c:2},
-        {num:3,clue:'Winged mammal',answer:'BAT',r:0,c:4},
-        {num:4,clue:'Vessel',answer:'VAT',r:2,c:0},
-        {num:5,clue:'Precious stone',answer:'LAP',r:4,c:0},
-      ],
-    },
-    { // Puzzle 3 — 9x9
-      size:9,
-      template:[
-        '....#....',
-        '.##.#.##.',
-        '.........',
-        '.##.#.##.',
-        '#...#...#',
-        '.##.#.##.',
-        '.........',
-        '.##.#.##.',
-        '....#....',
-      ],
-      across:[
-        {num:1,clue:'Vessel for liquid',answer:'BOWL',r:0,c:0},
-        {num:2,clue:'Winged insect',answer:'MOTH',r:0,c:5},
-        {num:3,clue:'Large landmass',answer:'CONTINENT',r:2,c:0},
-        {num:4,clue:'Musical sound',answer:'TONE',r:4,c:1},
-        {num:5,clue:'Illumination',answer:'LAMP',r:4,c:5},
-        {num:6,clue:'Moving water',answer:'STREAMING',r:6,c:0},
-        {num:7,clue:'Spherical toy',answer:'BALL',r:8,c:0},
-        {num:8,clue:'Cooking vessel',answer:'WOKS',r:8,c:5},
-      ],
-      down:[
-        {num:1,clue:'Honey maker',answer:'BEE',r:0,c:0},
-        {num:2,clue:'Flowing water',answer:'BROOK',r:0,c:3},
-        {num:3,clue:'Wise bird',answer:'OWL',r:0,c:8},
-        {num:4,clue:'Sewing tool',answer:'NEEDLE',r:2,c:0},
-        {num:5,clue:'Journey',answer:'TRIP',r:2,c:4},
-        {num:6,clue:'Pastry dish',answer:'PIE',r:2,c:8},
-      ],
-    },
-  ];
-
-  let puzzleIdx=0, puzzle, userGrid, selectedCell, selectedDir, completedWords;
-
-  function loadPuzzle(idx){
-    puzzle=PUZZLES[idx%PUZZLES.length];
-    const n=puzzle.size;
-    userGrid=Array.from({length:n},()=>Array(n).fill(''));
-    selectedCell=null; selectedDir='across';
-    completedWords=new Set();
-  }
-
-  function isBlack(r,c){ return puzzle.template[r]?.[c]==='#'||puzzle.template[r]?.[c]===undefined; }
-
-  function cellNumbers(){
-    const nums={};
-    let num=1;
-    const n=puzzle.size;
-    for(let r=0;r<n;r++) for(let c=0;c<n;c++){
-      if(isBlack(r,c)) continue;
-      const acrossStart=!isBlack(r,c)&&(c===0||isBlack(r,c-1))&&!isBlack(r,c+1);
-      const downStart=!isBlack(r,c)&&(r===0||isBlack(r-1,c))&&!isBlack(r+1,c);
-      if(acrossStart||downStart){ nums[r+','+c]=num++; }
-    }
-    return nums;
-  }
-
-  function wordCells(entry,dir){
-    const cells=[];
-    if(dir==='across') for(let i=0;i<entry.answer.length;i++) cells.push([entry.r,entry.c+i]);
-    else for(let i=0;i<entry.answer.length;i++) cells.push([entry.r+i,entry.c]);
-    return cells;
-  }
-
-  function checkComplete(){
-    completedWords=new Set();
-    for(const entry of [...puzzle.across,...puzzle.down]){
-      const dir=puzzle.across.includes(entry)?'across':'down';
-      const cells=wordCells(entry,dir);
-      if(cells.every(([r,c])=>userGrid[r][c].toUpperCase()===entry.answer[cells.indexOf([r,c])===cells.findIndex(x=>x[0]===r&&x[1]===c)?cells.findIndex(x=>x[0]===r&&x[1]===c):0])){
-        // check properly
-        let ok=true;
-        for(let i=0;i<entry.answer.length;i++){
-          const [r,c]=cells[i];
-          if(userGrid[r][c].toUpperCase()!==entry.answer[i]){ok=false;break;}
-        }
-        if(ok) completedWords.add(entry.num+''+dir[0]);
-      }
-    }
-  }
-
-  function selectCell(r,c){
-    if(isBlack(r,c)) return;
-    if(selectedCell&&selectedCell[0]===r&&selectedCell[1]===c){
-      selectedDir=selectedDir==='across'?'down':'across';
-    } else {
-      selectedCell=[r,c];
-    }
-  }
-
-  function advance(){
-    if(!selectedCell) return;
-    const [r,c]=selectedCell;
-    if(selectedDir==='across'){
-      if(!isBlack(r,c+1)&&c+1<puzzle.size) selectedCell=[r,c+1];
-    } else {
-      if(!isBlack(r+1,c)&&r+1<puzzle.size) selectedCell=[r+1,c];
-    }
-  }
-
-  function retreat(){
-    if(!selectedCell) return;
-    const [r,c]=selectedCell;
-    if(selectedDir==='across'){
-      if(!isBlack(r,c-1)&&c-1>=0) selectedCell=[r,c-1];
-    } else {
-      if(!isBlack(r-1,c)&&r-1>=0) selectedCell=[r-1,c];
-    }
-  }
-
-  const onKey=e=>{
-    if(!selectedCell) return;
-    const [r,c]=selectedCell;
-    if(e.key==='Backspace'||e.key==='Delete'){
-      e.preventDefault();
-      if(userGrid[r][c]===''){ retreat(); } else { userGrid[r][c]=''; }
-      checkComplete(); return;
-    }
-    if(e.key==='ArrowRight'){ e.preventDefault(); selectedDir='across'; if(!isBlack(r,c+1)) selectedCell=[r,c+1]; return; }
-    if(e.key==='ArrowLeft'){  e.preventDefault(); selectedDir='across'; if(!isBlack(r,c-1)) selectedCell=[r,c-1]; return; }
-    if(e.key==='ArrowDown'){  e.preventDefault(); selectedDir='down';   if(!isBlack(r+1,c)) selectedCell=[r+1,c]; return; }
-    if(e.key==='ArrowUp'){    e.preventDefault(); selectedDir='down';   if(!isBlack(r-1,c)) selectedCell=[r-1,c]; return; }
-    if(/^[a-zA-Z]$/.test(e.key)){
-      e.preventDefault();
-      userGrid[r][c]=e.key.toUpperCase();
-      advance(); checkComplete();
-    }
-  };
-  document.addEventListener('keydown',onKey);
-
-  function selectedWord(){
-    // find which across/down entry contains selected cell
-    if(!selectedCell) return null;
-    const [r,c]=selectedCell;
-    const entries=selectedDir==='across'?puzzle.across:puzzle.down;
-    for(const entry of entries){
-      const cells=wordCells(entry,selectedDir);
-      if(cells.some(([er,ec])=>er===r&&ec===c)) return entry;
-    }
-    return null;
-  }
-
-  function allDone(){ return puzzle.across.length+puzzle.down.length===completedWords.size; }
-
-  let lastTs=0;
-  function draw(ts){
-    raf=requestAnimationFrame(draw);
-    W=c.width=body.clientWidth; H=c.height=body.clientHeight;
-    const paper=isPaper();
-    ctx.fillStyle=paper?'#f5f1e8':'#0d1117'; ctx.fillRect(0,0,W,H);
-
-    const n=puzzle.size;
-    const nums=cellNumbers();
-    const clueH=Math.min(H*0.30,90);
-    const gridArea=H-clueH-8;
-    const cellSz=Math.min((W-16)/n, gridArea/n);
-    const gx0=(W-cellSz*n)/2, gy0=4;
-
-    const selEntry=selectedWord();
-    const selCellsSet=new Set();
-    if(selEntry) for(const [r2,c2] of wordCells(selEntry,selectedDir)) selCellsSet.add(r2+','+c2);
-
-    for(let r=0;r<n;r++){
-      for(let c2=0;c2<n;c2++){
-        const x=gx0+c2*cellSz, y=gy0+r*cellSz;
-        if(isBlack(r,c2)){
-          ctx.fillStyle=paper?'#333':'#111'; ctx.fillRect(x,y,cellSz,cellSz);
-          continue;
-        }
-        const isSel=selectedCell&&selectedCell[0]===r&&selectedCell[1]===c2;
-        const isWord=selCellsSet.has(r+','+c2);
-        const key2=r+','+c2;
-        let bg=paper?'#fff':'#1e2430';
-        if(isWord) bg=paper?'#ddeeff':'#1a2a44';
-        if(isSel)  bg=paper?'#aaccff':'#3355aa';
-        ctx.fillStyle=bg; ctx.fillRect(x,y,cellSz,cellSz);
-        ctx.strokeStyle=paper?'rgba(0,0,0,0.25)':'rgba(255,255,255,0.15)';
-        ctx.lineWidth=0.5; ctx.strokeRect(x,y,cellSz,cellSz);
-        // Number
-        if(nums[key2]){
-          ctx.fillStyle=paper?'rgba(0,0,0,0.5)':'rgba(255,255,255,0.4)';
-          ctx.font=`400 ${Math.max(5,Math.floor(cellSz*0.28))}px 'IBM Plex Mono',monospace`;
-          ctx.textAlign='left'; ctx.textBaseline='top';
-          ctx.fillText(nums[key2],x+1,y+1);
-        }
-        // Letter
-        if(userGrid[r][c2]){
-          ctx.fillStyle=paper?'#111':'#eee';
-          ctx.font=`700 ${Math.floor(cellSz*0.55)}px 'IBM Plex Mono',monospace`;
-          ctx.textAlign='center'; ctx.textBaseline='middle';
-          ctx.fillText(userGrid[r][c2],x+cellSz/2,y+cellSz/2);
-        }
-      }
-    }
-
-    // Clue panel
-    const cy=gy0+cellSz*n+6;
-    if(selEntry){
-      const dir=selectedDir==='across'?'A':'D';
-      ctx.fillStyle=paper?'rgba(0,0,0,0.06)':'rgba(255,255,255,0.06)';
-      roundRect(ctx,8,cy,W-16,clueH-4,6); ctx.fill();
-      ctx.fillStyle=paper?'#888':'rgba(255,255,255,0.4)';
-      ctx.font=`300 9px 'IBM Plex Mono',monospace`;
-      ctx.textAlign='left'; ctx.textBaseline='top';
-      ctx.fillText(`${selEntry.num}${dir} · ${selEntry.answer.length} letters`,12,cy+6);
-      ctx.fillStyle=paper?'#111':'#eee';
-      ctx.font=`500 ${Math.min(13,Math.floor((clueH-20)*0.55))}px 'IBM Plex Mono',monospace`;
-      // word-wrap clue
-      const words2=selEntry.clue.split(' ');
-      let line='',ly=cy+18;
-      for(const wd of words2){
-        const test=line+(line?' ':'')+wd;
-        if(ctx.measureText(test).width>W-24&&line){ ctx.fillText(line,12,ly); line=wd; ly+=16; }
-        else line=test;
-      }
-      if(line) ctx.fillText(line,12,ly);
-    } else {
-      ctx.fillStyle=paper?'rgba(0,0,0,0.25)':'rgba(255,255,255,0.25)';
-      ctx.font=`300 10px 'IBM Plex Mono',monospace`;
-      ctx.textAlign='center'; ctx.textBaseline='middle';
-      ctx.fillText('tap a cell to start · type to fill · tap again to change direction',W/2,cy+clueH/2-4);
-    }
-
-    if(allDone()){
-      ctx.fillStyle=paper?'rgba(245,241,232,0.92)':'rgba(13,17,23,0.92)';
-      ctx.fillRect(0,0,W,H);
-      ctx.fillStyle=paper?'#226622':'#44ee88';
-      ctx.font=`700 20px 'IBM Plex Mono',monospace`;
-      ctx.textAlign='center'; ctx.textBaseline='middle';
-      ctx.fillText('Puzzle Complete! 🎉',W/2,H/2);
-    }
-    ctx.textAlign='left';
-  }
-
-  c.addEventListener('click',e=>{
-    const r2=c.getBoundingClientRect();
-    const n=puzzle.size;
-    const clueH=Math.min(H*0.30,90);
-    const gridArea=H-clueH-8;
-    const cellSz=Math.min((W-16)/n, gridArea/n);
-    const gx0=(W-cellSz*n)/2, gy0=4;
-    const mx=e.clientX-r2.left,my=e.clientY-r2.top;
-    const col2=Math.floor((mx-gx0)/cellSz);
-    const row=Math.floor((my-gy0)/cellSz);
-    if(row>=0&&row<n&&col2>=0&&col2<n) selectCell(row,col2);
-  });
-
-  mkBtn('Next Puzzle',ctrl).addEventListener('click',()=>{ puzzleIdx++; loadPuzzle(puzzleIdx); });
-  mkInfo(ctrl).textContent='type letters to fill';
-
-  loadPuzzle(0); requestAnimationFrame(draw);
-  return()=>{ cancelAnimationFrame(raf); ro.disconnect(); document.removeEventListener('keydown',onKey); };
-}
 
 
 // ════════════════════════════════════════════════════════════════════════════
 // TOY — MAHJONG SOLITAIRE
 // ════════════════════════════════════════════════════════════════════════════
 function initMahjong(body,ctrl){
-  const {c,ctx,ro}=mkCanvas(body);
-  let W=c.width,H=c.height,raf;
+  // Create canvas manually — sized every frame so it always matches the body
+  const c=document.createElement('canvas');
+  c.style.cssText='position:absolute;inset:0;display:block;';
+  body.appendChild(c);
+  const ctx=c.getContext('2d');
+  let raf;
 
-  // ── Tile definitions ──────────────────────────────────────────────────────
-  // Each tile type has a suit (0-4) and value (display label)
-  // Suits: 0=Bamboo 1=Characters 2=Circles 3=Winds 4=Dragons
-  // We build exactly N pairs so the board is always solvable
+  // ── Tile types ────────────────────────────────────────────────────────────
+  // 34 base types × 4 copies = 136 + 8 bonus = 144 tiles / 72 pairs
+  const TYPES=[
+    {k:0, label:'1',short:'B',col:'#1a9944'},{k:1, label:'2',short:'B',col:'#1a9944'},
+    {k:2, label:'3',short:'B',col:'#1a9944'},{k:3, label:'4',short:'B',col:'#1a9944'},
+    {k:4, label:'5',short:'B',col:'#1a9944'},{k:5, label:'6',short:'B',col:'#1a9944'},
+    {k:6, label:'7',short:'B',col:'#1a9944'},{k:7, label:'8',short:'B',col:'#1a9944'},
+    {k:8, label:'9',short:'B',col:'#1a9944'},
+    {k:9, label:'1',short:'C',col:'#bb3311'},{k:10,label:'2',short:'C',col:'#bb3311'},
+    {k:11,label:'3',short:'C',col:'#bb3311'},{k:12,label:'4',short:'C',col:'#bb3311'},
+    {k:13,label:'5',short:'C',col:'#bb3311'},{k:14,label:'6',short:'C',col:'#bb3311'},
+    {k:15,label:'7',short:'C',col:'#bb3311'},{k:16,label:'8',short:'C',col:'#bb3311'},
+    {k:17,label:'9',short:'C',col:'#bb3311'},
+    {k:18,label:'1',short:'O',col:'#1155bb'},{k:19,label:'2',short:'O',col:'#1155bb'},
+    {k:20,label:'3',short:'O',col:'#1155bb'},{k:21,label:'4',short:'O',col:'#1155bb'},
+    {k:22,label:'5',short:'O',col:'#1155bb'},{k:23,label:'6',short:'O',col:'#1155bb'},
+    {k:24,label:'7',short:'O',col:'#1155bb'},{k:25,label:'8',short:'O',col:'#1155bb'},
+    {k:26,label:'9',short:'O',col:'#1155bb'},
+    {k:27,label:'E', short:'W',col:'#776600'},{k:28,label:'S',short:'W',col:'#776600'},
+    {k:29,label:'W', short:'W',col:'#776600'},{k:30,label:'N',short:'W',col:'#776600'},
+    {k:31,label:'中',short:'D',col:'#773388'},{k:32,label:'發',short:'D',col:'#773388'},
+    {k:33,label:'白',short:'D',col:'#773388'},
+  ]; // 34 types, k = pair group (0-33)
+  // Each type gets 4 tiles = 2 pairs. Pair id = k*2 or k*2+1
+  // Build the full 144-spec list
+  const SPECS=[];
+  TYPES.forEach(t=>{
+    SPECS.push({...t,pair:t.k*2});   SPECS.push({...t,pair:t.k*2});
+    SPECS.push({...t,pair:t.k*2+1}); SPECS.push({...t,pair:t.k*2+1});
+  }); // 136
+  SPECS.push({label:'🌸',short:'F',col:'#bb4466',pair:200},{label:'🌸',short:'F',col:'#bb4466',pair:200});
+  SPECS.push({label:'🌸',short:'F',col:'#bb4466',pair:201},{label:'🌸',short:'F',col:'#bb4466',pair:201});
+  SPECS.push({label:'🍂',short:'S',col:'#bb6622',pair:202},{label:'🍂',short:'S',col:'#bb6622',pair:202});
+  SPECS.push({label:'🍂',short:'S',col:'#bb6622',pair:203},{label:'🍂',short:'S',col:'#bb6622',pair:203});
+  // 136 + 8 = 144 ✓
 
-  const BAMBOO_LABELS =['1b','2b','3b','4b','5b','6b','7b','8b','9b'];
-  const CHAR_LABELS   =['1c','2c','3c','4c','5c','6c','7c','8c','9c'];
-  const CIRCLE_LABELS =['1o','2o','3o','4o','5o','6o','7o','8o','9o'];
-  const WIND_LABELS   =['East','Sth','West','Nth'];
-  const DRAGON_LABELS =['中','發','白'];
+  // ── Layout: 144 positions ─────────────────────────────────────────────────
+  const POS=[];
+  for(let r=0;r<4;r++) for(let col=0;col<14;col++) POS.push({z:0,r,c:col});
+  POS.push({z:0,r:1,c:-1},{z:0,r:2,c:-1},{z:0,r:1,c:14},{z:0,r:2,c:14}); // wings
+  for(let col=1;col<13;col++) POS.push({z:0,r:4,c:col});                   // row4
+  for(let r=1;r<4;r++) for(let col=1;col<13;col++) POS.push({z:1,r,c:col}); // L1
+  for(let r=1;r<3;r++) for(let col=2;col<11;col++) POS.push({z:2,r,c:col}); // L2
+  for(let r=1;r<3;r++) for(let col=5;col<9;col++)  POS.push({z:3,r,c:col}); // L3
+  for(let r=1;r<3;r++) for(let col=6;col<8;col++)  POS.push({z:4,r,c:col}); // L4
+  POS.push({z:5,r:1,c:6});                                                   // L5
+  for(let col=1;col<6;col++) POS.push({z:0,r:5,c:col});                      // extra row
+  // Total = 72+4+12+36+18+8+4+1+5 = 144 ✓... wait 72+4+12=88? No:
+  // 4*14=56 + 4wings + 12row4 = 72, then +36+18+8+4+1+5 = 144 ✓
 
-  // All 42 distinct tile types (suit, idx, label, color)
-  const ALL_TYPES=[];
-  BAMBOO_LABELS.forEach((l,i)=> ALL_TYPES.push({suit:0,idx:i,label:l,col:['#22aa44','#1a7733']}));
-  CHAR_LABELS.forEach((l,i)=>   ALL_TYPES.push({suit:1,idx:i,label:l,col:['#cc4422','#882211']}));
-  CIRCLE_LABELS.forEach((l,i)=> ALL_TYPES.push({suit:2,idx:i,label:l,col:['#2266cc','#1144aa']}));
-  WIND_LABELS.forEach((l,i)=>   ALL_TYPES.push({suit:3,idx:i,label:l,col:['#888800','#666600']}));
-  DRAGON_LABELS.forEach((l,i)=> ALL_TYPES.push({suit:4,idx:i,label:l,col:['#884488','#553355']}));
+  // ── Game state ────────────────────────────────────────────────────────────
+  let tiles=[], sel=null, score=0, moves=0;
 
-  // ── Layout: turtle pattern ────────────────────────────────────────────────
-  // Each position: {layer, r, c} — layer 0=bottom, higher=top
-  const LAYOUT=[];
-  // Layer 0: 8×4 base + 2 side tiles each side
-  for(let r=0;r<4;r++) for(let c=0;c<8;c++) LAYOUT.push({layer:0,r:r+1,c:c+1});
-  LAYOUT.push({layer:0,r:1,c:0}); LAYOUT.push({layer:0,r:1,c:9});
-  LAYOUT.push({layer:0,r:4,c:0}); LAYOUT.push({layer:0,r:4,c:9});
-  // Layer 1: 6×3
-  for(let r=0;r<3;r++) for(let c=0;c<6;c++) LAYOUT.push({layer:1,r:r+1,c:c+2});
-  // Layer 2: 4×2
-  for(let r=0;r<2;r++) for(let c=0;c<4;c++) LAYOUT.push({layer:2,r:r+1,c:c+3});
-  // Layer 3: 2 tiles
-  LAYOUT.push({layer:3,r:1,c:4}); LAYOUT.push({layer:3,r:2,c:4});
+  function shuffle(a){for(let i=a.length-1;i>0;i--){const j=0|Math.random()*(i+1);[a[i],a[j]]=[a[j],a[i]];}}
 
-  // Total = 36 + 4 + 18 + 8 + 2 = 68 positions, must be even
-  // We'll use min(LAYOUT.length, 72) clamped to even
-  const TOTAL = Math.floor(Math.min(LAYOUT.length,72)/2)*2; // 68 → use 68
-
-  let tiles, selected, score, moves;
-
-  function shuffle(a){ for(let i=a.length-1;i>0;i--){const j=0|Math.random()*(i+1);[a[i],a[j]]=[a[j],a[i]];} }
+  function free(t,arr){
+    if(t.gone) return false;
+    if(arr.some(u=>!u.gone&&u.id!==t.id&&u.z===t.z+1&&Math.abs(u.r-t.r)<=1&&Math.abs(u.c-t.c)<=1)) return false;
+    const bL=arr.some(u=>!u.gone&&u.id!==t.id&&u.z===t.z&&u.c===t.c-1&&Math.abs(u.r-t.r)<=1);
+    const bR=arr.some(u=>!u.gone&&u.id!==t.id&&u.z===t.z&&u.c===t.c+1&&Math.abs(u.r-t.r)<=1);
+    return !bL||!bR;
+  }
 
   function newGame(){
-    // Build TOTAL/2 pairs — cycle through ALL_TYPES so every type appears fairly
-    const pairs=[];
-    for(let i=0;i<TOTAL/2;i++){
-      const t=ALL_TYPES[i % ALL_TYPES.length];
-      pairs.push({...t},{...t}); // two copies
+    // Build solvable board: reverse-simulate, repeatedly pick 2 free slots and assign matching pairs
+    let built=null;
+    while(!built){
+      const slots=POS.map((p,i)=>({...p,id:i,gone:false,pair:-1,label:'',short:'?',col:'#888'}));
+      const specs=[...SPECS]; shuffle(specs);
+      let ok=true;
+      for(let step=0;step<72;step++){
+        const freeSlots=slots.filter(s=>!s.gone&&free(s,slots));
+        if(freeSlots.length<2){ok=false;break;}
+        shuffle(freeSlots);
+        const a=freeSlots[0],b=freeSlots[1],sp=specs[step];
+        a.pair=sp.pair; a.label=sp.label; a.short=sp.short; a.col=sp.col;
+        b.pair=sp.pair; b.label=sp.label; b.short=sp.short; b.col=sp.col;
+        a.gone=true; b.gone=true;
+      }
+      if(ok) built=slots;
     }
-    shuffle(pairs);
-    tiles=LAYOUT.slice(0,TOTAL).map((pos,i)=>({
-      ...pos,
-      ...pairs[i],
-      id:i, removed:false,
-    }));
-    selected=null; score=0; moves=0;
+    tiles=built.map(s=>({...s,gone:false}));
+    sel=null; score=0; moves=0;
   }
 
-  function tileKey(t){ return t.suit*100+t.idx; }
-  function matches(a,b){ return a&&b&&tileKey(a)===tileKey(b)&&a.id!==b.id; }
-
-  function isFree(tile){
-    if(tile.removed) return false;
-    // Not covered from above
-    const above=tiles.filter(t=>!t.removed&&t.layer===tile.layer+1);
-    const covered=above.some(t=>Math.abs(t.r-tile.r)<=1&&Math.abs(t.c-tile.c)<=1);
-    if(covered) return false;
-    // Not blocked on both left AND right by same-layer tiles
-    const same=tiles.filter(t=>!t.removed&&t.layer===tile.layer&&t.id!==tile.id);
-    const leftBlocked =same.some(t=>t.c===tile.c-1&&Math.abs(t.r-tile.r)<=1);
-    const rightBlocked=same.some(t=>t.c===tile.c+1&&Math.abs(t.r-tile.r)<=1);
-    return !(leftBlocked&&rightBlocked);
-  }
-
-  function hasFreePair(){
-    const free=tiles.filter(t=>!t.removed&&isFree(t));
-    for(let i=0;i<free.length;i++)
-      for(let j=i+1;j<free.length;j++)
-        if(matches(free[i],free[j])) return true;
+  function hasPair(){
+    const f=tiles.filter(t=>!t.gone&&free(t,tiles));
+    for(let i=0;i<f.length;i++) for(let j=i+1;j<f.length;j++) if(f[i].pair===f[j].pair) return true;
     return false;
   }
-  function allRemoved(){ return tiles.every(t=>t.removed); }
 
-  let lastTs=0;
-  function draw(ts){
+  function layout(W,H){
+    // returns {tw,th,gx,gy} — tile size and grid origin
+    const cols=16, rows=7; // grid spans c:-1..14 = 16, r:0..5 = 6, +1 buffer
+    const tw=Math.min((W-16)/cols,(H-28)/rows);
+    const th=tw*1.42;
+    const gx=(W-tw*cols)/2+tw; // +tw offsets col -1 into view
+    const gy=(H-th*rows)/2+16;
+    return{tw,th,gx,gy};
+  }
+
+  function draw(){
     raf=requestAnimationFrame(draw);
-    W=c.width=body.clientWidth; H=c.height=body.clientHeight;
+    // Always size canvas to body — works whether attached or detached
+    const W=body.offsetWidth, H=body.offsetHeight;
+    if(W<1||H<1) return;
+    c.width=W; c.height=H;
+
     const paper=isPaper();
-    ctx.fillStyle=paper?'#e8e0d0':'#0d1117'; ctx.fillRect(0,0,W,H);
+    ctx.fillStyle=paper?'#e8e0d0':'#0d1117';
+    ctx.fillRect(0,0,W,H);
 
-    // Scale layout to fit canvas
-    const maxC=11, maxR=7;
-    const tw=Math.min((W-12)/maxC, (H-40)/maxR);
-    const th=tw*1.35;
-    const gx=(W-tw*maxC)/2, gy=(H-th*maxR)/2+16;
+    if(!tiles.length) return;
 
-    // Draw tiles back→front (by layer)
-    const sorted=[...tiles].sort((a,b)=>a.layer-b.layer||(a.r-b.r)||(a.c-b.c));
+    const {tw,th,gx,gy}=layout(W,H);
+    const sorted=[...tiles].sort((a,b)=>a.z-b.z||a.r-b.r||a.c-b.c);
+
     for(const t of sorted){
-      if(t.removed) continue;
-      const free=isFree(t);
-      const isSel=selected&&selected.id===t.id;
-      const x=gx+t.c*tw+t.layer*2.5;
-      const y=gy+t.r*th -t.layer*4;
+      if(t.gone) continue;
+      const isF=free(t,tiles);
+      const isSel=sel&&sel.id===t.id;
+      const x=gx+t.c*tw+t.z*3;
+      const y=gy+t.r*th-t.z*4;
       const w=tw-2, h=th-2;
 
-      // Drop shadow
-      ctx.fillStyle='rgba(0,0,0,0.28)';
-      roundRect(ctx,x+3,y+3,w,h,4); ctx.fill();
-
-      // Body
-      if(isSel){
-        ctx.fillStyle='#ffe84d';
-      } else if(free){
-        ctx.fillStyle=paper?'#faf6ee':'#252d3a';
-      } else {
-        ctx.fillStyle=paper?'#c8c0b0':'#161b22';
-      }
-      roundRect(ctx,x,y,w,h,4); ctx.fill();
-
-      // Top colour band (suit colour)
-      const [bandLight,bandDark]=t.col;
-      ctx.fillStyle=free?(paper?bandLight:bandDark):(paper?'#aaa':'#333');
-      roundRect(ctx,x+1,y+1,w-2,h*0.30,3); ctx.fill();
-
-      // Border
-      ctx.strokeStyle=isSel?'#cc9900':free?(paper?'rgba(0,0,0,0.3)':'rgba(255,255,255,0.2)'):'rgba(100,100,100,0.2)';
+      // shadow
+      ctx.fillStyle='rgba(0,0,0,0.2)';
+      ctx.beginPath(); ctx.roundRect(x+3,y+3,w,h,3); ctx.fill();
+      // body
+      ctx.fillStyle=isSel?'#ffe84d':isF?(paper?'#faf6ee':'#252d3a'):(paper?'#c8c0b0':'#161b22');
+      ctx.beginPath(); ctx.roundRect(x,y,w,h,3); ctx.fill();
+      // colour band
+      ctx.fillStyle=isF?t.col:(paper?'#bbb':'#333');
+      ctx.beginPath(); ctx.roundRect(x+1,y+1,w-2,h*0.27,2); ctx.fill();
+      // border
+      ctx.strokeStyle=isSel?'#cc9900':isF?(paper?'rgba(0,0,0,0.25)':'rgba(255,255,255,0.15)'):'rgba(128,128,128,0.12)';
       ctx.lineWidth=isSel?2:1;
-      roundRect(ctx,x,y,w,h,4); ctx.stroke();
-
-      // Label
-      const labelSize=Math.max(7,Math.floor(tw*0.42));
-      ctx.font=`700 ${labelSize}px 'IBM Plex Mono',monospace`;
+      ctx.beginPath(); ctx.roundRect(x,y,w,h,3); ctx.stroke();
+      // label
+      const lsz=Math.max(6,tw*0.36|0);
       ctx.textAlign='center'; ctx.textBaseline='middle';
-      ctx.fillStyle=isSel?'#333':(free?(paper?'#222':'#eee'):'#666');
-      ctx.fillText(t.label, x+w/2, y+h*0.68);
-
-      // Small suit initial in band
+      ctx.font=`700 ${lsz}px 'IBM Plex Mono',monospace`;
+      ctx.fillStyle=isSel?'#222':isF?(paper?'#111':'#eee'):'#666';
+      ctx.fillText(t.label,x+w/2,y+h*0.67);
+      // suit tag
+      ctx.font=`500 ${Math.max(5,tw*0.21|0)}px 'IBM Plex Mono',monospace`;
       ctx.fillStyle='rgba(255,255,255,0.85)';
-      ctx.font=`500 ${Math.max(5,Math.floor(tw*0.25))}px 'IBM Plex Mono',monospace`;
-      ctx.fillText(['B','C','O','W','D'][t.suit], x+w/2, y+h*0.16);
+      ctx.fillText(t.short,x+w/2,y+h*0.15);
     }
 
     // HUD
     ctx.textAlign='left'; ctx.textBaseline='top';
     ctx.fillStyle=paper?'rgba(0,0,0,0.35)':'rgba(255,255,255,0.35)';
     ctx.font=`300 9px 'IBM Plex Mono',monospace`;
-    const rem=tiles.filter(t=>!t.removed).length;
-    ctx.fillText(`tiles left: ${rem}  score: ${score}  pairs: ${moves}`,6,4);
+    ctx.fillText(`tiles: ${tiles.filter(t=>!t.gone).length}/144  score: ${score}  pairs: ${moves}`,6,4);
 
-    if(!hasFreePair()&&!allRemoved()){
-      ctx.fillStyle=paper?'rgba(245,241,232,0.92)':'rgba(13,17,23,0.92)';
+    const allGone=tiles.every(t=>t.gone);
+    const noMoves=!allGone&&!hasPair();
+    if(allGone||noMoves){
+      ctx.fillStyle=paper?'rgba(245,241,232,0.93)':'rgba(13,17,23,0.93)';
       ctx.fillRect(0,0,W,H);
-      ctx.fillStyle=paper?'#882222':'#ff5555';
-      ctx.font=`700 18px 'IBM Plex Mono',monospace`;
       ctx.textAlign='center'; ctx.textBaseline='middle';
-      ctx.fillText('No more moves!',W/2,H/2-14);
-      ctx.fillStyle=paper?'#444':'rgba(255,255,255,0.5)';
+      if(allGone){
+        ctx.fillStyle=paper?'#226622':'#44ee88';
+        ctx.font=`700 20px 'IBM Plex Mono',monospace`;
+        ctx.fillText('Board cleared! 🎉',W/2,H/2-14);
+      } else {
+        ctx.fillStyle=paper?'#882222':'#ff5555';
+        ctx.font=`700 18px 'IBM Plex Mono',monospace`;
+        ctx.fillText('No more moves',W/2,H/2-14);
+      }
+      ctx.fillStyle=paper?'#555':'rgba(255,255,255,0.5)';
       ctx.font=`300 10px 'IBM Plex Mono',monospace`;
-      ctx.fillText(`score: ${score}  —  click New Game`,W/2,H/2+12);
-    }
-    if(allRemoved()){
-      ctx.fillStyle=paper?'rgba(245,241,232,0.92)':'rgba(13,17,23,0.92)';
-      ctx.fillRect(0,0,W,H);
-      ctx.fillStyle=paper?'#226622':'#44ee88';
-      ctx.font=`700 20px 'IBM Plex Mono',monospace`;
-      ctx.textAlign='center'; ctx.textBaseline='middle';
-      ctx.fillText('Cleared! 🎉',W/2,H/2-14);
-      ctx.fillStyle=paper?'#444':'rgba(255,255,255,0.5)';
-      ctx.font=`300 10px 'IBM Plex Mono',monospace`;
-      ctx.fillText(`score: ${score}  pairs matched: ${moves}`,W/2,H/2+12);
+      ctx.fillText(`score: ${score}  ·  ${moves} pairs  ·  click New Game`,W/2,H/2+12);
     }
     ctx.textAlign='left';
   }
 
   c.addEventListener('click',e=>{
-    const r2=c.getBoundingClientRect();
-    const mx=e.clientX-r2.left, my=e.clientY-r2.top;
-    const maxC=11, maxR=7;
-    const tw=Math.min((W-12)/maxC,(H-40)/maxR);
-    const th=tw*1.35;
-    const gx=(W-tw*maxC)/2, gy=(H-th*maxR)/2+16;
-
-    // Find topmost free tile at click point
+    const W=c.width, H=c.height;
+    const rect=c.getBoundingClientRect();
+    const mx=(e.clientX-rect.left)*(W/rect.width);
+    const my=(e.clientY-rect.top)*(H/rect.height);
+    const {tw,th,gx,gy}=layout(W,H);
     let hit=null;
     for(const t of tiles){
-      if(t.removed||!isFree(t)) continue;
-      const x=gx+t.c*tw+t.layer*2.5;
-      const y=gy+t.r*th-t.layer*4;
-      if(mx>=x&&mx<=x+tw-2&&my>=y&&my<=y+th-2){
-        if(!hit||t.layer>hit.layer) hit=t;
-      }
+      if(t.gone||!free(t,tiles)) continue;
+      const x=gx+t.c*tw+t.z*3, y=gy+t.r*th-t.z*4;
+      if(mx>=x&&mx<=x+tw-2&&my>=y&&my<=y+th-2)
+        if(!hit||t.z>hit.z) hit=t;
     }
     if(!hit) return;
-    if(selected){
-      if(selected.id===hit.id){ selected=null; return; }
-      if(matches(selected,hit)){
-        selected.removed=true; hit.removed=true;
-        score+=10*(selected.layer+hit.layer+2);
-        moves++; selected=null;
-      } else { selected=hit; }
-    } else { selected=hit; }
+    if(sel){
+      if(sel.id===hit.id){sel=null;return;}
+      if(sel.pair===hit.pair){
+        sel.gone=true; hit.gone=true;
+        score+=10*(sel.z+hit.z+2); moves++; sel=null;
+      } else { sel=hit; }
+    } else { sel=hit; }
   });
 
-  const newBtn=mkBtn('New Game',ctrl);
-  newBtn.addEventListener('click',()=>{ newGame(); newBtn.blur(); });
-  mkInfo(ctrl).textContent='match pairs of free tiles';
+  mkBtn('New Game',ctrl).addEventListener('click',()=>newGame());
+  mkInfo(ctrl).textContent='match free pairs · clear all 144';
 
-  newGame(); requestAnimationFrame(draw);
-  return()=>{ cancelAnimationFrame(raf); ro.disconnect(); };
+  newGame();
+  requestAnimationFrame(draw);
+  return ()=>{ cancelAnimationFrame(raf); };
 }
 
 // ════════════════════════════════════════════════════════════════════════════
