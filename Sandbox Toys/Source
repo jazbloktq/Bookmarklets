@@ -941,7 +941,7 @@ function initBreakout(body, ctrl) {
     ctx.fillStyle=fgClr();ctx.font=`400 15px 'IBM Plex Mono',monospace`;
     ctx.textAlign='center';ctx.fillText(txt,W/2,H/2);
     ctx.font=`300 10px 'IBM Plex Mono',monospace`;
-    ctx.fillText('click to restart',W/2,H/2+22);ctx.textAlign='left';
+    ctx.fillText('press R or click to retry',W/2,H/2+22);ctx.textAlign='left';
   }
 
   const onMove=e=>{
@@ -1595,7 +1595,7 @@ function initTetris(body, ctrl) {
     const fg=paper?'rgba(30,20,10,0.7)':'rgba(255,255,255,0.5)';
     ctx.fillStyle=fg;ctx.font=`300 11px 'IBM Plex Mono',monospace`;ctx.textAlign='left';
     ctx.fillText(`score ${score}  lines ${lines}  level ${level+1}`,OX,OY+ROWS*CH+20);
-    if(gameOver){ctx.fillStyle=paper?'rgba(30,20,10,0.85)':'rgba(255,255,255,0.85)';ctx.font=`400 18px 'IBM Plex Mono',monospace`;ctx.textAlign='center';ctx.fillText('GAME OVER',W/2,H/2-10);ctx.font=`300 11px 'IBM Plex Mono',monospace`;ctx.fillText('press R to restart',W/2,H/2+14);}
+    if(gameOver){ctx.fillStyle=paper?'rgba(30,20,10,0.85)':'rgba(255,255,255,0.85)';ctx.font=`400 18px 'IBM Plex Mono',monospace`;ctx.textAlign='center';ctx.fillText('GAME OVER',W/2,H/2-10);ctx.font=`300 11px 'IBM Plex Mono',monospace`;ctx.fillText('press R or click to retry',W/2,H/2+14);}
     if(paused&&!gameOver){ctx.fillStyle=paper?'rgba(30,20,10,0.85)':'rgba(255,255,255,0.85)';ctx.font=`300 13px 'IBM Plex Mono',monospace`;ctx.textAlign='center';ctx.fillText('PAUSED',W/2,H/2);}
     scoreEl.textContent=`score ${score}`;
   }
@@ -1664,10 +1664,12 @@ function initMinesweeper(body, ctrl) {
     ctx.fillStyle=fg;ctx.font=`300 11px 'IBM Plex Mono',monospace`;ctx.textAlign='left';ctx.textBaseline='alphabetic';
     const flagCount=flagged.flat().filter(v=>v).length;
     ctx.fillText(`mines ${MINES-flagCount} remaining`,OX,OY+ROWS*CH+20);
-    if(gameOver){ctx.fillStyle=paper?'rgba(30,20,10,0.88)':'rgba(255,255,255,0.88)';ctx.font=`400 18px 'IBM Plex Mono',monospace`;ctx.textAlign='center';ctx.fillText(won?'YOU WIN':'BOOM',W/2,H/2-10);ctx.font=`300 11px 'IBM Plex Mono',monospace`;ctx.fillText('click New to play again',W/2,H/2+14);}
+    if(gameOver){ctx.fillStyle=paper?'rgba(30,20,10,0.88)':'rgba(255,255,255,0.88)';ctx.font=`400 18px 'IBM Plex Mono',monospace`;ctx.textAlign='center';ctx.fillText(won?'YOU WIN':'BOOM',W/2,H/2-10);ctx.font=`300 11px 'IBM Plex Mono',monospace`;ctx.fillText('press R or click to retry',W/2,H/2+14);}
   }
+  let mouseX=0, mouseY=0;
+  c.addEventListener('mousemove',e=>{const r2=c.getBoundingClientRect();mouseX=e.clientX-r2.left;mouseY=e.clientY-r2.top;});
   const onClick=e=>{
-    if(gameOver)return;
+    if(gameOver){init();return;}
     const r2=c.getBoundingClientRect();
     const mx=e.clientX-r2.left,my=e.clientY-r2.top;
     const cc=Math.floor((mx-OX)/CW),r=Math.floor((my-OY)/CH);
@@ -1678,6 +1680,14 @@ function initMinesweeper(body, ctrl) {
     if(board[r][cc]===-1){revealed[r][cc]=true;gameOver=true;for(let rr=0;rr<ROWS;rr++)for(let c2=0;c2<COLS;c2++)if(board[rr][c2]===-1)revealed[rr][c2]=true;}
     else{flood(r,cc);checkWin();}
   };
+  const onKey=e=>{
+    if((e.key===' '||e.key==='r'||e.key==='R')&&gameOver){init();if(e.key===' ')e.preventDefault();return;}
+    if((e.key==='f'||e.key==='F')&&!gameOver){
+      const cc=Math.floor((mouseX-OX)/CW),r=Math.floor((mouseY-OY)/CH);
+      if(cc>=0&&cc<COLS&&r>=0&&r<ROWS&&!revealed[r][cc])flagged[r][cc]=!flagged[r][cc];
+    }
+  };
+  document.addEventListener('keydown',onKey);
   c.addEventListener('click',onClick);
   c.addEventListener('contextmenu',onClick);
   mkBtn('New',ctrl).addEventListener('click',init);
@@ -1688,7 +1698,7 @@ function initMinesweeper(body, ctrl) {
     diffBtns[d.k]=b;
   });
   draw();
-  return ()=>{cancelAnimationFrame(raf2);ro.disconnect();c.removeEventListener('click',onClick);c.removeEventListener('contextmenu',onClick);};
+  return ()=>{cancelAnimationFrame(raf2);ro.disconnect();c.removeEventListener('click',onClick);c.removeEventListener('contextmenu',onClick);document.removeEventListener('keydown',onKey);};
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -1764,7 +1774,7 @@ function initAsteroids(body, ctrl) {
     const hfg=paper?'rgba(30,20,10,0.6)':'rgba(255,255,255,0.45)';
     ctx.fillStyle=hfg;ctx.font=`300 11px 'IBM Plex Mono',monospace`;ctx.textAlign='left';ctx.textBaseline='top';
     ctx.fillText(`level ${level+1}`,12,12);
-    if(gameOver){ctx.fillStyle=paper?'rgba(30,20,10,0.88)':'rgba(255,255,255,0.88)';ctx.font=`400 18px 'IBM Plex Mono',monospace`;ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText('GAME OVER',W/2,H/2-14);ctx.font=`300 11px 'IBM Plex Mono',monospace`;ctx.fillText(`final score ${score}`,W/2,H/2+10);ctx.fillText('press R to restart',W/2,H/2+30);}
+    if(gameOver){ctx.fillStyle=paper?'rgba(30,20,10,0.88)':'rgba(255,255,255,0.88)';ctx.font=`400 18px 'IBM Plex Mono',monospace`;ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText('GAME OVER',W/2,H/2-14);ctx.font=`300 11px 'IBM Plex Mono',monospace`;ctx.fillText(`final score ${score}`,W/2,H/2+10);ctx.fillText('press R or click to retry',W/2,H/2+30);}
   }
   const scoreEl=mkInfo(ctrl);
   mkBtn('New',ctrl).addEventListener('click',init);
@@ -2031,7 +2041,7 @@ function initAsteroidsRogue(body, ctrl) {
       ctx.font=`300 12px 'IBM Plex Mono',monospace`;
       ctx.fillText(`wave ${level+1}  ·  score ${score}`,W/2,H/2+10);
       ctx.fillStyle=paper?'rgba(30,20,10,0.5)':'rgba(255,255,255,0.45)';
-      ctx.fillText('press R or click New to restart',W/2,H/2+34);
+      ctx.fillText('press R or click to retry',W/2,H/2+34);
     }
     ctx.textAlign='left';
   }
@@ -2865,15 +2875,17 @@ function initFlappy(body, ctrl) {
       ctx.font=`400 22px 'IBM Plex Mono',monospace`;ctx.textAlign='center';ctx.textBaseline='middle';
       ctx.fillText('GAME OVER',W/2,H/2-18);
       ctx.font=`300 12px 'IBM Plex Mono',monospace`;
-      ctx.fillText(`score ${score} — click to restart`,W/2,H/2+14);
+      ctx.fillText(`score ${score} — press R or click to retry`,W/2,H/2+14);
     }
   }
   const scoreEl=mkInfo(ctrl);
   c.addEventListener('click',flap);
+  const onKeyFlap=e=>{if((e.key==='r'||e.key==='R')&&gameOver)init();};
+  document.addEventListener('keydown',onKeyFlap);
   const onKey=e=>{if(e.code==='Space'){e.preventDefault();flap();}};
   document.addEventListener('keydown',onKey);
   init();requestAnimationFrame(step);
-  return ()=>{cancelAnimationFrame(raf);ro.disconnect();document.removeEventListener('keydown',onKey);};
+  return ()=>{cancelAnimationFrame(raf);ro.disconnect();document.removeEventListener('keydown',onKey);document.removeEventListener('keydown',onKeyFlap);};
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -3141,7 +3153,7 @@ function initChess(body, ctrl) {
       ctx.fillStyle='#fff';ctx.font=`400 20px 'IBM Plex Mono',monospace`;ctx.textAlign='center';ctx.textBaseline='middle';
       ctx.fillText(gameStatus,ox+SZ/2,oy+SZ/2-8);
       ctx.font=`300 11px 'IBM Plex Mono',monospace`;ctx.fillStyle='rgba(255,255,255,0.6)';
-      ctx.fillText('click New Game to play again',ox+SZ/2,oy+SZ/2+14);
+      ctx.fillText('press R or click to retry',ox+SZ/2,oy+SZ/2+14);
     }
     if(aiThinking&&!gameStatus&&!twoPlayer){
       const fg=paper?'rgba(0,0,0,0.45)':'rgba(255,255,255,0.45)';
@@ -3185,8 +3197,10 @@ function initChess(body, ctrl) {
     diffBtn.textContent=diffLabels[difficulty];
   });
   mkInfo(ctrl);
+  const onKeyChess=e=>{if((e.key===' '||e.key==='r'||e.key==='R')&&gameStatus){init();if(e.key===' ')e.preventDefault();}};
+  document.addEventListener('keydown',onKeyChess);
   requestAnimationFrame(draw);
-  return ()=>{cancelAnimationFrame(raf);ro.disconnect();};
+  return ()=>{cancelAnimationFrame(raf);ro.disconnect();document.removeEventListener('keydown',onKeyChess);};
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -3766,7 +3780,7 @@ function initPacman(body, ctrl) {
       ctx.textAlign='center'; ctx.textBaseline='middle';
       ctx.fillText('LEVEL CLEAR!',W/2,H/2-14);
       ctx.fillStyle='rgba(255,255,255,0.55)'; ctx.font=`300 10px 'IBM Plex Mono',monospace`;
-      ctx.fillText('press N or click New',W/2,H/2+10);
+      ctx.fillText('press R or click to retry',W/2,H/2+10);
     }
     if(gameState==='gameover'){
       ctx.fillStyle='rgba(0,0,0,0.65)'; ctx.fillRect(0,0,W,H);
@@ -3940,7 +3954,7 @@ function init2048(body, ctrl) {
       ctx.font='700 '+(SZ*0.1)+'px \'IBM Plex Mono\',monospace';ctx.textAlign='center';ctx.textBaseline='middle';
       ctx.fillText(won?'You Win!':'Game Over',W/2,H/2-16);
       ctx.font='300 12px \'IBM Plex Mono\',monospace';ctx.fillStyle='#776e65';
-      ctx.fillText('press R to restart',W/2,H/2+18);
+      ctx.fillText('press R or click to retry',W/2,H/2+18);
     }
   }
   const scoreEl=mkInfo(ctrl);
@@ -4356,7 +4370,7 @@ function initSpaceInvaders(body, ctrl) {
       ctx.fillStyle=paper?'#fff':'#fff';ctx.font=`400 22px 'IBM Plex Mono',monospace`;ctx.textAlign='center';ctx.textBaseline='middle';
       ctx.fillText('GAME OVER',W/2,H/2-12);
       ctx.font=`300 11px 'IBM Plex Mono',monospace`;ctx.fillStyle='rgba(255,255,255,0.6)';
-      ctx.fillText(`score ${score} — click to restart`,W/2,H/2+12);
+      ctx.fillText(`score ${score} — press R or click to retry`,W/2,H/2+12);
     }
   }
 
@@ -4370,6 +4384,7 @@ function initSpaceInvaders(body, ctrl) {
         else if(gameOver)init();
         else if(bullets.length<4)bullets.push({x:player.x,y:player.y-player.h});
       }
+      if((e.code==='KeyR')&&gameOver){init();}
       if(e.code==='ArrowLeft'||e.code==='KeyA')player.vx=-1;
       if(e.code==='ArrowRight'||e.code==='KeyD')player.vx=1;
     } else {
@@ -4509,7 +4524,7 @@ function initWhackMole(body, ctrl) {
       ctx.fillStyle='#fff';ctx.font=`400 22px 'IBM Plex Mono',monospace`;ctx.textAlign='center';ctx.textBaseline='middle';
       ctx.fillText('TIME\'S UP!',W/2,H/2-14);
       ctx.font=`300 12px 'IBM Plex Mono',monospace`;ctx.fillStyle='rgba(255,255,255,0.65)';
-      ctx.fillText(`final score: ${score} — click to play again`,W/2,H/2+12);
+      ctx.fillText(`final score: ${score} — press R or click to retry`,W/2,H/2+12);
     }
   }
 
@@ -4523,10 +4538,12 @@ function initWhackMole(body, ctrl) {
       }
     }
   });
+  const onKeyWM=e=>{if((e.key===' '||e.key==='r'||e.key==='R')&&gameOver){init();if(e.key===' ')e.preventDefault();}};
+  document.addEventListener('keydown',onKeyWM);
   const scoreEl=mkInfo(ctrl);
   mkBtn('New Game',ctrl).addEventListener('click',init);
   requestAnimationFrame(draw);
-  return ()=>{cancelAnimationFrame(raf);ro.disconnect();};
+  return ()=>{cancelAnimationFrame(raf);ro.disconnect();document.removeEventListener('keydown',onKeyWM);};
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -6263,7 +6280,7 @@ function initTicTacToe(body, ctrl) {
     ctx.font=`300 11px 'IBM Plex Mono',monospace`;
     const statusY=oy+S+12;
     let status;
-    if(gameOver) status=winner==='draw'?'Draw!':`${winner} wins!  ·  click to play again`;
+    if(gameOver) status=winner==='draw'?'Draw! · press R or click to retry':`${winner} wins!  ·  press R or click to retry`;
     else if(twoPlayer) status=`Player ${turn==='X'?'1 (X)':'2 (O)'}'s turn`;
     else status=turn==='X'?'Your turn (X)':(thinking?'AI thinking…':'AI\'s turn (O)');
     ctx.fillText(status,W/2,statusY);
@@ -6292,8 +6309,10 @@ function initTicTacToe(body, ctrl) {
   mkBtn('New Game',ctrl).addEventListener('click',()=>init());
   mkBtn('Reset Scores',ctrl).addEventListener('click',()=>{scores={X:0,O:0,draws:0};init();});
 
+  const onKeyTTT=e=>{if((e.key===' '||e.key==='r'||e.key==='R')&&gameOver){init();if(e.key===' ')e.preventDefault();}};
+  document.addEventListener('keydown',onKeyTTT);
   requestAnimationFrame(draw);
-  return ()=>{cancelAnimationFrame(raf);ro.disconnect();};
+  return ()=>{cancelAnimationFrame(raf);ro.disconnect();document.removeEventListener('keydown',onKeyTTT);};
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -6618,7 +6637,7 @@ function initGalaga(body, ctrl) {
       ctx.fillText('GAME OVER',W/2,H/2-18);
       ctx.fillStyle=paper?'rgba(255,255,255,0.7)':'rgba(255,255,255,0.5)';
       ctx.font=`300 11px 'IBM Plex Mono',monospace`;
-      ctx.fillText(`score: ${score}  ·  click to retry`,W/2,H/2+14);
+      ctx.fillText(`score: ${score}  ·  press R or click to retry`,W/2,H/2+14);
       ctx.textAlign='left';ctx.textBaseline='top';
     }
   }
@@ -6627,6 +6646,7 @@ function initGalaga(body, ctrl) {
 
   const onKey=e=>{
     keys2[e.key]=e.type==='keydown';
+    if(e.type==='keydown'&&(e.key==='r'||e.key==='R')&&gameOver)init();
     // prevent page scroll for game keys
     if(['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Space',' ','w','a','s','d','W','A','S','D'].includes(e.key))
       e.preventDefault();
@@ -7175,7 +7195,7 @@ function initMissileCommand(body, ctrl) {
       ctx.textAlign='center';ctx.textBaseline='middle';
       ctx.fillText('THE CITIES HAVE FALLEN',W/2,H/2-20);
       ctx.fillStyle='rgba(255,255,255,0.6)'; ctx.font=`300 11px 'IBM Plex Mono',monospace`;
-      ctx.fillText(`final score: ${score}  ·  click to retry`,W/2,H/2+10);
+      ctx.fillText(`final score: ${score}  ·  press R or click to retry`,W/2,H/2+10);
       ctx.textAlign='left';ctx.textBaseline='top';
     }
   }
@@ -7193,10 +7213,11 @@ function initMissileCommand(body, ctrl) {
   diffBtn.addEventListener('click',()=>{difficulty=(difficulty+1)%3;diffBtn.textContent=DIFF_NAMES[difficulty];init();});
   mkBtn('Restart',ctrl).addEventListener('click',init);
   mkInfo(ctrl).textContent='click to fire interceptors';
-
+  const onKeyMC=e=>{if((e.key==='r'||e.key==='R')&&gameOver)init();};
+  document.addEventListener('keydown',onKeyMC);
   init();
   requestAnimationFrame(draw);
-  return ()=>{cancelAnimationFrame(raf);ro.disconnect();};
+  return ()=>{cancelAnimationFrame(raf);ro.disconnect();document.removeEventListener('keydown',onKeyMC);};
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -8309,14 +8330,14 @@ function initConnectFour(body, ctrl) {
       ctx.font=`400 18px 'IBM Plex Mono',monospace`;
       ctx.fillText(twoPlayer?(winPlayer===1?'Player 1 wins!':'Player 2 wins!'):(winPlayer===1?'You win!':'AI wins!'),W/2,H/2-16);
       ctx.fillStyle='rgba(255,255,255,0.5)'; ctx.font=`300 10px 'IBM Plex Mono',monospace`;
-      ctx.fillText('click to play again',W/2,H/2+8);
+      ctx.fillText('press R or click to retry',W/2,H/2+8);
     } else if(gameState==='draw'){
       ctx.fillStyle='rgba(0,0,0,0.55)'; ctx.fillRect(0,0,W,H);
       ctx.textAlign='center'; ctx.textBaseline='middle';
       ctx.fillStyle='rgba(255,255,255,0.8)'; ctx.font=`400 18px 'IBM Plex Mono',monospace`;
-      ctx.fillText('Draw!',W/2,H/2-16);
+      ctx.fillText('Draw! · press R or click to retry',W/2,H/2-16);
       ctx.fillStyle='rgba(255,255,255,0.5)'; ctx.font=`300 10px 'IBM Plex Mono',monospace`;
-      ctx.fillText('click to play again',W/2,H/2+8);
+      ctx.fillText('press R or click to retry',W/2,H/2+8);
     }
     ctx.textAlign='left'; ctx.textBaseline='top';
   }
@@ -8348,12 +8369,11 @@ function initConnectFour(body, ctrl) {
   diffBtn.addEventListener('click',()=>{difficulty=(difficulty+1)%3;diffBtn.textContent=DIFF_NAMES[difficulty];scores={player:0,ai:0,draws:0};init();});
   mkBtn('New Game',ctrl).addEventListener('click',()=>init());
 
+  const onKeyCF=e=>{if((e.key===' '||e.key==='r'||e.key==='R')&&gameState!=='playing'){init();if(e.key===' ')e.preventDefault();}};
+  document.addEventListener('keydown',onKeyCF);
   requestAnimationFrame(draw);
-  return ()=>{cancelAnimationFrame(raf);ro.disconnect();};
+  return ()=>{cancelAnimationFrame(raf);ro.disconnect();document.removeEventListener('keydown',onKeyCF);};
 }
-
-// ════════════════════════════════════════════════════════════════════════════
-// TOY 48 — BLACKJACK
 // ════════════════════════════════════════════════════════════════════════════
 function initBlackjack(body, ctrl) {
   const {c,ctx,ro} = mkCanvas(body);
@@ -9117,7 +9137,7 @@ function initSolitaire(body, ctrl) {
       ctx.fillText('You Win! 🎉', W/2, H/2 - 18);
       ctx.fillStyle = 'rgba(255,255,255,0.6)';
       ctx.font = `300 11px 'IBM Plex Mono', monospace`;
-      ctx.fillText(`${moves} moves · click to play again`, W/2, H/2 + 14);
+      ctx.fillText(`${moves} moves · press R or click to retry`, W/2, H/2 + 14);
     }
 
     ctx.textAlign = 'left'; ctx.textBaseline = 'top';
@@ -9283,7 +9303,9 @@ function initSolitaire(body, ctrl) {
   const info = mkInfo(ctrl);
   info.textContent = 'drag cards · dbl-click → foundation';
 
-  return () => { cancelAnimationFrame(raf); ro.disconnect(); };
+  const onKeySol=e=>{if((e.key===' '||e.key==='r'||e.key==='R')&&won){newGame();if(e.key===' ')e.preventDefault();}};
+  document.addEventListener('keydown',onKeySol);
+  return () => { cancelAnimationFrame(raf); ro.disconnect(); document.removeEventListener('keydown',onKeySol); };
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -9754,7 +9776,7 @@ function initBackgammon(body, ctrl) {
       ctx.textAlign='center'; ctx.textBaseline='middle';
       ctx.fillText(msg,W/2,H/2-16);
       ctx.fillStyle='rgba(255,255,255,0.5)'; ctx.font=`300 10px 'IBM Plex Mono',monospace`;
-      ctx.fillText('click to play again',W/2,H/2+10);
+      ctx.fillText('press R or click to retry',W/2,H/2+10);
       ctx.textAlign='left';
     }
   }
@@ -9830,12 +9852,11 @@ function initBackgammon(body, ctrl) {
   mkBtn('New Game',ctrl).addEventListener('click',()=>initGame());
   const info=mkInfo(ctrl); info.textContent='select checker · click target';
 
+  const onKeyBG=e=>{if((e.key===' '||e.key==='r'||e.key==='R')&&gameOver){initGame();if(e.key===' ')e.preventDefault();}};
+  document.addEventListener('keydown',onKeyBG);
   requestAnimationFrame(draw);
-  return ()=>{ cancelAnimationFrame(raf); ro.disconnect(); };
+  return ()=>{ cancelAnimationFrame(raf); ro.disconnect(); document.removeEventListener('keydown',onKeyBG); };
 }
-
-// ════════════════════════════════════════════════════════════════════════════
-// TOY — BOUNCING DVD
 // ════════════════════════════════════════════════════════════════════════════
 function initBouncingDVD(body, ctrl) {
   const {c,ctx,ro} = mkCanvas(body);
@@ -11130,56 +11151,77 @@ function init8Ball(body, ctrl) {
   function stepPhysics() {
     const t=tableRect();
     const pocketed_this_frame=[];
+    const SUBSTEPS=4; // subdivide each frame to prevent tunnelling
 
+    // Apply friction once per frame
     for (const b of balls) {
       if (b.pocketed) continue;
-      b.x+=b.vx; b.y+=b.vy;
       b.vx*=FRICTION; b.vy*=FRICTION;
       if (Math.abs(b.vx)<MIN_SPD) b.vx=0;
       if (Math.abs(b.vy)<MIN_SPD) b.vy=0;
-
-      // Pocket check FIRST — before wall bounce
-      let pocketed=false;
-      for (const p of pockets) {
-        const dx=b.x-p.x, dy=b.y-p.y;
-        if (dx*dx+dy*dy<POCKET_R*POCKET_R) {
-          b.pocketed=true; b.vx=0; b.vy=0;
-          pocketed_this_frame.push(b); pocketed=true; break;
-        }
-      }
-      if (pocketed) continue;
-
-      // Wall bounces — but suppress near pocket openings so balls roll in
-      const nearPocket=(wx,wy)=>pockets.some(p=>{
-        const dx=wx-p.x, dy=wy-p.y;
-        return dx*dx+dy*dy < (POCKET_R*2.2)**2;
-      });
-
-      if (b.x-b.r<t.ox     && !nearPocket(t.ox,     b.y)) { b.x=t.ox+b.r;     b.vx=Math.abs(b.vx)*0.75; }
-      if (b.x+b.r>t.ox+t.tw && !nearPocket(t.ox+t.tw,b.y)) { b.x=t.ox+t.tw-b.r; b.vx=-Math.abs(b.vx)*0.75; }
-      if (b.y-b.r<t.oy     && !nearPocket(b.x,     t.oy)) { b.y=t.oy+b.r;     b.vy=Math.abs(b.vy)*0.75; }
-      if (b.y+b.r>t.oy+t.th && !nearPocket(b.x,t.oy+t.th)) { b.y=t.oy+t.th-b.r; b.vy=-Math.abs(b.vy)*0.75; }
     }
 
-    // Ball-ball collisions
-    for (let i=0;i<balls.length;i++) {
-      for (let j=i+1;j<balls.length;j++) {
-        const a=balls[i], b2=balls[j];
-        if (a.pocketed||b2.pocketed) continue;
-        const dx=b2.x-a.x, dy=b2.y-a.y;
-        const dist=Math.sqrt(dx*dx+dy*dy);
-        const minD=a.r+b2.r;
-        if (dist<minD&&dist>0.01) {
-          const nx=dx/dist, ny=dy/dist;
-          const overlap=(minD-dist)/2;
-          a.x-=nx*overlap; a.y-=ny*overlap;
-          b2.x+=nx*overlap; b2.y+=ny*overlap;
-          const dvx=a.vx-b2.vx, dvy=a.vy-b2.vy;
-          const dot=dvx*nx+dvy*ny;
-          if (dot>0) {
-            const imp=dot*0.92;
-            a.vx-=imp*nx; a.vy-=imp*ny;
-            b2.vx+=imp*nx; b2.vy+=imp*ny;
+    for (let sub=0; sub<SUBSTEPS; sub++) {
+      for (const b of balls) {
+        if (b.pocketed) continue;
+        b.x+=b.vx/SUBSTEPS; b.y+=b.vy/SUBSTEPS;
+
+        // Pocket check
+        let pocketed=false;
+        for (const p of pockets) {
+          const dx=b.x-p.x, dy=b.y-p.y;
+          if (dx*dx+dy*dy<POCKET_R*POCKET_R) {
+            b.pocketed=true; b.vx=0; b.vy=0;
+            if (!pocketed_this_frame.includes(b)) pocketed_this_frame.push(b);
+            pocketed=true; break;
+          }
+        }
+        if (pocketed) continue;
+
+        // Wall bounces - check nearness using ball position, not wall edge point
+        const nearPocket=(bx,by)=>pockets.some(p=>{
+          const dx=bx-p.x, dy=by-p.y;
+          return dx*dx+dy*dy < (POCKET_R*2.4)**2;
+        });
+
+        if (b.x-b.r<t.ox) {
+          b.x=t.ox+b.r;
+          if (!nearPocket(b.x,b.y)) b.vx=Math.abs(b.vx)*0.75; else b.vx=0;
+        }
+        if (b.x+b.r>t.ox+t.tw) {
+          b.x=t.ox+t.tw-b.r;
+          if (!nearPocket(b.x,b.y)) b.vx=-Math.abs(b.vx)*0.75; else b.vx=0;
+        }
+        if (b.y-b.r<t.oy) {
+          b.y=t.oy+b.r;
+          if (!nearPocket(b.x,b.y)) b.vy=Math.abs(b.vy)*0.75; else b.vy=0;
+        }
+        if (b.y+b.r>t.oy+t.th) {
+          b.y=t.oy+t.th-b.r;
+          if (!nearPocket(b.x,b.y)) b.vy=-Math.abs(b.vy)*0.75; else b.vy=0;
+        }
+      }
+
+      // Ball-ball collisions each substep
+      for (let i=0;i<balls.length;i++) {
+        for (let j=i+1;j<balls.length;j++) {
+          const a=balls[i], b2=balls[j];
+          if (a.pocketed||b2.pocketed) continue;
+          const dx=b2.x-a.x, dy=b2.y-a.y;
+          const dist=Math.sqrt(dx*dx+dy*dy);
+          const minD=a.r+b2.r;
+          if (dist<minD&&dist>0.01) {
+            const nx=dx/dist, ny=dy/dist;
+            const overlap=(minD-dist)/2;
+            a.x-=nx*overlap; a.y-=ny*overlap;
+            b2.x+=nx*overlap; b2.y+=ny*overlap;
+            const dvx=a.vx-b2.vx, dvy=a.vy-b2.vy;
+            const dot=dvx*nx+dvy*ny;
+            if (dot>0) {
+              const imp=dot*0.92;
+              a.vx-=imp*nx; a.vy-=imp*ny;
+              b2.vx+=imp*nx; b2.vy+=imp*ny;
+            }
           }
         }
       }
@@ -11752,7 +11794,7 @@ function init8Ball(body, ctrl) {
       ctx.fillText(message, W/2, H/2-16);
       ctx.font=`300 10px 'IBM Plex Mono',monospace`;
       ctx.fillStyle=paper?'rgba(0,0,0,0.4)':'rgba(255,255,255,0.4)';
-      ctx.fillText('click New Game to play again', W/2, H/2+16);
+      ctx.fillText('press R or click to retry', W/2, H/2+16);
     }
     ctx.textAlign='left'; ctx.textBaseline='top';
   }
@@ -11842,6 +11884,7 @@ function init8Ball(body, ctrl) {
 
   // ── Keyboard: W/S or Up/Down = power, fire on Space/Enter ─────────────────
   const poolKeyDown=e=>{
+    if((e.key===' '||e.key==='r'||e.key==='R')&&gameOver){initGame();e.preventDefault();return;}
     // Only act when it's human's turn, idle, not ballInHand
     if(gameOver||anyMoving()||ballInHand) return;
     if(!twoPlayer && turn!==0) return;
@@ -14399,10 +14442,10 @@ function initOthello(body, ctrl) {
       let msg;
       if (p1>p2) { msg=twoPlayer?'Player 1 wins!':'You win!'; ctx.fillStyle='#fff'; }
       else if (p2>p1) { msg=twoPlayer?'Player 2 wins!':'AI wins!'; ctx.fillStyle='#ff6644'; }
-      else { msg='Draw!'; ctx.fillStyle='rgba(255,255,255,0.8)'; }
+      else { msg='Draw! · press R or click to retry'; ctx.fillStyle='rgba(255,255,255,0.8)'; }
       ctx.font=`400 18px 'IBM Plex Mono',monospace`; ctx.fillText(msg, W/2, H/2-14);
       ctx.fillStyle='rgba(255,255,255,0.5)'; ctx.font=`300 10px 'IBM Plex Mono',monospace`;
-      ctx.fillText('click to play again', W/2, H/2+10);
+      ctx.fillText('press R or click to retry', W/2, H/2+10);
     }
     ctx.textAlign='left'; ctx.textBaseline='top';
   }
@@ -14482,12 +14525,11 @@ function initOthello(body, ctrl) {
   diffBtn.addEventListener('click',()=>{ difficulty=(difficulty+1)%3; diffBtn.textContent=DIFF_NAMES[difficulty]; scores={p1:0,p2:0}; board=emptyBoard(); turn=1; gameState='playing'; thinking=false; });
   mkBtn('New Game', ctrl).addEventListener('click',()=>{ board=emptyBoard(); turn=1; gameState='playing'; thinking=false; });
 
+  const onKeyOth=e=>{if((e.key===' '||e.key==='r'||e.key==='R')&&gameState==='over'){board=emptyBoard();turn=1;gameState='playing';thinking=false;if(e.key===' ')e.preventDefault();}};
+  document.addEventListener('keydown',onKeyOth);
   requestAnimationFrame(draw);
-  return ()=>{ cancelAnimationFrame(raf); ro.disconnect(); };
+  return ()=>{ cancelAnimationFrame(raf); ro.disconnect(); document.removeEventListener('keydown',onKeyOth); };
 }
-
-// ════════════════════════════════════════════════════════════════════════════
-// TOY — BATTLESHIP
 // ════════════════════════════════════════════════════════════════════════════
 function initBattleship(body, ctrl) {
   const {c, ctx, ro} = mkCanvas(body);
@@ -14770,7 +14812,7 @@ function initBattleship(body, ctrl) {
       const winMsg = twoPlayer ? (winner===1?'Player 1 wins!':'Player 2 wins!') : (winner===1?'You win!':'AI wins!');
       ctx.fillText(winMsg, W/2, H/2-14);
       ctx.fillStyle='rgba(255,255,255,0.5)'; ctx.font=`300 10px 'IBM Plex Mono',monospace`;
-      ctx.fillText('click to play again', W/2, H/2+10);
+      ctx.fillText('press R or click to retry', W/2, H/2+10);
     }
     ctx.textAlign='left'; ctx.textBaseline='top';
   }
@@ -14851,7 +14893,12 @@ function initBattleship(body, ctrl) {
     }
   });
 
-  document.addEventListener('keydown', e => { if(e.key==='r'||e.key==='R') placingH=!placingH; });
+  const onKeyBS=e=>{
+    if((e.key==='r'||e.key==='R')&&gameState==='over'){initGame();return;}
+    if(e.key==='r'||e.key==='R') placingH=!placingH;
+    if(e.key===' '&&gameState==='over'){initGame();e.preventDefault();}
+  };
+  document.addEventListener('keydown',onKeyBS);
 
   const diffBtn=mkBtn(DIFF_NAMES[difficulty],ctrl);
   diffBtn.addEventListener('click',()=>{ difficulty=(difficulty+1)%3; diffBtn.textContent=DIFF_NAMES[difficulty]; scores={p1:0,p2:0}; initGame(); });
@@ -14859,7 +14906,7 @@ function initBattleship(body, ctrl) {
   mkInfo(ctrl).textContent='R = rotate';
 
   requestAnimationFrame(draw);
-  return ()=>{ cancelAnimationFrame(raf); ro.disconnect(); };
+  return ()=>{ cancelAnimationFrame(raf); ro.disconnect(); document.removeEventListener('keydown',onKeyBS); };
 }
 
 // ── final init ────────────────────────────────────────────────────────────────
