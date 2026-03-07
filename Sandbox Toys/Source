@@ -6682,6 +6682,8 @@ function initMissileCommand(body, ctrl) {
   let salvoQueue;  // pending salvo missile specs [{delay,sx,tx,ty}]
   let bossAlive;   // true while boss wave boss is in play
   let waveHadMissiles; // true once first missile spawns this wave
+  let waveQuota;   // total missiles to spawn this wave
+  let waveSpawned; // how many have been spawned so far
 
   function groundY(){ return H-28; }
 
@@ -6712,9 +6714,12 @@ function initMissileCommand(body, ctrl) {
     waveTimer=90;
     tick5=0;
     waveHadMissiles=false;
+    waveSpawned=0;
+    // Wave quota: 8–11 on wave 1, grows by ~2 per wave, capped at 30
+    waveQuota = Math.min(30, 8 + Math.floor(Math.random()*4) + (wave-1)*2);
     const t=waveType(wave);
     if(t==='boss')       waveLabel=`WAVE ${wave}  ★ BOSS INCOMING ★`;
-    else if(t==='mirv')  waveLabel=`WAVE ${wave}  — MIRV ALERT`;
+    else if(t==='mirv')  waveLabel=`WAVE ${wave}  — MIRV THREAT`;
     else if(t==='salvo') waveLabel=`WAVE ${wave}  — SATURATION VOLLEY`;
     else                 waveLabel=`WAVE ${wave}`;
 
@@ -6767,7 +6772,11 @@ function initMissileCommand(body, ctrl) {
     if(!tgt) return;
     const t=waveType(wave);
     const sx=Math.random()*W;
-    if(t==='mirv'){
+    // On mirv waves, only a fraction of missiles are actually MIRVs
+    // Starts at ~15% on wave 4, rises slowly to ~40% by wave 12+
+    const mirvChance = t==='mirv' ? Math.min(0.4, 0.1 + (wave-4)*0.04) : 0;
+    const spawnMirv = t==='mirv' && Math.random() < mirvChance;
+    if(spawnMirv){
       // MIRV parent targets a mid-screen split point, NOT the ground.
       // It flies to that point then splits into 3 fast children targeting cities.
       const splitX=tgt.x+(Math.random()-0.5)*W*0.3; // slight horizontal drift
@@ -6851,8 +6860,11 @@ function initMissileCommand(body, ctrl) {
         missiles.push(makeMissile(s.sx,0,s.tx,s.ty));
       }
     } else {
-      // Normal / mirv: probabilistic spawn
-      if(Math.random()<DIFF.spawnRate[difficulty]*(1+wave*0.12)) spawnMissile();
+      // Normal / mirv: trickle spawn up to waveQuota
+      if(waveSpawned < waveQuota && Math.random()<DIFF.spawnRate[difficulty]*(1+wave*0.12)) {
+        spawnMissile();
+        waveSpawned++;
+      }
     }
 
     // Move missiles — use pendingMissiles so children aren't iterated mid-loop
@@ -6975,7 +6987,9 @@ function initMissileCommand(body, ctrl) {
     // Wave clear check
     // Only consider wave done once at least one missile has actually appeared
     if(missiles.length>0||interceptors.length>0) waveHadMissiles=true;
-    const allGone=waveHadMissiles&&missiles.length===0&&interceptors.length===0&&salvoQueue.length===0&&tick5>60;
+    const t2=waveType(wave);
+    const quotaDone = (t2==='boss'||t2==='salvo') ? true : waveSpawned>=waveQuota;
+    const allGone=waveHadMissiles&&missiles.length===0&&interceptors.length===0&&salvoQueue.length===0&&quotaDone&&tick5>60;
     if(allGone&&wavePhase==='playing'){
       if(cities.some(c2=>c2.alive)) startWaveClear();
     }
@@ -14214,9 +14228,10 @@ function initOthello(body, ctrl) {
   }
 
   function applyMove(b, r, c, p) {
+    const toFlip = flips(b, r, c, p);
     const nb = b.map(row => [...row]);
     nb[r][c] = p;
-    flips(nb, r, c, p).forEach(([fr, fc]) => nb[fr][fc] = p);
+    toFlip.forEach(([fr, fc]) => nb[fr][fc] = p);
     return nb;
   }
 
@@ -14403,13 +14418,26 @@ function initOthello(body, ctrl) {
     if (twoPlayer || turn!==2 || gameState!=='playing') return;
     thinking=true;
     setTimeout(()=>{
+      if (gameState!=='playing') { thinking=false; return; }
       const mv = bestMove(board, 2, DIFF_DEPTH[difficulty]);
       if (mv) {
         board = applyMove(board, mv[0], mv[1], 2);
-        const p1m = validMoves(board,1);
-        if (p1m.length) turn=1;
-        else if (!validMoves(board,2).length) endGame();
-      } else endGame();
+        // check if player can move
+        if (validMoves(board,1).length) {
+          turn=1;
+        } else if (validMoves(board,2).length) {
+          // player must pass, AI goes again
+          setTimeout(doAIMove, 400);
+          thinking=false;
+          return;
+        } else {
+          endGame();
+        }
+      } else {
+        // AI has no moves — pass back to player if they can move
+        if (validMoves(board,1).length) { turn=1; }
+        else { endGame(); }
+      }
       thinking=false;
     }, 30);
   }
@@ -14434,9 +14462,20 @@ function initOthello(body, ctrl) {
     if (!flips(board,r,c2,turn).length) return;
     board = applyMove(board,r,c2,turn);
     const nextP = 3-turn;
-    if (validMoves(board,nextP).length) { turn=nextP; if (!twoPlayer && turn===2) setTimeout(doAIMove,80); }
-    else if (!validMoves(board,turn).length) endGame();
-    // else current player goes again (no valid moves for opponent)
+    const nextMoves = validMoves(board, nextP);
+    const curMoves  = validMoves(board, turn);
+    if (nextMoves.length) {
+      // normal: switch to next player
+      turn = nextP;
+      if (!twoPlayer && turn===2) setTimeout(doAIMove, 80);
+    } else if (curMoves.length) {
+      // next player must pass, current player goes again
+      // (turn stays the same — no action needed for human, AI re-triggers)
+      if (!twoPlayer && turn===2) setTimeout(doAIMove, 80);
+    } else {
+      // neither player can move — game over
+      endGame();
+    }
   });
 
   const diffBtn = mkBtn(DIFF_NAMES[difficulty], ctrl);
@@ -14471,8 +14510,8 @@ function initBattleship(body, ctrl) {
   // grid values: 0=empty, 1=ship, 2=miss(shot empty), 3=hit
 
   function placeShipRandom(grid, size) {
-    let placed = false, attempts = 0;
-    while (!placed && attempts<1000) {
+    let attempts = 0;
+    while (attempts<1000) {
       attempts++;
       const horiz = Math.random()<0.5;
       const r = Math.floor(Math.random()*(horiz?N:N-size+1));
@@ -14482,14 +14521,19 @@ function initBattleship(body, ctrl) {
         const nr=r+(horiz?0:i), nc=c2+(horiz?i:0);
         if (grid[nr][nc]) { ok=false; break; }
       }
-      if (ok) { for (let i=0;i<size;i++) { grid[r+(horiz?0:i)][c2+(horiz?i:0)]=1; } placed=true; }
+      if (ok) {
+        const cells=[];
+        for (let i=0;i<size;i++) { const nr=r+(horiz?0:i),nc=c2+(horiz?i:0); grid[nr][nc]=1; cells.push([nr,nc]); }
+        return cells;
+      }
     }
+    return [];
   }
 
   function buildAIBoard() {
     const g = emptyGrid();
-    SHIPS.forEach(s => placeShipRandom(g, s.size));
-    return g;
+    const cells = SHIPS.map(s => placeShipRandom(g, s.size));
+    return {grid: g, cells};
   }
 
   function isSunk(board, shots, shipCells) {
@@ -14504,38 +14548,20 @@ function initBattleship(body, ctrl) {
   // Store ship cell lists for each board
   let playerShipCells, aiShipCells;
 
-  function extractShipCells(grid) {
-    // naive: each contiguous group of 1s
-    const visited = Array.from({length:N},()=>Array(N).fill(false));
-    const groups = [];
-    for (let r=0;r<N;r++) for (let c2=0;c2<N;c2++) {
-      if (grid[r][c2]===1 && !visited[r][c2]) {
-        const group=[], stack=[[r,c2]];
-        while(stack.length) {
-          const [cr,cc]=stack.pop();
-          if(cr<0||cr>=N||cc<0||cc>=N||visited[cr][cc]||grid[cr][cc]!==1) continue;
-          visited[cr][cc]=true; group.push([cr,cc]);
-          stack.push([cr+1,cc],[cr-1,cc],[cr,cc+1],[cr,cc-1]);
-        }
-        groups.push(group);
-      }
-    }
-    return groups;
-  }
-
   function initGame() {
     W=c.width=body.clientWidth||600; H=c.height=body.clientHeight||400;
     gameState = twoPlayer ? 'p2place' : 'placing';
-    playerBoard = emptyGrid(); aiBoard = buildAIBoard();
+    playerBoard = emptyGrid();
+    const ai = buildAIBoard();
+    aiBoard = ai.grid; aiShipCells = ai.cells;
     playerShots = emptyGrid(); aiShots = emptyGrid();
     aiHits=[]; aiTargets=[]; aiParity=0;
     placingIdx=0; placingH=true; preview=null; hoverCell=null;
     winner=null; phase='player';
     if(!scores) scores={p1:0,p2:0};
-    playerShipCells=[]; aiShipCells=extractShipCells(aiBoard);
+    playerShipCells=[];
     if (twoPlayer) {
-      // P2 (ai slot) gets a real board too
-      aiBoard=emptyGrid();
+      aiBoard=emptyGrid(); aiShipCells=[];
     }
   }
   initGame();
@@ -14611,8 +14637,19 @@ function initBattleship(body, ctrl) {
     else { phase='player'; }
   }
 
-  function drawGrid(gx, gy, gs, grid, shots, showShips, label, isActive) {
+  function getSunkCells(shipCells, shots) {
+    const sunk = new Set();
+    for (const ship of shipCells) {
+      if (ship.every(([r,c2]) => shots[r][c2])) {
+        ship.forEach(([r,c2]) => sunk.add(`${r},${c2}`));
+      }
+    }
+    return sunk;
+  }
+
+  function drawGrid(gx, gy, gs, grid, shots, showShips, label, isActive, shipCells) {
     const paper=isPaper();
+    const sunkCells = getSunkCells(shipCells||[], shots);
     // border
     ctx.strokeStyle=isActive?(paper?'#2a6b2a':'#44aa44'):(paper?'rgba(0,0,0,0.2)':'rgba(255,255,255,0.15)');
     ctx.lineWidth=isActive?2:1;
@@ -14621,15 +14658,17 @@ function initBattleship(body, ctrl) {
 
     for(let r=0;r<N;r++) for(let c2=0;c2<N;c2++) {
       const x=gx+c2*gs, y=gy+r*gs;
+      const isSunkCell = sunkCells.has(`${r},${c2}`);
       // cell bg
       let bg=paper?'#c8dce8':'#0a1a2a';
-      if (showShips&&grid[r][c2]===1) bg=paper?'#8ab0c0':'#1a3a5a';
+      if (isSunkCell) bg=paper?'#c03020':'#8a1a10';
+      else if (showShips&&grid[r][c2]===1) bg=paper?'#8ab0c0':'#1a3a5a';
       ctx.fillStyle=bg; ctx.fillRect(x,y,gs,gs);
       // grid line
       ctx.strokeStyle=paper?'rgba(0,0,0,0.12)':'rgba(255,255,255,0.07)'; ctx.lineWidth=0.5;
       ctx.strokeRect(x,y,gs,gs);
-      // shot overlay
-      if (shots[r][c2]) {
+      // shot overlay — skip for sunk cells (whole cell is red already)
+      if (shots[r][c2] && !isSunkCell) {
         const hit=grid[r][c2]===1;
         ctx.fillStyle=hit?'#e84030':'#6090b0';
         ctx.beginPath(); ctx.arc(x+gs/2,y+gs/2,gs*0.28,0,Math.PI*2); ctx.fill();
@@ -14698,8 +14737,8 @@ function initBattleship(body, ctrl) {
     const p2label=twoPlayer?'P2 Fleet':'AI Fleet';
     const revealAI=gameState==='over'||twoPlayer;
 
-    drawGrid(gx1,gy,gs,playerBoard,aiShots,true,p1label,phase==='ai'||gameState==='over');
-    drawGrid(gx2,gy,gs,aiBoard,playerShots,revealAI,p2label,phase==='player'&&gameState==='playing');
+    drawGrid(gx1,gy,gs,playerBoard,aiShots,true,p1label,phase==='ai'||gameState==='over',playerShipCells);
+    drawGrid(gx2,gy,gs,aiBoard,playerShots,revealAI,p2label,phase==='player'&&gameState==='playing',aiShipCells);
 
     // hover on AI grid during player turn
     if (hoverCell&&phase==='player'&&gameState==='playing') {
@@ -14768,8 +14807,6 @@ function initBattleship(body, ctrl) {
       playerShipCells.push(cells);
       placingIdx++;
       if (placingIdx>=SHIPS.length) {
-        // AI gets random board, start game
-        aiShipCells=extractShipCells(aiBoard);
         gameState='playing'; phase='player'; placingIdx=0;
       }
       return;
@@ -14782,12 +14819,12 @@ function initBattleship(body, ctrl) {
       if (placingIdx>=SHIPS.length) return;
       const size=SHIPS[placingIdx].size;
       if (!canPlace(aiBoard,r,c2,size,placingH)) return;
-      doPlace(aiBoard,r,c2,size,placingH);
+      const cells2=doPlace(aiBoard,r,c2,size,placingH);
+      aiShipCells.push(cells2);
       placingIdx++;
       if (placingIdx>=SHIPS.length) {
         // now P1 places
         gameState='placing'; placingIdx=0; placingH=true;
-        aiShipCells=extractShipCells(aiBoard);
       }
       return;
     }
