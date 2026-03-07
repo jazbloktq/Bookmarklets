@@ -298,8 +298,11 @@ function openWin(i, toy) {
   ROOT.appendChild(win); styleWin(win);
   activeWin=win; items[i].classList.add('active'); refreshItem(items[i]);
   cl.addEventListener('click', ()=>closeWin(win));
+  cl.setAttribute('tabindex','-1'); // prevent close button from stealing Enter
   win._dc=makeDraggable(win,bar); makeResizable(win,rz);
   win._destroy=toy.init(body,ctrl);
+  // Blur any focused element so keyboard games work immediately
+  if(document.activeElement&&document.activeElement!==document.body) document.activeElement.blur();
 }
 function closeWin(win) {
   if(!win)return; win._destroy?.(); win._dc?.();
@@ -423,6 +426,12 @@ const TOYS = [
   {name:'Jetpack Joyride',      init:initJetpack,        game:true},
   {name:'Memory Pattern',       init:initMemoryPattern,  game:true},
   {name:'Wordle',               init:initWordle,         game:true},
+  {name:'Word Search',          init:initWordSearch,     game:true},
+  {name:'Crossword',            init:initCrossword,      game:true},
+  {name:'Mahjong Solitaire',    init:initMahjong,        game:true},
+  {name:'Lights Out',           init:initLightsOut,      game:true},
+  {name:'Poker',                init:initPoker,          game:true},
+  {name:'Typing Speed',         init:initTypingSpeed,    game:true},
 ];
 const LIST  = document.getElementById('__SB_LIST__');
 const items = [];
@@ -6693,13 +6702,15 @@ function initMissileCommand(body, ctrl) {
   function makeMissile(sx,sy,tx,ty,opts={}){
     const spd=(opts.spd||DIFF.missileSpeed[difficulty])*(0.85+Math.random()*0.3)*(1+wave*0.07);
     const dist=Math.hypot(tx-sx,ty-sy)||1;
-    return Object.assign({
+    const m=Object.assign({
       x:sx, y:sy,
       vx:(tx-sx)/dist*spd, vy:(ty-sy)/dist*spd,
       tx, ty, trail:[], alive:true,
       hp:1, isBoss:false, isMirv:false, mirvDone:false,
-      col:'#ff4422',
+      col:'#ff4422', hitBy:new Set(),
     }, opts);
+    if(!(m.hitBy instanceof Set)) m.hitBy=new Set();
+    return m;
   }
 
   function spawnMissile(){
@@ -6812,11 +6823,14 @@ function initMissileCommand(body, ctrl) {
         const birthExpId=Math.random();
         explosions4.push({x:m.x,y:m.y,r:28,maxR:28,life:1,col:'#ff8822',id:birthExpId,growing:true});
         // Spawn 3 children targeting 3 different cities/batteries
-        const pool=[...cities.filter(c2=>c2.alive)];
+        const alivePop=[...cities.filter(c2=>c2.alive),...batteries];
         const targets=[];
-        while(targets.length<3){
-          if(pool.length) targets.push(pool.splice(Math.floor(Math.random()*pool.length),1)[0]);
-          else targets.push(batteries[Math.floor(Math.random()*batteries.length)]);
+        const used=new Set();
+        for(let ci2=0;ci2<3;ci2++){
+          const pool2=alivePop.filter((_,i)=>!used.has(i));
+          const pick=pool2.length ? pool2[Math.floor(Math.random()*pool2.length)] : alivePop[ci2%alivePop.length];
+          targets.push(pick);
+          const idx=alivePop.indexOf(pick); if(idx>=0) used.add(idx);
         }
         const childSpd=DIFF.missileSpeed[difficulty]*1.1*(1+wave*0.06);
         for(let ci2=0;ci2<targets.length;ci2++){
@@ -6866,6 +6880,7 @@ function initMissileCommand(body, ctrl) {
     interceptors=interceptors.filter(iv=>!iv.dead);
 
     // Explosion-missile collisions
+    const bossChildren=[];
     for(const exp of explosions4){
       if(!exp.id) exp.id=Math.random(); // unique id per explosion
       if(exp.growing) exp.r=Math.min(exp.maxR,exp.r+2);
@@ -6874,7 +6889,6 @@ function initMissileCommand(body, ctrl) {
       if(exp.r>=exp.maxR) exp.growing=false;
       for(const m of missiles){
         if(!m.alive) continue;
-        if(!m.hitBy) m.hitBy=new Set();
         if(m.hitBy.has(exp.id)) continue; // this explosion already hit this missile
         if(Math.hypot(m.x-exp.x,m.y-exp.y)<exp.r){
           m.hitBy.add(exp.id);
@@ -6883,16 +6897,20 @@ function initMissileCommand(body, ctrl) {
             m.alive=false;
             score+=m.isBoss?200*wave:25*wave;
             addExplosion(m.x,m.y,m.isBoss?50:30,'#ffaa44');
-            // Boss spawns 2 children on death
+            // Boss spawns 3 fast children on death
             if(m.isBoss){
               bossAlive=false;
               const aliveCities=cities.filter(c2=>c2.alive);
-              for(let i=0;i<2;i++){
+              const bossDeathId=Math.random();
+              explosions4.push({x:m.x,y:m.y,r:10,maxR:10,life:0.5,col:'#ff2200',id:bossDeathId,growing:false});
+              for(let i=0;i<3;i++){
                 const tgt=aliveCities.length
-                  ? aliveCities[Math.floor(Math.random()*aliveCities.length)]
-                  : batteries[Math.floor(Math.random()*batteries.length)];
-                if(tgt) missiles.push(makeMissile(m.x,m.y,tgt.x,tgt.y,{
-                  spd:DIFF.missileSpeed[difficulty]*1.3, col:'#ff6600'
+                  ? aliveCities[i % aliveCities.length]
+                  : batteries[i % batteries.length];
+                bossChildren.push(makeMissile(m.x,m.y,tgt.x,tgt.y,{
+                  spd:DIFF.missileSpeed[difficulty]*1.5,
+                  col:'#ff6600',
+                  hitBy:new Set([bossDeathId]),
                 }));
               }
             }
@@ -6905,6 +6923,7 @@ function initMissileCommand(body, ctrl) {
         }
       }
     }
+    missiles=missiles.concat(bossChildren);
     explosions4=explosions4.filter(e=>e.life>0);
 
     // Wave clear check
@@ -12366,6 +12385,2065 @@ function initJetpack(body, ctrl) {
     document.removeEventListener('keyup',onKey);
     window.removeEventListener('mouseup',()=>press(false));
   };
+}
+
+
+// ════════════════════════════════════════════════════════════════════════════
+// TOY — MEMORY PATTERN
+// ════════════════════════════════════════════════════════════════════════════
+function initMemoryPattern(body, ctrl) {
+  const {c,ctx,ro} = mkCanvas(body);
+  let W=c.width, H=c.height, raf;
+
+  let difficulty=1; // 0=easy(3x3), 1=medium(5x5), 2=hard(7x7)
+  const DIFF_NAMES=['Easy','Medium','Hard'];
+  const GRID_SIZE=[3,5,7];
+
+  // Timing (ms) — hard mode uses tighter timings to keep it snappy on 9x9
+  const TIMING=[
+    {fadeIn:200, hold:500, fadeOut:220, gap:180, startDelay:700},  // easy
+    {fadeIn:170, hold:420, fadeOut:180, gap:150, startDelay:600},  // medium
+    {fadeIn:130, hold:340, fadeOut:150, gap:110, startDelay:500},  // hard
+  ];
+  function tm(){ return TIMING[difficulty]; }
+  function stepDuration(){ const t=tm(); return t.fadeIn+t.hold+t.fadeOut+t.gap; }
+
+  // per-cell animation state: {phase:'fadein'|'hold'|'fadeout', t:0..1}
+  // litMap[idx] = 0..1 brightness (driven by animation below)
+  let litMap={};       // idx -> 0..1 brightness right now
+  let cellAnim={};     // idx -> {phase, elapsed, isPlayerFlash}
+
+  // Game state
+  let sequence, playerSeq, gamePhase, score, streak, level;
+  let showIdx, showElapsed, waitingToStart;
+  let resultMsg, resultTimer;
+  let inputEnabled=false;
+  let wrongIdx=-1;
+
+  function cols(){ return GRID_SIZE[difficulty]; }
+
+  function newGame(){
+    sequence=[]; playerSeq=[];
+    score=0; streak=0; level=1;
+    litMap={}; cellAnim={};
+    startRound();
+  }
+
+  function startRound(){
+    const n=cols()*cols();
+    const len=Math.max(2, level+1);
+    sequence=[];
+    let last=-1;
+    for(let i=0;i<len;i++){
+      let idx;
+      do { idx=Math.floor(Math.random()*n); } while(idx===last&&n>1);
+      sequence.push(idx); last=idx;
+    }
+    playerSeq=[];
+    gamePhase='showing';
+    showIdx=0;
+    showElapsed=0;
+    waitingToStart=true;
+    inputEnabled=false;
+    resultMsg=null;
+    wrongIdx=-1;
+    litMap={}; cellAnim={};
+  }
+
+  // Trigger a cell light-up animation
+  function flashCell(idx, isPlayer){
+    cellAnim[idx]={phase:'fadein', elapsed:0, isPlayer:!!isPlayer};
+  }
+
+  function step(dt){
+    const t=tm();
+
+    // Advance all cell animations
+    for(const k in cellAnim){
+      const a=cellAnim[k];
+      a.elapsed+=dt;
+      if(a.phase==='fadein'){
+        litMap[k]=Math.min(1, a.elapsed/t.fadeIn);
+        if(a.elapsed>=t.fadeIn){ a.phase='hold'; a.elapsed=0; }
+      } else if(a.phase==='hold'){
+        litMap[k]=1;
+        if(a.elapsed>=t.hold){ a.phase='fadeout'; a.elapsed=0; }
+      } else if(a.phase==='fadeout'){
+        litMap[k]=Math.max(0, 1-a.elapsed/t.fadeOut);
+        if(a.elapsed>=t.fadeOut){ litMap[k]=0; delete litMap[k]; delete cellAnim[k]; }
+      }
+    }
+
+    if(gamePhase==='showing'){
+      // Initial start delay before first cell
+      if(waitingToStart){
+        showElapsed+=dt;
+        if(showElapsed>=t.startDelay){ waitingToStart=false; showElapsed=0; }
+        return;
+      }
+      showElapsed+=dt;
+      // Fire each cell at the right moment in the timeline
+      const dur=stepDuration();
+      const targetIdx=Math.floor(showElapsed/dur);
+      if(targetIdx>showIdx-1 && showIdx<sequence.length){
+        // Time to light up next cell
+        flashCell(sequence[showIdx]);
+        showIdx++;
+      }
+      // All cells triggered — wait for last animation to finish then go to input
+      if(showIdx>=sequence.length){
+        const lastFired=(showIdx-1)*dur;
+        const animEnd=lastFired+t.fadeIn+t.hold+t.fadeOut;
+        if(showElapsed>=animEnd+60){
+          gamePhase='input';
+          inputEnabled=true;
+        }
+      }
+    }
+
+    if(gamePhase==='result'){
+      resultTimer-=dt;
+      if(resultTimer<=0){
+        litMap={}; cellAnim={};
+        if(resultMsg==='correct'){ level++; startRound(); }
+        else { newGame(); }
+      }
+    }
+  }
+
+  function handleCellClick(idx){
+    if(!inputEnabled || gamePhase!=='input') return;
+    flashCell(idx, true);
+    playerSeq.push(idx);
+    const pos=playerSeq.length-1;
+
+    if(playerSeq[pos]!==sequence[pos]){
+      inputEnabled=false;
+      wrongIdx=idx;
+      gamePhase='result';
+      resultMsg='wrong';
+      resultTimer=2000;
+      streak=0;
+    } else if(playerSeq.length===sequence.length){
+      inputEnabled=false;
+      score+=sequence.length*10*(difficulty+1);
+      streak++;
+      gamePhase='result';
+      resultMsg='correct';
+      resultTimer=1000;
+    }
+  }
+
+  function cellRect(idx){
+    const n=cols();
+    const pad=18;
+    const topPad=36;
+    const avW=W-pad*2, avH=H-pad*2-topPad;
+    const cellW=avW/n, cellH=avH/n;
+    const size=Math.min(cellW,cellH);
+    const gapFrac=n===3?0.10:n===6?0.08:0.06;
+    const gap=size*gapFrac;
+    const gridW=n*size, gridH=n*size;
+    const ox=(W-gridW)/2, oy=topPad+(avH-gridH)/2;
+    const row=Math.floor(idx/n), col=idx%n;
+    return {
+      x: ox+col*size+gap/2,
+      y: oy+row*size+gap/2,
+      w: size-gap,
+      h: size-gap,
+      r: (size-gap)*(n===3?0.16:n===6?0.12:0.09),
+    };
+  }
+
+  function hitTest(mx,my){
+    const total=cols()*cols();
+    for(let i=0;i<total;i++){
+      const r=cellRect(i);
+      if(mx>=r.x&&mx<=r.x+r.w&&my>=r.y&&my<=r.y+r.h) return i;
+    }
+    return -1;
+  }
+
+  let lastTs=0;
+  function draw(ts){
+    raf=requestAnimationFrame(draw);
+    const dt=Math.min(60, ts-lastTs||16); lastTs=ts;
+    W=c.width=body.clientWidth; H=c.height=body.clientHeight;
+    const paper=isPaper();
+
+    step(dt);
+
+    ctx.fillStyle=paper?'#f5f1e8':'#0d1117';
+    ctx.fillRect(0,0,W,H);
+
+    const n=cols(), total=n*n;
+
+    for(let i=0;i<total;i++){
+      const r=cellRect(i);
+      const br=litMap[i]||0;
+      const isWrong=(gamePhase==='result'&&resultMsg==='wrong'&&i===wrongIdx);
+      const isCorrectFlash=(gamePhase==='result'&&resultMsg==='correct');
+
+      // Base cell
+      const baseDark=paper?'rgba(0,0,0,0.07)':'rgba(255,255,255,0.055)';
+      ctx.fillStyle=baseDark;
+      roundRect(ctx,r.x,r.y,r.w,r.h,r.r); ctx.fill();
+
+      // Lit glow
+      if(br>0&&!isWrong){
+        // Outer colour fill
+        const ease=br<0.5?2*br*br:1-Math.pow(-2*br+2,2)/2; // ease in-out
+        ctx.fillStyle=paper?`rgba(60,140,255,${ease*0.88})`:`rgba(80,185,255,${ease*0.82})`;
+        roundRect(ctx,r.x,r.y,r.w,r.h,r.r); ctx.fill();
+        // Specular highlight at top
+        const hlH=r.h*0.28;
+        ctx.fillStyle=`rgba(255,255,255,${ease*0.38})`;
+        roundRect(ctx,r.x+r.w*0.18,r.y+r.h*0.08,r.w*0.64,hlH,r.r*0.7); ctx.fill();
+      }
+
+      // Wrong cell — red flash
+      if(isWrong){
+        const pulse=0.7+0.3*Math.sin(Date.now()*0.012);
+        ctx.fillStyle=`rgba(255,55,55,${pulse*0.9})`;
+        roundRect(ctx,r.x,r.y,r.w,r.h,r.r); ctx.fill();
+      }
+
+      // Correct — green wash over whole grid
+      if(isCorrectFlash){
+        const fade=Math.max(0, resultTimer/1000);
+        ctx.fillStyle=`rgba(60,210,110,${fade*0.45})`;
+        roundRect(ctx,r.x,r.y,r.w,r.h,r.r); ctx.fill();
+      }
+
+      // Border
+      ctx.strokeStyle=br>0
+        ?(paper?'rgba(60,140,255,0.5)':'rgba(80,185,255,0.4)')
+        :(paper?'rgba(0,0,0,0.10)':'rgba(255,255,255,0.07)');
+      ctx.lineWidth=br>0?1.5:1;
+      roundRect(ctx,r.x,r.y,r.w,r.h,r.r); ctx.stroke();
+    }
+
+    // ── HUD bar ──────────────────────────────────────────────────────────
+    ctx.textAlign='left'; ctx.textBaseline='top';
+    ctx.fillStyle=paper?'rgba(0,0,0,0.28)':'rgba(255,255,255,0.28)';
+    ctx.font=`300 9px 'IBM Plex Mono',monospace`;
+    ctx.fillText(`score: ${score}  streak: ${streak}  level: ${level}`,8,7);
+
+    // Centre status
+    ctx.textAlign='center'; ctx.textBaseline='top';
+    const sy=8;
+    if(gamePhase==='showing'){
+      ctx.fillStyle=paper?'rgba(0,0,0,0.32)':'rgba(255,255,255,0.32)';
+      ctx.font=`300 10px 'IBM Plex Mono',monospace`;
+      const prog=showIdx>0?` · ${showIdx}/${sequence.length}`:'';
+      ctx.fillText(`watch the sequence${prog}`,W/2,sy);
+    } else if(gamePhase==='input'){
+      ctx.fillStyle=paper?'rgba(30,110,220,0.8)':'rgba(100,190,255,0.9)';
+      ctx.font=`300 10px 'IBM Plex Mono',monospace`;
+      ctx.fillText(`your turn  ·  ${playerSeq.length} / ${sequence.length}`,W/2,sy);
+    } else if(gamePhase==='result'){
+      if(resultMsg==='correct'){
+        ctx.fillStyle=paper?'#226622':'#44ee88';
+        ctx.font=`400 10px 'IBM Plex Mono',monospace`;
+        ctx.fillText(`✓  correct!  +${sequence.length*10*(difficulty+1)} pts`,W/2,sy);
+      } else {
+        ctx.fillStyle=paper?'#882222':'#ff6060';
+        ctx.font=`400 10px 'IBM Plex Mono',monospace`;
+        ctx.fillText(`✗  wrong — restarting…`,W/2,sy);
+      }
+    }
+    ctx.textAlign='left';
+  }
+
+  const onClick=e=>{
+    const r=c.getBoundingClientRect();
+    handleCellClick(hitTest(e.clientX-r.left, e.clientY-r.top));
+  };
+  const onTouch=e=>{
+    e.preventDefault();
+    const r=c.getBoundingClientRect();
+    const t=e.touches[0];
+    handleCellClick(hitTest(t.clientX-r.left, t.clientY-r.top));
+  };
+  c.addEventListener('click',onClick);
+  c.addEventListener('touchstart',onTouch,{passive:false});
+
+  const diffBtn=mkBtn(DIFF_NAMES[difficulty],ctrl);
+  diffBtn.addEventListener('click',()=>{
+    difficulty=(difficulty+1)%3;
+    diffBtn.textContent=DIFF_NAMES[difficulty];
+    newGame();
+  });
+  mkBtn('New Game',ctrl).addEventListener('click',newGame);
+  mkInfo(ctrl).textContent='repeat the sequence';
+
+  newGame();
+  requestAnimationFrame(draw);
+  return ()=>{ cancelAnimationFrame(raf); ro.disconnect();
+    c.removeEventListener('click',onClick);
+    c.removeEventListener('touchstart',onTouch); };
+}
+
+
+// ════════════════════════════════════════════════════════════════════════════
+// TOY — WORDLE
+// ════════════════════════════════════════════════════════════════════════════
+function initWordle(body, ctrl) {
+  body.style.position='relative';
+  body.style.overflow='hidden';
+
+  let difficulty=1; // 0=easy(7 guesses), 1=normal(6), 2=hard(5)
+  const DIFF_NAMES=['Easy','Normal','Hard'];
+  const MAX_GUESSES=[7,6,5];
+
+  // ── Word lists ────────────────────────────────────────────────────────────
+  // ~300 common 5-letter answers per difficulty, plus a large valid-guess list
+  const EASY_WORDS=['about','above','abuse','actor','acute','admit','adopt','adult','after','again','agent','agree','ahead','alarm','album','alert','alien','align','alike','alive','alley','allow','alone','along','aloud','alter','angel','anger','angle','angry','anime','annex','annoy','antic','apart','apple','apply','arena','argue','arise','armor','army','aroma','arose','arrow','asked','asset','atlas','attic','audio','audit','avail','avoid','awful','awoke','badge','badly','baker','basic','basis','beach','beady','began','begin','being','below','bench','berry','birch','bison','black','blade','bland','blank','blast','blaze','bleak','bleed','blend','bless','bliss','block','blood','blown','blown','board','bonus','boost','booth','bound','boxer','brace','brain','brand','brave','bread','break','breed','brick','bride','brief','bring','broad','broke','brook','brush','brute','buddy','built','bulge','bunch','burly','burst','buyer','cabin','camel','candy','carry','catch','cause','cedar','chain','chair','chaos','charm','check','cheek','cheer','chess','chest','chief','child','china','choir','chunk','civic','civil','claim','class','clean','clear','clerk','click','cliff','climb','cling','clock','close','cloud','coach','cobra','coins','color','comet','comic','comma','coral','count','court','cover','covet','craft','crane','crash','crazy','creek','crisp','cross','crowd','crown','crush','cubic','curry','curse','cycle','daily','dance','dandy','datum','decay','delay','delta','dense','depot','derby','devil','dirty','disco','dodge','dogma','doing','donor','doubt','dough','douse','dozen','draft','drain','drama','drape','dread','dream','dress','drift','drink','drive','drone','drove','drown','druid','dryer','dusty','dwarf','dwell','eager','early','earth','eight','elite','empty','enemy','enjoy','enter','entry','equal','error','essay','event','every','exact','excel','exist','extra','fable','faced','faint','faith','false','fancy','fatal','fault','feast','femur','fence','ferry','fetch','fever','fewer','fiber','field','fiend','fifth','fifty','fight','final','first','fixed','fjord','flame','flare','flash','flask','fleet','flesh','fling','float','flood','floor','flour','flown','fluid','flunk','focus','foray','force','forge','forth','forum','found','frame','frank','fraud','fresh','front','frost','froth','froze','fruit','fully','funny','gamma','gauze','gavel','gawky','genre','ghost','giant','given','gizmo','gland','glare','glass','globe','gloom','glory','gloss','glove','glyph','gnome','going','gorge','gouge','grace','grade','grail','grand','grant','grasp','grass','grave','great','green','greet','grief','grind','gripe','groan','gross','group','grove','grown','gruff','guile','guise','gusto','habit','haiku','halve','handy','hasty','haven','heart','heavy','hedge','heist','hence','heron','hippo','hobby','honor','horde','horns','horse','hotel','house','human','humor','hurry','hyena','hyper','ideal','image','imply','inept','infer','infix','inlet','input','inter','intro','ionic','ivory','jaunt','joust','judge','juice','juicy','jumbo','karma','kayak','kebab','knack','knave','kneel','knife','knock','known','koala','kudos','label','lance','large','laser','later','latch','lathe','layer','leach','leafy','leapt','learn','lease','ledge','legal','lemon','level','light','liner','links','llama','local','lodge','logic','loose','lower','loyal','lucky','lunar','lyric','magic','major','maker','manor','maple','march','masse','match','matte','mayor','media','mercy','merge','merit','metal','might','mirth','miser','mixed','mocha','model','money','month','moral','moron','morph','motor','motto','mount','mourn','mouse','mouth','moved','movie','muddy','mummy','music','nadir','naive','naked','nasty','naval','nerve','never','newly','night','ninja','noble','north','noted','novel','nurse','nymph','ocean','offer','often','olive','opera','optic','orbit','order','organ','other','outer','ounce','outdo','oxide','ozone','paint','panic','paper','pasta','patch','pause','peace','peach','pedal','penny','perch','peril','perky','petty','phase','phone','photo','piano','pilot','pitch','pixel','pizza','place','plain','plait','plane','plank','plant','plaque','plaza','plead','plier','pluck','plumb','plume','point','polar','pound','power','press','price','prime','print','prior','prize','probe','proof','prose','proud','prove','prowl','proxy','pulse','punch','pupil','queen','query','quest','queue','quick','quiet','quota','quote','rabbi','radar','radio','rapid','ratio','reach','ready','realm','rebel','refer','reign','relax','reply','rider','ridge','rifle','right','rigid','risky','rival','river','robot','rocky','rouge','rough','round','route','rover','rowdy','rugged','ruler','runny','rural','rusty','sadly','saint','sandy','sauce','scale','scare','scene','scope','score','scorn','scout','scram','screw','sedan','seize','sense','serum','serve','seven','shade','shaft','shake','shame','shape','share','sharp','sheaf','sheer','sheer','shelf','shell','shift','shine','shire','shirt','shock','shore','short','shout','shove','shown','shrug','siege','siren','sixth','sixty','skill','skull','slack','slant','slash','slate','sleet','slick','slide','slope','sloth','slump','smart','smash','smell','smile','smite','smock','smoke','snack','snail','snake','snare','sneak','snowy','solar','solid','sonic','sorry','south','space','spare','spark','spawn','speak','speck','speed','spell','spend','spice','spicy','spike','spill','spine','spite','split','spoke','spoon','sport','spree','sprig','squad','squat','stain','stair','stake','stale','stalk','stamp','stand','stark','stash','state','stays','steak','steel','steep','steer','stern','stick','stiff','still','sting','stink','stock','stoic','stone','story','stout','stove','strap','stray','strip','stuck','study','stump','stunt','style','sugar','suite','sulky','sunny','super','surge','swamp','swear','sweat','sweep','sweet','swell','swept','swift','swipe','sword','swore','swung','table','talon','tapir','taunt','tawny','tease','teeth','tempo','tense','thorn','those','three','threw','throw','thumb','tiara','tiger','tight','timer','tired','title','today','token','tonal','tonic','torch','total','touch','tough','tower','toxic','track','trade','trail','train','trait','tramp','traps','trash','trawl','tread','treat','trend','triad','tribe','trick','tried','trill','troop','troth','truck','truly','trump','trunk','truss','trust','truth','tumor','tuner','tunic','turbo','twice','twist','ultra','uncle','under','undue','union','unite','until','upper','upset','usher','utter','vague','valid','valor','valve','vapor','vault','vaunt','vigor','viper','viral','virus','visit','visor','vista','vital','vivid','vocal','vogue','voice','voila','wader','wager','waist','waltz','waste','watch','water','weary','wedge','weigh','weird','wheat','wheel','where','which','while','white','whole','wield','windy','witty','world','worry','worst','worth','would','write','wrote','yacht','yearn','young','youth','yourn','zonal'];
+
+  const NORMAL_WORDS=['aback','abase','abash','abate','abbey','abbot','abhor','abide','abler','abode','abyss','acorn','acres','adage','adept','adore','adorn','adrift','aegis','afoot','agile','aglow','agony','agora','agout','aloft','amass','amble','amend','amiss','ample','amply','ample','aptly','ardor','ardent','array','askew','atone','attic','avian','azure','balky','baste','batch','batty','bayou','beige','birch','blimp','bliss','bloke','blunt','booze','bough','brash','brawn','braze','briny','brisk','broil','brood','broom','broth','brunt','budge','burly','cacao','cadge','camel','canoe','caper','cargo','carom','caulk','champ','chant','chasm','chide','chime','chore','cinch','cited','clammy','clamp','clamor','clang','clank','cleat','cling','clone','clown','clunk','coils','comet','comma','conic','copal','copse','comet','coral','cower','crone','crook','croon','crore','crumble','cupid','cutis','daffy','daunt','defer','delta','delve','depot','depot','derby','deter','deter','dicey','digit','dingy','diode','dirge','dirge','disco','ditto','ditty','dizzy','dodgy','droll','dross','drool','dumpy','dunce','dusty','duvet','dwelt','eased','edgy','eerie','egret','eject','elbow','elegy','elves','ember','emoji','emote','emoto','enact','endue','engulf','epoxy','evoke','exert','extol','exude','fable','facet','fjord','flair','flora','floss','flour','fluke','flute','foist','folio','foyer','froze','frugal','futon','gamut','gawky','gaudy','gecko','giddy','given','glint','gloat','gloom','gloomy','glyph','golem','gorge','gouge','graft','graze','greed','greet','grime','grimy','gripe','groan','grope','gruel','grump','guava','gulch','gulag','gulch','hairy','halve','harpy','haver','havoc','hazel','hinge','hippo','hirsut','homer','hound','husky','hyena','igloo','imbue','inane','irate','islet','itchy','jaded','jaunt','jelly','jiffy','joker','juror','kudos','knead','knoll','knelt','ladle','lanky','lasso','latch','laxly','leafy','leech','leery','lemur','lofty','lousy','lusty','lusty','lyric','mambo','mange','manor','maxim','mealy','melee','melee','melon','mirth','mocha','mogul','mongo','mousy','muddy','mummy','murky','mushy','musty','myrrh','needy','nicer','nifty','nixie','nobly','nonce','notch','novel','nowt','nubby','nutty','octet','onion','onyx','optic','orchid','outdo','oxide','ozone','papal','parry','patsy','peeve','petal','pixie','plumb','plume','poach','podgy','poise','polar','polka','pooch','poppy','potty','prism','privy','prowl','proxy','prude','prune','pubic','pubic','pulse','punky','puppy','purge','pygmy','quaff','qualm','quash','quirk','quota','rabid','raspy','ravel','rawly','reedy','repay','repel','repot','resin','retro','revel','rivet','robot','rodeo','roomy','rowdy','ruddy','rusty','sadly','sally','salvo','scalp','scaly','scant','scamp','scone','scoop','scorn','scrim','scrub','scull','seedy','serum','setup','sever','siren','sixth','sixer','skimp','slinky','sloth','smash','smear','sniff','snobby','snoop','snore','snort','sodden','soggy','solar','solly','sorry','south','spank','sparky','spool','spout','spunk','spurn','squad','squat','squab','squid','squint','staid','stake','stoic','stomp','stoop','strum','strut','stuck','stump','suave','suede','sulky','sumac','surly','sushi','swathe','tabby','taboo','taffy','taunt','tawny','talon','terse','telex','tenor','tepid','terse','thane','thigh','thorn','throe','tidal','timid','titan','tonal','tonic','toxin','totem','tripe','tulip','ultra','unfed','unkempt','unmet','unpin','unzip','urban','usurp','vaunt','venom','verse','vista','vivid','vixen','vocal','vodka','vouch','wacky','waltz','warty','whack','whiff','wince','witty','wrack','wrath','wring','wrist','yacht','yeoman','zesty'];
+
+  const HARD_WORDS=['abaci','abash','abbey','abbot','abeam','abhor','abject','abode','aboon','abrupt','absurd','abuzz','abyss','acrid','adage','adept','adorn','adroit','agave','agile','agony','agora','aloof','amiss','annex','antic','aptly','ardor','ardent','askew','avian','azure','bayou','bevel','biome','blimp','bloke','blunt','booze','bough','brash','brawn','briny','brisk','brome','brood','broil','brunt','budge','burly','bytes','cacao','capon','chant','chasm','chide','chime','cinch','clamp','clang','clanky','cleat','clunk','comet','conic','copse','copal','cower','crone','crook','croon','cupid','cutis','daffy','daunt','defer','delve','depot','deter','dicey','dingy','diode','dirge','ditty','dizzy','dodgy','droll','dross','drool','dumpy','dunce','duvet','dwelt','edgy','eerie','egret','eject','elegy','elves','ember','emote','enact','epoxy','evoke','exert','extol','exude','facet','fjord','flair','flora','floss','fluke','flute','foist','folio','foyer','frugal','futon','gamut','gawky','gaudy','gecko','giddy','glint','gloat','glyph','golem','gorge','gouge','graft','greed','grime','grimy','gripe','groan','grope','gruel','grump','guava','gulch','gulag','hairy','halve','harpy','hazel','hinge','hippo','homer','hound','husky','hyena','igloo','imbue','inane','irate','islet','itchy','jaded','jaunt','jiffy','joker','juror','kudos','knead','knoll','ladle','lanky','lasso','laxly','leafy','leech','leery','lemur','lofty','lousy','lusty','lyric','mambo','mange','maxim','mealy','melee','mirth','mocha','mogul','mousy','muddy','mummy','murky','mushy','musty','myrrh','needy','nifty','nixie','nobly','nonce','notch','nubby','nutty','octet','onyx','optic','oxide','ozone','papal','parry','patsy','peeve','petal','pixie','plumb','plume','poach','podgy','poise','polka','pooch','potty','prism','privy','prowl','proxy','prude','prune','pulse','punky','purge','pygmy','quaff','qualm','quash','quirk','rabid','raspy','ravel','reedy','repay','repel','resin','retro','revel','rivet','rodeo','rowdy','ruddy','sadly','sally','salvo','scalp','scaly','scant','scamp','scone','scoop','scorn','scrim','scrub','seedy','setup','sever','siren','skimp','sloth','smear','sniff','snoop','snore','snort','soggy','sorry','spank','spool','spout','spunk','spurn','squad','squat','squid','staid','stoic','stomp','stoop','strum','strut','stump','suave','suede','sulky','sumac','surly','sushi','tabby','taboo','taffy','taunt','tawny','terse','thane','thigh','thorn','throe','tidal','timid','titan','tonal','tonic','toxin','totem','tripe','tulip','unfed','unmet','unpin','unzip','urban','usurp','vaunt','venom','verse','vivid','vixen','vocal','vodka','vouch','wacky','waltz','warty','whack','whiff','wince','wrack','wrath','wring','wrist','zesty'];
+
+  // Large set of valid 5-letter guesses (union of all + extras)
+  const VALID_EXTRA=['aahed','aalii','aapas','abase','abash','abate','abbot','abhor','abide','abler','abode','abort','abuzz','acorn','acrid','actin','acute','adage','adore','adorn','agave','aglow','agony','agora','agout','aloft','amass','amble','amend','amiss','ample','amply','aptly','ardor','array','askew','atone','avian','azure','balky','baste','batch','batty','bayou','beige','bevel','biome','blimp','bliss','bloke','blunt','bough','brash','brawn','braze','briny','brisk','broil','brood','broom','broth','brunt','budge','bytes','cacao','cadge','camel','canoe','caper','cargo','carom','caulk','champ','chant','chasm','chide','chime','chore','cinch','clamp','clang','clank','cleat','clone','clown','clunk','coils','conic','copal','copse','cower','crone','crook','croon','crore','cupid','cutis','daffy','daunt','defer','delve','depot','deter','dicey','digit','dingy','diode','dirge','ditty','dizzy','dodgy','droll','dross','drool','dumpy','dunce','duvet','dwelt','edgy','eerie','egret','eject','elegy','elves','ember','emote','enact','epoxy','evoke','exert','extol','exude','facet','fjord','flair','flora','floss','fluke','flute','foist','folio','foyer','frugal','futon','gamut','gawky','gaudy','gecko','giddy','glint','gloat','glyph','golem','gorge','gouge','graft','greed','grime','grimy','gripe','groan','grope','gruel','grump','guava','gulch','gulag','hairy','halve','harpy','hazel','hinge','hippo','homer','hound','husky','hyena','igloo','imbue','inane','irate','islet','itchy','jaded','jaunt','jiffy','joker','juror','knead','knoll','ladle','lanky','lasso','laxly','leafy','leech','leery','lemur','lofty','lousy','lusty','mambo','mange','maxim','mealy','melee','mirth','mocha','mogul','mousy','murky','mushy','musty','myrrh','needy','nifty','nixie','nobly','nonce','notch','nubby','nutty','octet','onyx','optic','oxide','ozone','papal','parry','patsy','peeve','petal','pixie','plumb','plume','poach','podgy','poise','polka','pooch','potty','prism','privy','prowl','proxy','prude','prune','pulse','punky','purge','pygmy','quaff','qualm','quash','quirk','rabid','raspy','ravel','reedy','repay','repel','resin','retro','revel','rivet','rodeo','rowdy','ruddy','sadly','sally','salvo','scalp','scaly','scant','scamp','scone','scoop','scorn','scrim','scrub','seedy','setup','sever','skimp','sloth','smear','sniff','snoop','snore','snort','soggy','spank','spool','spout','spunk','spurn','squad','squat','squid','staid','stoic','stomp','stoop','strum','strut','stump','suave','suede','sulky','sumac','surly','sushi','tabby','taboo','taffy','taunt','tawny','terse','thane','thigh','throe','tidal','timid','titan','tonal','toxin','totem','tripe','tulip','unfed','unmet','unpin','unzip','usurp','vaunt','venom','verse','vivid','vixen','vocal','vodka','vouch','wacky','waltz','warty','whack','whiff','wince','wrack','wrath','wring','zesty'];
+
+  function getWordList(){ return [EASY_WORDS,NORMAL_WORDS,HARD_WORDS][difficulty]; }
+  function getAllValid(){
+    const s=new Set([...EASY_WORDS,...NORMAL_WORDS,...HARD_WORDS,...VALID_EXTRA]);
+    return s;
+  }
+
+  // ── State ─────────────────────────────────────────────────────────────────
+  let answer, guesses, currentGuess, gameOver, won, message, messageTimer, shakeRow;
+
+  function pickAnswer(){
+    const list=getWordList();
+    return list[Math.floor(Math.random()*list.length)].toUpperCase();
+  }
+
+  function newGame(){
+    answer=pickAnswer();
+    guesses=[];
+    currentGuess='';
+    gameOver=false; won=false;
+    message=''; messageTimer=0;
+    shakeRow=-1;
+  }
+  newGame();
+
+  function maxGuesses(){ return MAX_GUESSES[difficulty]; }
+
+  // Score each letter: 2=correct position, 1=wrong position, 0=absent
+  function scoreGuess(guess){
+    const result=Array(5).fill(0);
+    const ansArr=[...answer];
+    const guessArr=[...guess];
+    const used=Array(5).fill(false);
+    // First pass: exact matches
+    for(let i=0;i<5;i++){
+      if(guessArr[i]===ansArr[i]){ result[i]=2; used[i]=true; }
+    }
+    // Second pass: wrong position
+    for(let i=0;i<5;i++){
+      if(result[i]===2) continue;
+      for(let j=0;j<5;j++){
+        if(!used[j]&&guessArr[i]===ansArr[j]){ result[i]=1; used[j]=true; break; }
+      }
+    }
+    return result;
+  }
+
+  // Build keyboard letter status map
+  function buildKeyMap(){
+    const m={};
+    for(const {word,score} of guesses){
+      for(let i=0;i<5;i++){
+        const ch=word[i];
+        const s=score[i];
+        if((m[ch]||0)<s) m[ch]=s;
+      }
+    }
+    return m;
+  }
+
+  function submitGuess(){
+    if(currentGuess.length<5){ flash('Not enough letters'); shakeRow=guesses.length; setTimeout(()=>shakeRow=-1,500); return; }
+    const valid=getAllValid();
+    if(!valid.has(currentGuess.toLowerCase())&&!getWordList().includes(currentGuess.toLowerCase())){
+      flash('Not a valid word'); shakeRow=guesses.length; setTimeout(()=>shakeRow=-1,500); return;
+    }
+    const score=scoreGuess(currentGuess);
+    guesses.push({word:currentGuess,score});
+    const isWin=score.every(s=>s===2);
+    if(isWin){
+      won=true; gameOver=true;
+      flash('Brilliant! 🎉');
+    } else if(guesses.length>=maxGuesses()){
+      gameOver=true;
+      flash(answer, 3500);
+    }
+    currentGuess='';
+  }
+
+  function flash(msg, dur=1800){
+    message=msg; messageTimer=dur;
+  }
+
+  // ── Rendering ─────────────────────────────────────────────────────────────
+  let raf2;
+  const COLS=5;
+  const TILE_GAP=5;
+
+  // Store canvas ref
+  const {c,ctx,ro}=mkCanvas(body);
+
+  const COLOURS={
+    correct:  {paper:'#5a9e5a', dark:'#538d4e'},
+    present:  {paper:'#b89a2a', dark:'#b59f3b'},
+    absent:   {paper:'#888880', dark:'#3a3a3c'},
+    empty:    {paper:'rgba(0,0,0,0.08)', dark:'rgba(255,255,255,0.06)'},
+    border:   {paper:'rgba(0,0,0,0.2)',  dark:'rgba(255,255,255,0.15)'},
+    activeBorder:{paper:'rgba(0,0,0,0.5)',dark:'rgba(255,255,255,0.5)'},
+    text:     {paper:'#111', dark:'#fff'},
+    tileText: {paper:'#fff', dark:'#fff'},
+    bg:       {paper:'#f5f1e8',dark:'#0d1117'},
+    keyBg:    {paper:'rgba(0,0,0,0.1)',dark:'rgba(255,255,255,0.12)'},
+    keyText:  {paper:'#222',dark:'#eee'},
+    msgBg:    {paper:'rgba(0,0,0,0.82)',dark:'rgba(255,255,255,0.92)'},
+    msgText:  {paper:'#fff',dark:'#111'},
+  };
+  function clr(key){ return COLOURS[key][isPaper()?'paper':'dark']; }
+
+  const KB_ROWS=['QWERTYUIOP','ASDFGHJKL','ZXCVBNM'];
+
+  // Compute keyboard geometry (call each frame so it stays responsive)
+  function kbGeom(W,H,rows){
+    // keyboard takes up fixed height at bottom
+    const KB_H=Math.min(H*0.30, 130);
+    const KEY_GAP=4;
+    const ROW_GAP=5;
+    const kh=(KB_H - ROW_GAP*2) / 3;           // height of each key row
+    // Width: fit 10 keys across with gaps, with a small side margin
+    const margin=8;
+    const kw=Math.floor((W - margin*2 - KEY_GAP*9) / 10);
+    return {KB_H, KEY_GAP, ROW_GAP, kh, kw, margin};
+  }
+
+  function tileSize(W,H,rows,KB_H){
+    const gridMarginTop=10;
+    const gridMarginBot=12;
+    const availH=H - KB_H - gridMarginTop - gridMarginBot;
+    const availW=W - 20;
+    const byH=(availH - TILE_GAP*(rows-1)) / rows;
+    const byW=(availW - TILE_GAP*(COLS-1)) / COLS;
+    return Math.max(24, Math.min(54, byH, byW));
+  }
+
+  let lastTs2=0;
+  function draw2(ts){
+    raf2=requestAnimationFrame(draw2);
+    const dt=Math.min(60,ts-lastTs2); lastTs2=ts;
+    if(messageTimer>0) messageTimer-=dt;
+
+    const W=c.width=body.clientWidth;
+    const H=c.height=body.clientHeight;
+    const paper=isPaper();
+
+    ctx.fillStyle=clr('bg'); ctx.fillRect(0,0,W,H);
+
+    const rows=maxGuesses();
+    const geo=kbGeom(W,H,rows);
+    const {KB_H,KEY_GAP,ROW_GAP,kh,kw,margin}=geo;
+    const ts2=tileSize(W,H,rows,KB_H);
+    const gridW=COLS*ts2+(COLS-1)*TILE_GAP;
+    const gridH=rows*ts2+(rows-1)*TILE_GAP;
+    const gridX=(W-gridW)/2;
+    // Grid sits above the keyboard, vertically centred in its space
+    const availForGrid=H-KB_H;
+    const gridY=Math.max(8, (availForGrid-gridH)/2);
+
+    const kbTop=H-KB_H;
+    const keyMap=buildKeyMap();
+
+    // ── Grid ──────────────────────────────────────────────────────────────
+    for(let row=0;row<rows;row++){
+      const isActive=row===guesses.length&&!gameOver;
+      const isShaking=row===shakeRow;
+      const shakeOff=isShaking?(Math.sin(Date.now()*0.08)*6):0;
+      const rowX=gridX+shakeOff;
+      const gy=gridY+row*(ts2+TILE_GAP);
+
+      for(let col=0;col<COLS;col++){
+        const gx=rowX+col*(ts2+TILE_GAP);
+        let letter='', score=-1;
+        if(row<guesses.length){ letter=guesses[row].word[col]; score=guesses[row].score[col]; }
+        else if(isActive&&col<currentGuess.length){ letter=currentGuess[col]; }
+
+        let bg;
+        if(score===2) bg=clr('correct');
+        else if(score===1) bg=clr('present');
+        else if(score===0) bg=clr('absent');
+        else bg=clr('empty');
+
+        const border=(isActive&&col===currentGuess.length)?clr('activeBorder'):clr('border');
+
+        ctx.fillStyle=bg;
+        roundRect(ctx,gx,gy,ts2,ts2,4); ctx.fill();
+        ctx.strokeStyle=border; ctx.lineWidth=(isActive&&col<currentGuess.length)?2:1;
+        roundRect(ctx,gx,gy,ts2,ts2,4); ctx.stroke();
+
+        if(letter){
+          ctx.fillStyle=score>=0?clr('tileText'):clr('text');
+          ctx.font=`700 ${Math.floor(ts2*0.50)}px 'IBM Plex Mono',monospace`;
+          ctx.textAlign='center'; ctx.textBaseline='middle';
+          ctx.fillText(letter,gx+ts2/2,gy+ts2/2);
+        }
+      }
+    }
+
+    // ── Keyboard ──────────────────────────────────────────────────────────
+    // Row 0: QWERTYUIOP (10 keys)
+    // Row 1: ASDFGHJKL  (9 keys, centred)
+    // Row 2: ENTER + ZXCVBNM + ⌫
+    for(let ri=0;ri<KB_ROWS.length;ri++){
+      const row=KB_ROWS[ri];
+      const ky=kbTop + ri*(kh+ROW_GAP);
+
+      if(ri<2){
+        // Simple letter rows
+        const rowW=row.length*kw+(row.length-1)*KEY_GAP;
+        const kx=(W-rowW)/2;
+        for(let ci=0;ci<row.length;ci++){
+          const ch=row[ci];
+          const st=keyMap[ch]||0;
+          let kbg=st===2?clr('correct'):st===1?clr('present'):st===0?clr('absent'):clr('keyBg');
+          ctx.fillStyle=kbg;
+          roundRect(ctx,kx+ci*(kw+KEY_GAP),ky,kw,kh,4); ctx.fill();
+          ctx.fillStyle=st>0?clr('tileText'):clr('keyText');
+          ctx.font=`500 ${Math.max(9,Math.floor(kw*0.40))}px 'IBM Plex Mono',monospace`;
+          ctx.textAlign='center'; ctx.textBaseline='middle';
+          ctx.fillText(ch,kx+ci*(kw+KEY_GAP)+kw/2,ky+kh/2);
+        }
+      } else {
+        // Bottom row: [ENTER] [Z X C V B N M] [⌫]
+        // ENTER and ⌫ are 1.5× key width
+        const enterW=Math.floor(kw*1.5);
+        const bsW=Math.floor(kw*1.5);
+        const nLetters=row.length; // 7
+        const rowW=enterW+KEY_GAP + nLetters*kw+(nLetters-1)*KEY_GAP + KEY_GAP+bsW;
+        const kx=(W-rowW)/2;
+
+        // ENTER
+        ctx.fillStyle=clr('keyBg');
+        roundRect(ctx,kx,ky,enterW,kh,4); ctx.fill();
+        ctx.fillStyle=clr('keyText');
+        ctx.font=`500 ${Math.max(7,Math.floor(kw*0.30))}px 'IBM Plex Mono',monospace`;
+        ctx.textAlign='center'; ctx.textBaseline='middle';
+        ctx.fillText('ENTER',kx+enterW/2,ky+kh/2);
+
+        // Letter keys
+        let lx=kx+enterW+KEY_GAP;
+        for(let ci=0;ci<nLetters;ci++){
+          const ch=row[ci];
+          const st=keyMap[ch]||0;
+          let kbg=st===2?clr('correct'):st===1?clr('present'):st===0?clr('absent'):clr('keyBg');
+          ctx.fillStyle=kbg;
+          roundRect(ctx,lx+ci*(kw+KEY_GAP),ky,kw,kh,4); ctx.fill();
+          ctx.fillStyle=st>0?clr('tileText'):clr('keyText');
+          ctx.font=`500 ${Math.max(9,Math.floor(kw*0.40))}px 'IBM Plex Mono',monospace`;
+          ctx.textAlign='center'; ctx.textBaseline='middle';
+          ctx.fillText(ch,lx+ci*(kw+KEY_GAP)+kw/2,ky+kh/2);
+        }
+
+        // ⌫
+        const bsX=lx+nLetters*(kw+KEY_GAP);
+        ctx.fillStyle=clr('keyBg');
+        roundRect(ctx,bsX,ky,bsW,kh,4); ctx.fill();
+        ctx.fillStyle=clr('keyText');
+        ctx.font=`500 ${Math.max(11,Math.floor(kh*0.45))}px 'IBM Plex Mono',monospace`;
+        ctx.textAlign='center'; ctx.textBaseline='middle';
+        ctx.fillText('⌫',bsX+bsW/2,ky+kh/2);
+      }
+    }
+    ctx.textAlign='left';
+
+    // ── Toast (inside the grid area, not above it) ─────────────────────────
+    if(messageTimer>0&&message){
+      const alpha=Math.min(1,messageTimer/250);
+      ctx.globalAlpha=alpha;
+      const mw=Math.min(W-32,260);
+      const mh=34;
+      const mx=(W-mw)/2;
+      const my=gridY+gridH/2-mh/2; // vertically centred over grid
+      ctx.fillStyle=clr('msgBg');
+      roundRect(ctx,mx,my,mw,mh,8); ctx.fill();
+      ctx.fillStyle=clr('msgText');
+      ctx.font=`500 12px 'IBM Plex Mono',monospace`;
+      ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillText(message,W/2,my+mh/2);
+      ctx.globalAlpha=1;
+      ctx.textAlign='left';
+    }
+
+    // ── Game over overlay ─────────────────────────────────────────────────
+    if(gameOver&&messageTimer<=0){
+      ctx.fillStyle=paper?'rgba(245,241,232,0.88)':'rgba(13,17,23,0.88)';
+      ctx.fillRect(0,0,W,availForGrid); // only cover grid area, not keyboard
+      ctx.fillStyle=won?(paper?'#226622':'#44ee88'):(paper?'#882222':'#ff5555');
+      ctx.font=`700 22px 'IBM Plex Mono',monospace`;
+      ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillText(won?'Solved! 🎉':answer,W/2,availForGrid/2-16);
+      ctx.fillStyle=paper?'#444':'rgba(255,255,255,0.55)';
+      ctx.font=`300 10px 'IBM Plex Mono',monospace`;
+      ctx.fillText('Enter or tap New Word',W/2,availForGrid/2+14);
+      ctx.textAlign='left';
+    }
+  }
+
+  // ── Input ─────────────────────────────────────────────────────────────────
+  const onKey=e=>{
+    if(e.key==='Enter'||e.key==='Backspace') e.preventDefault();
+    if(e.key==='Enter'){
+      if(gameOver){ newGame(); return; }
+      submitGuess(); return;
+    }
+    if(gameOver) return;
+    if(e.key==='Backspace'){ currentGuess=currentGuess.slice(0,-1); }
+    else if(e.key.length===1&&/[a-zA-Z]/.test(e.key)&&currentGuess.length<5){
+      currentGuess+=e.key.toUpperCase();
+    }
+  };
+  document.addEventListener('keydown',onKey);
+
+  // Click on canvas keyboard
+  c.addEventListener('click',e=>{
+    const W2=c.clientWidth, H2=c.clientHeight;
+    const r=c.getBoundingClientRect();
+    const mx=e.clientX-r.left, my2=e.clientY-r.top;
+    const rows=maxGuesses();
+    const geo=kbGeom(W2,H2,rows);
+    const {KB_H,KEY_GAP,ROW_GAP,kh,kw}=geo;
+    const kbTop=H2-KB_H;
+
+    // Check if click is in game-over overlay area
+    if(gameOver&&my2<kbTop){ newGame(); return; }
+    if(gameOver) return;
+
+    for(let ri=0;ri<KB_ROWS.length;ri++){
+      const row=KB_ROWS[ri];
+      const ky=kbTop+ri*(kh+ROW_GAP);
+      if(my2<ky||my2>ky+kh) continue;
+
+      if(ri<2){
+        const rowW=row.length*kw+(row.length-1)*KEY_GAP;
+        const kx=(W2-rowW)/2;
+        for(let ci=0;ci<row.length;ci++){
+          const tx=kx+ci*(kw+KEY_GAP);
+          if(mx>=tx&&mx<=tx+kw){ if(currentGuess.length<5) currentGuess+=row[ci]; return; }
+        }
+      } else {
+        const enterW=Math.floor(kw*1.5);
+        const bsW=Math.floor(kw*1.5);
+        const nLetters=row.length;
+        const rowW=enterW+KEY_GAP+nLetters*kw+(nLetters-1)*KEY_GAP+KEY_GAP+bsW;
+        const kx=(W2-rowW)/2;
+        if(mx>=kx&&mx<=kx+enterW){ submitGuess(); return; }
+        let lx=kx+enterW+KEY_GAP;
+        for(let ci=0;ci<nLetters;ci++){
+          const tx=lx+ci*(kw+KEY_GAP);
+          if(mx>=tx&&mx<=tx+kw){ if(currentGuess.length<5) currentGuess+=row[ci]; return; }
+        }
+        const bsX=lx+nLetters*(kw+KEY_GAP);
+        if(mx>=bsX&&mx<=bsX+bsW){ currentGuess=currentGuess.slice(0,-1); return; }
+      }
+    }
+  });
+
+  const diffBtn=mkBtn(DIFF_NAMES[difficulty],ctrl);
+  diffBtn.addEventListener('click',()=>{
+    difficulty=(difficulty+1)%3;
+    diffBtn.textContent=DIFF_NAMES[difficulty];
+    newGame();
+    diffBtn.blur();
+  });
+  const newWordBtn=mkBtn('New Word',ctrl);
+  newWordBtn.addEventListener('click',()=>{ newGame(); newWordBtn.blur(); });
+  mkInfo(ctrl).textContent='5-letter word game';
+
+  requestAnimationFrame(draw2);
+  return ()=>{ cancelAnimationFrame(raf2); ro.disconnect(); document.removeEventListener('keydown',onKey); };
+}
+
+
+// ════════════════════════════════════════════════════════════════════════════
+// TOY — WORD SEARCH
+// ════════════════════════════════════════════════════════════════════════════
+function initWordSearch(body,ctrl){
+  const {c,ctx,ro}=mkCanvas(body);
+  let W=c.width,H=c.height,raf;
+  let difficulty=1;
+  const DIFF_NAMES=['Easy','Medium','Hard'];
+  const GRID_SIZES=[8,12,16];
+  const WORD_COUNTS=[6,10,14];
+
+  const WORD_BANK=[
+    'CAT','DOG','SUN','HAT','RUN','MAP','ICE','OWL','SKY','ANT',
+    'FIRE','RAIN','SNOW','WIND','TREE','FISH','BIRD','FROG','BEAR','WOLF',
+    'OCEAN','TIGER','EAGLE','RIVER','CLOUD','STORM','FLAME','STONE','MAGIC','SWORD',
+    'CASTLE','DRAGON','PLANET','ROCKET','JUNGLE','MIRROR','SILVER','WINTER','PUZZLE','FLOWER',
+    'THUNDER','CRYSTAL','PYRAMID','PHANTOM','CAPTAIN','DIAMOND','VOLCANO','DOLPHIN','LANTERN','FREEDOM',
+    'ADVENTURE','TELESCOPE','BUTTERFLY','WATERFALL','CHOCOLATE','HURRICANE','LIGHTNING','MOONLIGHT','STARFISH','LABYRINTH'
+  ];
+
+  const DIRS=[[1,0],[0,1],[1,1],[1,-1],[-1,0],[0,-1],[-1,-1],[-1,1]];
+
+  let grid,words,placed,found,selecting,selStart,selEnd,score,startTime;
+
+  function gs(){ return GRID_SIZES[difficulty]; }
+
+  function newGame(){
+    const n=gs();
+    grid=Array.from({length:n},()=>Array(n).fill(''));
+    placed=[]; found=new Set(); score=0;
+    selecting=false; selStart=null; selEnd=null;
+    startTime=Date.now();
+
+    // Pick words appropriate for difficulty
+    const minLen=difficulty===0?3:difficulty===1?4:6;
+    const maxLen=difficulty===0?6:difficulty===1?8:12;
+    const pool=WORD_BANK.filter(w=>w.length>=minLen&&w.length<=maxLen&&w.length<=n);
+    const shuffled=[...pool].sort(()=>Math.random()-0.5);
+    words=shuffled.slice(0,WORD_COUNTS[difficulty]);
+
+    for(const word of words){
+      let placed2=false;
+      for(let attempt=0;attempt<200&&!placed2;attempt++){
+        const [dr,dc]=DIRS[Math.floor(Math.random()*DIRS.length)];
+        const maxR=dr>0?n-word.length:dr<0?word.length-1:n-1;
+        const maxC=dc>0?n-word.length:dc<0?word.length-1:n-1;
+        const minR=dr<0?word.length-1:0;
+        const minC=dc<0?word.length-1:0;
+        if(maxR<minR||maxC<minC) continue;
+        const r=minR+Math.floor(Math.random()*(maxR-minR+1));
+        const col2=minC+Math.floor(Math.random()*(maxC-minC+1));
+        let ok=true;
+        for(let i=0;i<word.length;i++){
+          const nr=r+dr*i,nc=col2+dc*i;
+          if(grid[nr][nc]!==''&&grid[nr][nc]!==word[i]){ok=false;break;}
+        }
+        if(ok){
+          const cells=[];
+          for(let i=0;i<word.length;i++){
+            const nr=r+dr*i,nc=col2+dc*i;
+            grid[nr][nc]=word[i];
+            cells.push([nr,nc]);
+          }
+          placed.push({word,cells});
+          placed2=true;
+        }
+      }
+    }
+    // Fill blanks
+    const ALPHA='ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+    for(let r=0;r<n;r++) for(let c2=0;c2<n;c2++)
+      if(grid[r][c2]==='') grid[r][c2]=ALPHA[Math.floor(Math.random()*26)];
+  }
+
+  function cellAt(mx,my){
+    const n=gs();
+    const pad=8,listW=Math.min(W*0.28,110);
+    const gx0=pad,gy0=pad;
+    const cellSz=Math.min((W-listW-pad*3)/n,(H-pad*2)/n);
+    const col2=Math.floor((mx-gx0)/cellSz);
+    const row=Math.floor((my-gy0)/cellSz);
+    if(row<0||row>=n||col2<0||col2>=n) return null;
+    return [row,col2];
+  }
+
+  function cellsOnLine(a,b){
+    if(!a||!b) return [];
+    const dr=Math.sign(b[0]-a[0]),dc=Math.sign(b[1]-a[1]);
+    if(dr===0&&dc===0) return [a];
+    const len=Math.max(Math.abs(b[0]-a[0]),Math.abs(b[1]-a[1]));
+    // only allow straight lines (horiz/vert/diag)
+    if(dr!==0&&dc!==0&&Math.abs(b[0]-a[0])!==Math.abs(b[1]-a[1])) return [];
+    const cells=[];
+    for(let i=0;i<=len;i++) cells.push([a[0]+dr*i,a[1]+dc*i]);
+    return cells;
+  }
+
+  function checkSelection(){
+    const cells=cellsOnLine(selStart,selEnd);
+    if(cells.length<2) return;
+    const word=cells.map(([r,c])=>grid[r][c]).join('');
+    const wordRev=word.split('').reverse().join('');
+    for(const p of placed){
+      if((p.word===word||p.word===wordRev)&&!found.has(p.word)){
+        found.add(p.word);
+        score+=p.word.length*10*(difficulty+1);
+        break;
+      }
+    }
+  }
+
+  function allFound(){ return placed.every(p=>found.has(p.word)); }
+
+  // Selection highlight cells
+  function selCells(){ return cellsOnLine(selStart,selEnd); }
+
+  function foundCells(){
+    const set=new Set();
+    for(const p of placed) if(found.has(p.word)) for(const [r,c] of p.cells) set.add(r+','+c);
+    return set;
+  }
+
+  let lastTs=0;
+  function draw(ts){
+    raf=requestAnimationFrame(draw);
+    const dt=Math.min(60,ts-lastTs); lastTs=ts;
+    W=c.width=body.clientWidth; H=c.height=body.clientHeight;
+    const paper=isPaper();
+    ctx.fillStyle=paper?'#f5f1e8':'#0d1117'; ctx.fillRect(0,0,W,H);
+
+    const n=gs();
+    const pad=8;
+    const listW=Math.min(W*0.28,110);
+    const cellSz=Math.min((W-listW-pad*3)/n,(H-pad*2-20)/n);
+    const gx0=pad,gy0=pad+20;
+    const gridW2=cellSz*n, gridH2=cellSz*n;
+
+    const fc=foundCells();
+    const sc=selCells();
+    const scSet=new Set(sc.map(([r,c2])=>r+','+c2));
+
+    // Score / time
+    const elapsed=Math.floor((Date.now()-startTime)/1000);
+    ctx.font=`300 9px 'IBM Plex Mono',monospace`;
+    ctx.fillStyle=paper?'rgba(0,0,0,0.35)':'rgba(255,255,255,0.35)';
+    ctx.textAlign='left'; ctx.textBaseline='top';
+    ctx.fillText(`score:${score}  time:${elapsed}s`,pad,6);
+
+    // Grid cells
+    for(let r=0;r<n;r++){
+      for(let c2=0;c2<n;c2++){
+        const x=gx0+c2*cellSz, y=gy0+r*cellSz;
+        const key=r+','+c2;
+        const isSel=scSet.has(key);
+        const isFound=fc.has(key);
+        let bg=paper?'rgba(0,0,0,0.04)':'rgba(255,255,255,0.04)';
+        if(isFound) bg=paper?'rgba(80,180,80,0.35)':'rgba(60,200,100,0.3)';
+        if(isSel) bg=paper?'rgba(60,120,255,0.35)':'rgba(80,160,255,0.35)';
+        ctx.fillStyle=bg;
+        ctx.fillRect(x+1,y+1,cellSz-2,cellSz-2);
+        ctx.fillStyle=isFound?(paper?'#226622':'#55ee88'):isSel?(paper?'#224499':'#99ccff'):(paper?'#222':'#ddd');
+        ctx.font=`500 ${Math.max(8,Math.floor(cellSz*0.52))}px 'IBM Plex Mono',monospace`;
+        ctx.textAlign='center'; ctx.textBaseline='middle';
+        ctx.fillText(grid[r][c2],x+cellSz/2,y+cellSz/2);
+      }
+    }
+
+    // Word list
+    const lx=gx0+gridW2+pad;
+    ctx.textAlign='left'; ctx.textBaseline='top';
+    ctx.font=`700 9px 'IBM Plex Mono',monospace`;
+    ctx.fillStyle=paper?'rgba(0,0,0,0.4)':'rgba(255,255,255,0.4)';
+    ctx.fillText('WORDS',lx,gy0);
+    const lineH=Math.min(16,(H-gy0-10)/Math.max(1,words.length));
+    words.forEach((w,i)=>{
+      const isF=found.has(w);
+      ctx.font=`${isF?'300':'500'} ${Math.max(7,Math.min(11,lineH*0.7))}px 'IBM Plex Mono',monospace`;
+      ctx.fillStyle=isF?(paper?'rgba(0,0,0,0.2)':'rgba(255,255,255,0.2)'):(paper?'#111':'#eee');
+      ctx.fillText(w,lx,gy0+14+i*lineH);
+      if(isF){
+        const tw=ctx.measureText(w).width;
+        ctx.strokeStyle=paper?'rgba(0,0,0,0.3)':'rgba(255,255,255,0.3)';
+        ctx.lineWidth=1;
+        ctx.beginPath();
+        ctx.moveTo(lx,gy0+14+i*lineH+lineH*0.45);
+        ctx.lineTo(lx+tw,gy0+14+i*lineH+lineH*0.45);
+        ctx.stroke();
+      }
+    });
+
+    // Win
+    if(allFound()){
+      ctx.fillStyle=paper?'rgba(245,241,232,0.9)':'rgba(13,17,23,0.9)';
+      ctx.fillRect(0,0,W,H);
+      ctx.fillStyle=paper?'#226622':'#44ee88';
+      ctx.font=`700 20px 'IBM Plex Mono',monospace`;
+      ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillText('All Found! 🎉',W/2,H/2-14);
+      ctx.fillStyle=paper?'#444':'rgba(255,255,255,0.5)';
+      ctx.font=`300 10px 'IBM Plex Mono',monospace`;
+      ctx.fillText(`score: ${score}  time: ${elapsed}s`,W/2,H/2+12);
+    }
+    ctx.textAlign='left';
+  }
+
+  const onDown=e=>{
+    const r=c.getBoundingClientRect();
+    const cell=cellAt(e.clientX-r.left,e.clientY-r.top);
+    if(!cell) return;
+    selecting=true; selStart=cell; selEnd=cell;
+  };
+  const onMove=e=>{
+    if(!selecting) return;
+    const r=c.getBoundingClientRect();
+    const cell=cellAt(e.clientX-r.left,e.clientY-r.top);
+    if(cell) selEnd=cell;
+  };
+  const onUp=e=>{
+    if(!selecting) return;
+    selecting=false;
+    checkSelection();
+    selStart=null; selEnd=null;
+  };
+  const onTD=e=>{ e.preventDefault(); const t=e.touches[0],r=c.getBoundingClientRect(); const cell=cellAt(t.clientX-r.left,t.clientY-r.top); if(!cell) return; selecting=true; selStart=cell; selEnd=cell; };
+  const onTM=e=>{ e.preventDefault(); if(!selecting) return; const t=e.touches[0],r=c.getBoundingClientRect(); const cell=cellAt(t.clientX-r.left,t.clientY-r.top); if(cell) selEnd=cell; };
+  const onTU=e=>{ e.preventDefault(); if(!selecting) return; selecting=false; checkSelection(); selStart=null; selEnd=null; };
+
+  c.addEventListener('mousedown',onDown);
+  c.addEventListener('mousemove',onMove);
+  window.addEventListener('mouseup',onUp);
+  c.addEventListener('touchstart',onTD,{passive:false});
+  c.addEventListener('touchmove',onTM,{passive:false});
+  c.addEventListener('touchend',onTU,{passive:false});
+
+  const diffBtn=mkBtn(DIFF_NAMES[difficulty],ctrl);
+  diffBtn.addEventListener('click',()=>{ difficulty=(difficulty+1)%3; diffBtn.textContent=DIFF_NAMES[difficulty]; newGame(); diffBtn.blur(); });
+  mkBtn('New Game',ctrl).addEventListener('click',()=>{ newGame(); });
+  mkInfo(ctrl).textContent='drag to select words';
+
+  newGame(); requestAnimationFrame(draw);
+  return()=>{ cancelAnimationFrame(raf); ro.disconnect();
+    c.removeEventListener('mousedown',onDown); c.removeEventListener('mousemove',onMove); window.removeEventListener('mouseup',onUp);
+    c.removeEventListener('touchstart',onTD); c.removeEventListener('touchmove',onTM); c.removeEventListener('touchend',onTU); };
+}
+
+
+// ════════════════════════════════════════════════════════════════════════════
+// TOY — CROSSWORD
+// ════════════════════════════════════════════════════════════════════════════
+function initCrossword(body,ctrl){
+  const {c,ctx,ro}=mkCanvas(body);
+  let W=c.width,H=c.height,raf;
+
+  // Curated mini crossword puzzles — each has a grid template and clues
+  const PUZZLES=[
+    { // Puzzle 1 — 7x7
+      size:7,
+      // grid: '#' = black, '.' = white cell
+      template:[
+        '#...###',
+        '....###',
+        '...####',
+        '.......',
+        '####...',
+        '###....',
+        '###...#',
+      ],
+      across:[
+        {num:1,clue:'Feline pet',answer:'CAT',r:0,c:1},
+        {num:2,clue:'Illumination',answer:'LIGHT',r:1,c:0},
+        {num:4,clue:'Full row across middle',answer:'NETWORK',r:3,c:0},
+        {num:6,clue:'Body of water',answer:'LAKE',r:4,c:4},
+        {num:7,clue:'Small insect',answer:'ANT',r:5,c:3},
+        {num:8,clue:'Combustion result',answer:'ASH',r:6,c:3},
+      ],
+      down:[
+        {num:1,clue:'Automobile',answer:'CAR',r:0,c:1},
+        {num:2,clue:'Illuminated',answer:'LIT',r:1,c:0},
+        {num:3,clue:'Feathered creature',answer:'HEN',r:1,c:1},
+        {num:4,clue:'Nocturnal creature',answer:'NET',r:3,c:0},
+        {num:5,clue:'Part of a tree',answer:'OAK',r:3,c:4},
+      ],
+    },
+    { // Puzzle 2 — 7x7
+      size:7,
+      template:[
+        '...#...',
+        '.#...#.',
+        '.......',
+        '#.###.#',
+        '.......',
+        '.#...#.',
+        '...#...',
+      ],
+      across:[
+        {num:1,clue:'Heavenly body',answer:'SUN',r:0,c:0},
+        {num:3,clue:'Nocturnal flier',answer:'BAT',r:0,c:4},
+        {num:4,clue:'Travel on water',answer:'VOYAGE',r:2,c:0},
+        {num:5,clue:'Reptile',answer:'LIZARD',r:4,c:0},
+        {num:6,clue:'Not cold',answer:'HOT',r:6,c:0},
+        {num:7,clue:'Chopping tool',answer:'AXE',r:6,c:4},
+      ],
+      down:[
+        {num:1,clue:'Slide on snow',answer:'SKI',r:0,c:0},
+        {num:2,clue:'Baby dog',answer:'PUP',r:0,c:2},
+        {num:3,clue:'Winged mammal',answer:'BAT',r:0,c:4},
+        {num:4,clue:'Vessel',answer:'VAT',r:2,c:0},
+        {num:5,clue:'Precious stone',answer:'LAP',r:4,c:0},
+      ],
+    },
+    { // Puzzle 3 — 9x9
+      size:9,
+      template:[
+        '....#....',
+        '.##.#.##.',
+        '.........',
+        '.##.#.##.',
+        '#...#...#',
+        '.##.#.##.',
+        '.........',
+        '.##.#.##.',
+        '....#....',
+      ],
+      across:[
+        {num:1,clue:'Vessel for liquid',answer:'BOWL',r:0,c:0},
+        {num:2,clue:'Winged insect',answer:'MOTH',r:0,c:5},
+        {num:3,clue:'Large landmass',answer:'CONTINENT',r:2,c:0},
+        {num:4,clue:'Musical sound',answer:'TONE',r:4,c:1},
+        {num:5,clue:'Illumination',answer:'LAMP',r:4,c:5},
+        {num:6,clue:'Moving water',answer:'STREAMING',r:6,c:0},
+        {num:7,clue:'Spherical toy',answer:'BALL',r:8,c:0},
+        {num:8,clue:'Cooking vessel',answer:'WOKS',r:8,c:5},
+      ],
+      down:[
+        {num:1,clue:'Honey maker',answer:'BEE',r:0,c:0},
+        {num:2,clue:'Flowing water',answer:'BROOK',r:0,c:3},
+        {num:3,clue:'Wise bird',answer:'OWL',r:0,c:8},
+        {num:4,clue:'Sewing tool',answer:'NEEDLE',r:2,c:0},
+        {num:5,clue:'Journey',answer:'TRIP',r:2,c:4},
+        {num:6,clue:'Pastry dish',answer:'PIE',r:2,c:8},
+      ],
+    },
+  ];
+
+  let puzzleIdx=0, puzzle, userGrid, selectedCell, selectedDir, completedWords;
+
+  function loadPuzzle(idx){
+    puzzle=PUZZLES[idx%PUZZLES.length];
+    const n=puzzle.size;
+    userGrid=Array.from({length:n},()=>Array(n).fill(''));
+    selectedCell=null; selectedDir='across';
+    completedWords=new Set();
+  }
+
+  function isBlack(r,c){ return puzzle.template[r]?.[c]==='#'||puzzle.template[r]?.[c]===undefined; }
+
+  function cellNumbers(){
+    const nums={};
+    let num=1;
+    const n=puzzle.size;
+    for(let r=0;r<n;r++) for(let c=0;c<n;c++){
+      if(isBlack(r,c)) continue;
+      const acrossStart=!isBlack(r,c)&&(c===0||isBlack(r,c-1))&&!isBlack(r,c+1);
+      const downStart=!isBlack(r,c)&&(r===0||isBlack(r-1,c))&&!isBlack(r+1,c);
+      if(acrossStart||downStart){ nums[r+','+c]=num++; }
+    }
+    return nums;
+  }
+
+  function wordCells(entry,dir){
+    const cells=[];
+    if(dir==='across') for(let i=0;i<entry.answer.length;i++) cells.push([entry.r,entry.c+i]);
+    else for(let i=0;i<entry.answer.length;i++) cells.push([entry.r+i,entry.c]);
+    return cells;
+  }
+
+  function checkComplete(){
+    completedWords=new Set();
+    for(const entry of [...puzzle.across,...puzzle.down]){
+      const dir=puzzle.across.includes(entry)?'across':'down';
+      const cells=wordCells(entry,dir);
+      if(cells.every(([r,c])=>userGrid[r][c].toUpperCase()===entry.answer[cells.indexOf([r,c])===cells.findIndex(x=>x[0]===r&&x[1]===c)?cells.findIndex(x=>x[0]===r&&x[1]===c):0])){
+        // check properly
+        let ok=true;
+        for(let i=0;i<entry.answer.length;i++){
+          const [r,c]=cells[i];
+          if(userGrid[r][c].toUpperCase()!==entry.answer[i]){ok=false;break;}
+        }
+        if(ok) completedWords.add(entry.num+''+dir[0]);
+      }
+    }
+  }
+
+  function selectCell(r,c){
+    if(isBlack(r,c)) return;
+    if(selectedCell&&selectedCell[0]===r&&selectedCell[1]===c){
+      selectedDir=selectedDir==='across'?'down':'across';
+    } else {
+      selectedCell=[r,c];
+    }
+  }
+
+  function advance(){
+    if(!selectedCell) return;
+    const [r,c]=selectedCell;
+    if(selectedDir==='across'){
+      if(!isBlack(r,c+1)&&c+1<puzzle.size) selectedCell=[r,c+1];
+    } else {
+      if(!isBlack(r+1,c)&&r+1<puzzle.size) selectedCell=[r+1,c];
+    }
+  }
+
+  function retreat(){
+    if(!selectedCell) return;
+    const [r,c]=selectedCell;
+    if(selectedDir==='across'){
+      if(!isBlack(r,c-1)&&c-1>=0) selectedCell=[r,c-1];
+    } else {
+      if(!isBlack(r-1,c)&&r-1>=0) selectedCell=[r-1,c];
+    }
+  }
+
+  const onKey=e=>{
+    if(!selectedCell) return;
+    const [r,c]=selectedCell;
+    if(e.key==='Backspace'||e.key==='Delete'){
+      e.preventDefault();
+      if(userGrid[r][c]===''){ retreat(); } else { userGrid[r][c]=''; }
+      checkComplete(); return;
+    }
+    if(e.key==='ArrowRight'){ e.preventDefault(); selectedDir='across'; if(!isBlack(r,c+1)) selectedCell=[r,c+1]; return; }
+    if(e.key==='ArrowLeft'){  e.preventDefault(); selectedDir='across'; if(!isBlack(r,c-1)) selectedCell=[r,c-1]; return; }
+    if(e.key==='ArrowDown'){  e.preventDefault(); selectedDir='down';   if(!isBlack(r+1,c)) selectedCell=[r+1,c]; return; }
+    if(e.key==='ArrowUp'){    e.preventDefault(); selectedDir='down';   if(!isBlack(r-1,c)) selectedCell=[r-1,c]; return; }
+    if(/^[a-zA-Z]$/.test(e.key)){
+      e.preventDefault();
+      userGrid[r][c]=e.key.toUpperCase();
+      advance(); checkComplete();
+    }
+  };
+  document.addEventListener('keydown',onKey);
+
+  function selectedWord(){
+    // find which across/down entry contains selected cell
+    if(!selectedCell) return null;
+    const [r,c]=selectedCell;
+    const entries=selectedDir==='across'?puzzle.across:puzzle.down;
+    for(const entry of entries){
+      const cells=wordCells(entry,selectedDir);
+      if(cells.some(([er,ec])=>er===r&&ec===c)) return entry;
+    }
+    return null;
+  }
+
+  function allDone(){ return puzzle.across.length+puzzle.down.length===completedWords.size; }
+
+  let lastTs=0;
+  function draw(ts){
+    raf=requestAnimationFrame(draw);
+    W=c.width=body.clientWidth; H=c.height=body.clientHeight;
+    const paper=isPaper();
+    ctx.fillStyle=paper?'#f5f1e8':'#0d1117'; ctx.fillRect(0,0,W,H);
+
+    const n=puzzle.size;
+    const nums=cellNumbers();
+    const clueH=Math.min(H*0.30,90);
+    const gridArea=H-clueH-8;
+    const cellSz=Math.min((W-16)/n, gridArea/n);
+    const gx0=(W-cellSz*n)/2, gy0=4;
+
+    const selEntry=selectedWord();
+    const selCellsSet=new Set();
+    if(selEntry) for(const [r2,c2] of wordCells(selEntry,selectedDir)) selCellsSet.add(r2+','+c2);
+
+    for(let r=0;r<n;r++){
+      for(let c2=0;c2<n;c2++){
+        const x=gx0+c2*cellSz, y=gy0+r*cellSz;
+        if(isBlack(r,c2)){
+          ctx.fillStyle=paper?'#333':'#111'; ctx.fillRect(x,y,cellSz,cellSz);
+          continue;
+        }
+        const isSel=selectedCell&&selectedCell[0]===r&&selectedCell[1]===c2;
+        const isWord=selCellsSet.has(r+','+c2);
+        const key2=r+','+c2;
+        let bg=paper?'#fff':'#1e2430';
+        if(isWord) bg=paper?'#ddeeff':'#1a2a44';
+        if(isSel)  bg=paper?'#aaccff':'#3355aa';
+        ctx.fillStyle=bg; ctx.fillRect(x,y,cellSz,cellSz);
+        ctx.strokeStyle=paper?'rgba(0,0,0,0.25)':'rgba(255,255,255,0.15)';
+        ctx.lineWidth=0.5; ctx.strokeRect(x,y,cellSz,cellSz);
+        // Number
+        if(nums[key2]){
+          ctx.fillStyle=paper?'rgba(0,0,0,0.5)':'rgba(255,255,255,0.4)';
+          ctx.font=`400 ${Math.max(5,Math.floor(cellSz*0.28))}px 'IBM Plex Mono',monospace`;
+          ctx.textAlign='left'; ctx.textBaseline='top';
+          ctx.fillText(nums[key2],x+1,y+1);
+        }
+        // Letter
+        if(userGrid[r][c2]){
+          ctx.fillStyle=paper?'#111':'#eee';
+          ctx.font=`700 ${Math.floor(cellSz*0.55)}px 'IBM Plex Mono',monospace`;
+          ctx.textAlign='center'; ctx.textBaseline='middle';
+          ctx.fillText(userGrid[r][c2],x+cellSz/2,y+cellSz/2);
+        }
+      }
+    }
+
+    // Clue panel
+    const cy=gy0+cellSz*n+6;
+    if(selEntry){
+      const dir=selectedDir==='across'?'A':'D';
+      ctx.fillStyle=paper?'rgba(0,0,0,0.06)':'rgba(255,255,255,0.06)';
+      roundRect(ctx,8,cy,W-16,clueH-4,6); ctx.fill();
+      ctx.fillStyle=paper?'#888':'rgba(255,255,255,0.4)';
+      ctx.font=`300 9px 'IBM Plex Mono',monospace`;
+      ctx.textAlign='left'; ctx.textBaseline='top';
+      ctx.fillText(`${selEntry.num}${dir} · ${selEntry.answer.length} letters`,12,cy+6);
+      ctx.fillStyle=paper?'#111':'#eee';
+      ctx.font=`500 ${Math.min(13,Math.floor((clueH-20)*0.55))}px 'IBM Plex Mono',monospace`;
+      // word-wrap clue
+      const words2=selEntry.clue.split(' ');
+      let line='',ly=cy+18;
+      for(const wd of words2){
+        const test=line+(line?' ':'')+wd;
+        if(ctx.measureText(test).width>W-24&&line){ ctx.fillText(line,12,ly); line=wd; ly+=16; }
+        else line=test;
+      }
+      if(line) ctx.fillText(line,12,ly);
+    } else {
+      ctx.fillStyle=paper?'rgba(0,0,0,0.25)':'rgba(255,255,255,0.25)';
+      ctx.font=`300 10px 'IBM Plex Mono',monospace`;
+      ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillText('tap a cell to start · type to fill · tap again to change direction',W/2,cy+clueH/2-4);
+    }
+
+    if(allDone()){
+      ctx.fillStyle=paper?'rgba(245,241,232,0.92)':'rgba(13,17,23,0.92)';
+      ctx.fillRect(0,0,W,H);
+      ctx.fillStyle=paper?'#226622':'#44ee88';
+      ctx.font=`700 20px 'IBM Plex Mono',monospace`;
+      ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillText('Puzzle Complete! 🎉',W/2,H/2);
+    }
+    ctx.textAlign='left';
+  }
+
+  c.addEventListener('click',e=>{
+    const r2=c.getBoundingClientRect();
+    const n=puzzle.size;
+    const clueH=Math.min(H*0.30,90);
+    const gridArea=H-clueH-8;
+    const cellSz=Math.min((W-16)/n, gridArea/n);
+    const gx0=(W-cellSz*n)/2, gy0=4;
+    const mx=e.clientX-r2.left,my=e.clientY-r2.top;
+    const col2=Math.floor((mx-gx0)/cellSz);
+    const row=Math.floor((my-gy0)/cellSz);
+    if(row>=0&&row<n&&col2>=0&&col2<n) selectCell(row,col2);
+  });
+
+  mkBtn('Next Puzzle',ctrl).addEventListener('click',()=>{ puzzleIdx++; loadPuzzle(puzzleIdx); });
+  mkInfo(ctrl).textContent='type letters to fill';
+
+  loadPuzzle(0); requestAnimationFrame(draw);
+  return()=>{ cancelAnimationFrame(raf); ro.disconnect(); document.removeEventListener('keydown',onKey); };
+}
+
+
+// ════════════════════════════════════════════════════════════════════════════
+// TOY — MAHJONG SOLITAIRE
+// ════════════════════════════════════════════════════════════════════════════
+function initMahjong(body,ctrl){
+  const {c,ctx,ro}=mkCanvas(body);
+  let W=c.width,H=c.height,raf;
+
+  // ── Tile definitions ──────────────────────────────────────────────────────
+  // Each tile type has a suit (0-4) and value (display label)
+  // Suits: 0=Bamboo 1=Characters 2=Circles 3=Winds 4=Dragons
+  // We build exactly N pairs so the board is always solvable
+
+  const BAMBOO_LABELS =['1b','2b','3b','4b','5b','6b','7b','8b','9b'];
+  const CHAR_LABELS   =['1c','2c','3c','4c','5c','6c','7c','8c','9c'];
+  const CIRCLE_LABELS =['1o','2o','3o','4o','5o','6o','7o','8o','9o'];
+  const WIND_LABELS   =['East','Sth','West','Nth'];
+  const DRAGON_LABELS =['中','發','白'];
+
+  // All 42 distinct tile types (suit, idx, label, color)
+  const ALL_TYPES=[];
+  BAMBOO_LABELS.forEach((l,i)=> ALL_TYPES.push({suit:0,idx:i,label:l,col:['#22aa44','#1a7733']}));
+  CHAR_LABELS.forEach((l,i)=>   ALL_TYPES.push({suit:1,idx:i,label:l,col:['#cc4422','#882211']}));
+  CIRCLE_LABELS.forEach((l,i)=> ALL_TYPES.push({suit:2,idx:i,label:l,col:['#2266cc','#1144aa']}));
+  WIND_LABELS.forEach((l,i)=>   ALL_TYPES.push({suit:3,idx:i,label:l,col:['#888800','#666600']}));
+  DRAGON_LABELS.forEach((l,i)=> ALL_TYPES.push({suit:4,idx:i,label:l,col:['#884488','#553355']}));
+
+  // ── Layout: turtle pattern ────────────────────────────────────────────────
+  // Each position: {layer, r, c} — layer 0=bottom, higher=top
+  const LAYOUT=[];
+  // Layer 0: 8×4 base + 2 side tiles each side
+  for(let r=0;r<4;r++) for(let c=0;c<8;c++) LAYOUT.push({layer:0,r:r+1,c:c+1});
+  LAYOUT.push({layer:0,r:1,c:0}); LAYOUT.push({layer:0,r:1,c:9});
+  LAYOUT.push({layer:0,r:4,c:0}); LAYOUT.push({layer:0,r:4,c:9});
+  // Layer 1: 6×3
+  for(let r=0;r<3;r++) for(let c=0;c<6;c++) LAYOUT.push({layer:1,r:r+1,c:c+2});
+  // Layer 2: 4×2
+  for(let r=0;r<2;r++) for(let c=0;c<4;c++) LAYOUT.push({layer:2,r:r+1,c:c+3});
+  // Layer 3: 2 tiles
+  LAYOUT.push({layer:3,r:1,c:4}); LAYOUT.push({layer:3,r:2,c:4});
+
+  // Total = 36 + 4 + 18 + 8 + 2 = 68 positions, must be even
+  // We'll use min(LAYOUT.length, 72) clamped to even
+  const TOTAL = Math.floor(Math.min(LAYOUT.length,72)/2)*2; // 68 → use 68
+
+  let tiles, selected, score, moves;
+
+  function shuffle(a){ for(let i=a.length-1;i>0;i--){const j=0|Math.random()*(i+1);[a[i],a[j]]=[a[j],a[i]];} }
+
+  function newGame(){
+    // Build TOTAL/2 pairs — cycle through ALL_TYPES so every type appears fairly
+    const pairs=[];
+    for(let i=0;i<TOTAL/2;i++){
+      const t=ALL_TYPES[i % ALL_TYPES.length];
+      pairs.push({...t},{...t}); // two copies
+    }
+    shuffle(pairs);
+    tiles=LAYOUT.slice(0,TOTAL).map((pos,i)=>({
+      ...pos,
+      ...pairs[i],
+      id:i, removed:false,
+    }));
+    selected=null; score=0; moves=0;
+  }
+
+  function tileKey(t){ return t.suit*100+t.idx; }
+  function matches(a,b){ return a&&b&&tileKey(a)===tileKey(b)&&a.id!==b.id; }
+
+  function isFree(tile){
+    if(tile.removed) return false;
+    // Not covered from above
+    const above=tiles.filter(t=>!t.removed&&t.layer===tile.layer+1);
+    const covered=above.some(t=>Math.abs(t.r-tile.r)<=1&&Math.abs(t.c-tile.c)<=1);
+    if(covered) return false;
+    // Not blocked on both left AND right by same-layer tiles
+    const same=tiles.filter(t=>!t.removed&&t.layer===tile.layer&&t.id!==tile.id);
+    const leftBlocked =same.some(t=>t.c===tile.c-1&&Math.abs(t.r-tile.r)<=1);
+    const rightBlocked=same.some(t=>t.c===tile.c+1&&Math.abs(t.r-tile.r)<=1);
+    return !(leftBlocked&&rightBlocked);
+  }
+
+  function hasFreePair(){
+    const free=tiles.filter(t=>!t.removed&&isFree(t));
+    for(let i=0;i<free.length;i++)
+      for(let j=i+1;j<free.length;j++)
+        if(matches(free[i],free[j])) return true;
+    return false;
+  }
+  function allRemoved(){ return tiles.every(t=>t.removed); }
+
+  let lastTs=0;
+  function draw(ts){
+    raf=requestAnimationFrame(draw);
+    W=c.width=body.clientWidth; H=c.height=body.clientHeight;
+    const paper=isPaper();
+    ctx.fillStyle=paper?'#e8e0d0':'#0d1117'; ctx.fillRect(0,0,W,H);
+
+    // Scale layout to fit canvas
+    const maxC=11, maxR=7;
+    const tw=Math.min((W-12)/maxC, (H-40)/maxR);
+    const th=tw*1.35;
+    const gx=(W-tw*maxC)/2, gy=(H-th*maxR)/2+16;
+
+    // Draw tiles back→front (by layer)
+    const sorted=[...tiles].sort((a,b)=>a.layer-b.layer||(a.r-b.r)||(a.c-b.c));
+    for(const t of sorted){
+      if(t.removed) continue;
+      const free=isFree(t);
+      const isSel=selected&&selected.id===t.id;
+      const x=gx+t.c*tw+t.layer*2.5;
+      const y=gy+t.r*th -t.layer*4;
+      const w=tw-2, h=th-2;
+
+      // Drop shadow
+      ctx.fillStyle='rgba(0,0,0,0.28)';
+      roundRect(ctx,x+3,y+3,w,h,4); ctx.fill();
+
+      // Body
+      if(isSel){
+        ctx.fillStyle='#ffe84d';
+      } else if(free){
+        ctx.fillStyle=paper?'#faf6ee':'#252d3a';
+      } else {
+        ctx.fillStyle=paper?'#c8c0b0':'#161b22';
+      }
+      roundRect(ctx,x,y,w,h,4); ctx.fill();
+
+      // Top colour band (suit colour)
+      const [bandLight,bandDark]=t.col;
+      ctx.fillStyle=free?(paper?bandLight:bandDark):(paper?'#aaa':'#333');
+      roundRect(ctx,x+1,y+1,w-2,h*0.30,3); ctx.fill();
+
+      // Border
+      ctx.strokeStyle=isSel?'#cc9900':free?(paper?'rgba(0,0,0,0.3)':'rgba(255,255,255,0.2)'):'rgba(100,100,100,0.2)';
+      ctx.lineWidth=isSel?2:1;
+      roundRect(ctx,x,y,w,h,4); ctx.stroke();
+
+      // Label
+      const labelSize=Math.max(7,Math.floor(tw*0.42));
+      ctx.font=`700 ${labelSize}px 'IBM Plex Mono',monospace`;
+      ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillStyle=isSel?'#333':(free?(paper?'#222':'#eee'):'#666');
+      ctx.fillText(t.label, x+w/2, y+h*0.68);
+
+      // Small suit initial in band
+      ctx.fillStyle='rgba(255,255,255,0.85)';
+      ctx.font=`500 ${Math.max(5,Math.floor(tw*0.25))}px 'IBM Plex Mono',monospace`;
+      ctx.fillText(['B','C','O','W','D'][t.suit], x+w/2, y+h*0.16);
+    }
+
+    // HUD
+    ctx.textAlign='left'; ctx.textBaseline='top';
+    ctx.fillStyle=paper?'rgba(0,0,0,0.35)':'rgba(255,255,255,0.35)';
+    ctx.font=`300 9px 'IBM Plex Mono',monospace`;
+    const rem=tiles.filter(t=>!t.removed).length;
+    ctx.fillText(`tiles left: ${rem}  score: ${score}  pairs: ${moves}`,6,4);
+
+    if(!hasFreePair()&&!allRemoved()){
+      ctx.fillStyle=paper?'rgba(245,241,232,0.92)':'rgba(13,17,23,0.92)';
+      ctx.fillRect(0,0,W,H);
+      ctx.fillStyle=paper?'#882222':'#ff5555';
+      ctx.font=`700 18px 'IBM Plex Mono',monospace`;
+      ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillText('No more moves!',W/2,H/2-14);
+      ctx.fillStyle=paper?'#444':'rgba(255,255,255,0.5)';
+      ctx.font=`300 10px 'IBM Plex Mono',monospace`;
+      ctx.fillText(`score: ${score}  —  click New Game`,W/2,H/2+12);
+    }
+    if(allRemoved()){
+      ctx.fillStyle=paper?'rgba(245,241,232,0.92)':'rgba(13,17,23,0.92)';
+      ctx.fillRect(0,0,W,H);
+      ctx.fillStyle=paper?'#226622':'#44ee88';
+      ctx.font=`700 20px 'IBM Plex Mono',monospace`;
+      ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillText('Cleared! 🎉',W/2,H/2-14);
+      ctx.fillStyle=paper?'#444':'rgba(255,255,255,0.5)';
+      ctx.font=`300 10px 'IBM Plex Mono',monospace`;
+      ctx.fillText(`score: ${score}  pairs matched: ${moves}`,W/2,H/2+12);
+    }
+    ctx.textAlign='left';
+  }
+
+  c.addEventListener('click',e=>{
+    const r2=c.getBoundingClientRect();
+    const mx=e.clientX-r2.left, my=e.clientY-r2.top;
+    const maxC=11, maxR=7;
+    const tw=Math.min((W-12)/maxC,(H-40)/maxR);
+    const th=tw*1.35;
+    const gx=(W-tw*maxC)/2, gy=(H-th*maxR)/2+16;
+
+    // Find topmost free tile at click point
+    let hit=null;
+    for(const t of tiles){
+      if(t.removed||!isFree(t)) continue;
+      const x=gx+t.c*tw+t.layer*2.5;
+      const y=gy+t.r*th-t.layer*4;
+      if(mx>=x&&mx<=x+tw-2&&my>=y&&my<=y+th-2){
+        if(!hit||t.layer>hit.layer) hit=t;
+      }
+    }
+    if(!hit) return;
+    if(selected){
+      if(selected.id===hit.id){ selected=null; return; }
+      if(matches(selected,hit)){
+        selected.removed=true; hit.removed=true;
+        score+=10*(selected.layer+hit.layer+2);
+        moves++; selected=null;
+      } else { selected=hit; }
+    } else { selected=hit; }
+  });
+
+  const newBtn=mkBtn('New Game',ctrl);
+  newBtn.addEventListener('click',()=>{ newGame(); newBtn.blur(); });
+  mkInfo(ctrl).textContent='match pairs of free tiles';
+
+  newGame(); requestAnimationFrame(draw);
+  return()=>{ cancelAnimationFrame(raf); ro.disconnect(); };
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// TOY — LIGHTS OUT
+// ════════════════════════════════════════════════════════════════════════════
+function initLightsOut(body,ctrl){
+  const {c,ctx,ro}=mkCanvas(body);
+  let W=c.width,H=c.height,raf;
+  let difficulty=1;
+  const DIFF_NAMES=['Easy','Medium','Hard'];
+  const GRID_SIZES=[3,5,7];
+
+  let grid,moves,best,solved,solvedFlash;
+
+  function gs(){ return GRID_SIZES[difficulty]; }
+
+  function newGame(){
+    const n=gs();
+    grid=Array.from({length:n},()=>Array(n).fill(false));
+    moves=0; solved=false; solvedFlash=0;
+    // Generate solvable puzzle: start solved, apply random toggles
+    const toggles=difficulty===0?5:difficulty===1?12:20;
+    for(let t=0;t<toggles;t++){
+      const r=Math.floor(Math.random()*n);
+      const c2=Math.floor(Math.random()*n);
+      toggle(r,c2,true);
+    }
+    // If already solved (unlikely but possible), try again
+    if(isSolved()) newGame();
+  }
+
+  function toggle(r,c2,silent){
+    const n=gs();
+    grid[r][c2]=!grid[r][c2];
+    if(r>0) grid[r-1][c2]=!grid[r-1][c2];
+    if(r<n-1) grid[r+1][c2]=!grid[r+1][c2];
+    if(c2>0) grid[r][c2-1]=!grid[r][c2-1];
+    if(c2<n-1) grid[r][c2+1]=!grid[r][c2+1];
+    if(!silent){ moves++; }
+  }
+
+  function isSolved(){ return grid.every(row=>row.every(v=>!v)); }
+
+  function cellAt(mx,my){
+    const n=gs();
+    const pad=20;
+    const sz=Math.min((W-pad*2)/n,(H-pad*2-40)/n);
+    const gx=(W-sz*n)/2,gy=(H-sz*n)/2+10;
+    const col2=Math.floor((mx-gx)/sz);
+    const row=Math.floor((my-gy)/sz);
+    if(row<0||row>=n||col2<0||col2>=n) return null;
+    return [row,col2];
+  }
+
+  let lastTs=0;
+  function draw(ts){
+    raf=requestAnimationFrame(draw);
+    const dt=Math.min(60,ts-lastTs); lastTs=ts;
+    W=c.width=body.clientWidth; H=c.height=body.clientHeight;
+    const paper=isPaper();
+    ctx.fillStyle=paper?'#f5f1e8':'#0d1117'; ctx.fillRect(0,0,W,H);
+
+    if(solved) solvedFlash=Math.min(1,solvedFlash+dt/300);
+
+    const n=gs();
+    const pad=20;
+    const sz=Math.min((W-pad*2)/n,(H-pad*2-40)/n);
+    const gx=(W-sz*n)/2,gy=(H-sz*n)/2+10;
+    const gap=sz*0.08;
+
+    for(let r=0;r<n;r++){
+      for(let c2=0;c2<n;c2++){
+        const x=gx+c2*sz+gap/2,y=gy+r*sz+gap/2;
+        const w2=sz-gap,h2=sz-gap;
+        const lit=grid[r][c2];
+
+        if(lit){
+          // Lit cell — glowing yellow
+          ctx.fillStyle=paper?'#f0c040':'#ffe060';
+          roundRect(ctx,x,y,w2,h2,w2*0.15); ctx.fill();
+          // Inner glow highlight
+          ctx.fillStyle='rgba(255,255,220,0.5)';
+          roundRect(ctx,x+w2*0.15,y+h2*0.08,w2*0.7,h2*0.32,w2*0.08); ctx.fill();
+          // Outer glow
+          ctx.shadowColor='rgba(255,220,0,0.6)';
+          ctx.shadowBlur=sz*0.3;
+          ctx.fillStyle='rgba(255,200,0,0.0)';
+          roundRect(ctx,x,y,w2,h2,w2*0.15); ctx.fill();
+          ctx.shadowBlur=0;
+        } else {
+          ctx.fillStyle=paper?'rgba(0,0,0,0.12)':'rgba(255,255,255,0.06)';
+          roundRect(ctx,x,y,w2,h2,w2*0.15); ctx.fill();
+        }
+        ctx.strokeStyle=paper?'rgba(0,0,0,0.15)':'rgba(255,255,255,0.08)';
+        ctx.lineWidth=1;
+        roundRect(ctx,x,y,w2,h2,w2*0.15); ctx.stroke();
+      }
+    }
+
+    // HUD
+    ctx.textAlign='left'; ctx.textBaseline='top';
+    ctx.fillStyle=paper?'rgba(0,0,0,0.35)':'rgba(255,255,255,0.35)';
+    ctx.font=`300 10px 'IBM Plex Mono',monospace`;
+    ctx.fillText(`moves: ${moves}`,8,6);
+
+    if(solved){
+      ctx.fillStyle=paper?`rgba(245,241,232,${solvedFlash*0.9})`:`rgba(13,17,23,${solvedFlash*0.9})`;
+      ctx.fillRect(0,0,W,H);
+      ctx.fillStyle=paper?'#226622':'#ffe060';
+      ctx.font=`700 22px 'IBM Plex Mono',monospace`;
+      ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillText('Lights Out! 🌑',W/2,H/2-14);
+      ctx.fillStyle=paper?'#444':'rgba(255,255,255,0.55)';
+      ctx.font=`300 10px 'IBM Plex Mono',monospace`;
+      ctx.fillText(`solved in ${moves} moves`,W/2,H/2+12);
+    }
+    ctx.textAlign='left';
+  }
+
+  c.addEventListener('click',e=>{
+    if(solved) return;
+    const r2=c.getBoundingClientRect();
+    const cell=cellAt(e.clientX-r2.left,e.clientY-r2.top);
+    if(!cell) return;
+    toggle(cell[0],cell[1]);
+    if(isSolved()){ solved=true; }
+  });
+  c.addEventListener('touchstart',e=>{ e.preventDefault(); const r2=c.getBoundingClientRect(),t=e.touches[0]; const cell=cellAt(t.clientX-r2.left,t.clientY-r2.top); if(cell&&!solved){ toggle(cell[0],cell[1]); if(isSolved()) solved=true; } },{passive:false});
+
+  const diffBtn=mkBtn(DIFF_NAMES[difficulty],ctrl);
+  diffBtn.addEventListener('click',()=>{ difficulty=(difficulty+1)%3; diffBtn.textContent=DIFF_NAMES[difficulty]; newGame(); diffBtn.blur(); });
+  mkBtn('New Game',ctrl).addEventListener('click',()=>{ newGame(); });
+  mkInfo(ctrl).textContent='turn all lights off';
+
+  newGame(); requestAnimationFrame(draw);
+  return()=>{ cancelAnimationFrame(raf); ro.disconnect(); };
+}
+
+
+// ════════════════════════════════════════════════════════════════════════════
+// TOY — TEXAS HOLD'EM POKER
+// ════════════════════════════════════════════════════════════════════════════
+function initPoker(body,ctrl){
+  const {c,ctx,ro}=mkCanvas(body);
+  let W=c.width,H=c.height,raf;
+
+  const SUITS=['♠','♥','♦','♣'];
+  const RANKS=['2','3','4','5','6','7','8','9','10','J','Q','K','A'];
+  const SUIT_CLR={'S':'#111','H':'#cc2222','D':'#cc2222','C':'#111'};
+
+  function newDeck(){ const d=[]; for(const s of SUITS) for(const r of RANKS) d.push({s,r,v:RANKS.indexOf(r)}); return d; }
+  function shuffle(d){ for(let i=d.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1));[d[i],d[j]]=[d[j],d[i]]; } return d; }
+
+  // Hand evaluation
+  function handRank(cards){
+    // cards: array of {s,r,v} — evaluate best 5 from given cards
+    const vals=cards.map(c=>c.v).sort((a,b)=>b-a);
+    const suits=cards.map(c=>c.s);
+    const valCounts={};
+    for(const v of vals) valCounts[v]=(valCounts[v]||0)+1;
+    const counts=Object.values(valCounts).sort((a,b)=>b-a);
+    const uniqueVals=Object.keys(valCounts).map(Number).sort((a,b)=>b-a);
+    const isFlush=suits.every(s=>s===suits[0]);
+    const isStraight=(()=>{
+      const uv=[...new Set(vals)].sort((a,b)=>a-b);
+      if(uv.length<5) return false;
+      // Check for 5 consecutive
+      for(let i=0;i<=uv.length-5;i++){
+        if(uv[i+4]-uv[i]===4&&uv[i+1]-uv[i]===1&&uv[i+2]-uv[i]===2&&uv[i+3]-uv[i]===3) return true;
+      }
+      // Wheel A-2-3-4-5
+      if(uv.includes(12)&&uv.includes(0)&&uv.includes(1)&&uv.includes(2)&&uv.includes(3)) return true;
+      return false;
+    })();
+    if(isFlush&&isStraight) return [8,...uniqueVals];
+    if(counts[0]===4)       return [7,...uniqueVals];
+    if(counts[0]===3&&counts[1]===2) return [6,...uniqueVals];
+    if(isFlush)             return [5,...uniqueVals];
+    if(isStraight)          return [4,...uniqueVals];
+    if(counts[0]===3)       return [3,...uniqueVals];
+    if(counts[0]===2&&counts[1]===2) return [2,...uniqueVals];
+    if(counts[0]===2)       return [1,...uniqueVals];
+    return [0,...uniqueVals];
+  }
+
+  function compareHands(a,b){
+    const ra=handRank(a),rb=handRank(b);
+    for(let i=0;i<Math.min(ra.length,rb.length);i++){
+      if(ra[i]>rb[i]) return 1;
+      if(ra[i]<rb[i]) return -1;
+    }
+    return 0;
+  }
+
+  const HAND_NAMES=['High Card','One Pair','Two Pair','Three of a Kind','Straight','Flush','Full House','Four of a Kind','Straight Flush'];
+
+  // Best 5 from 7
+  function best5(cards){
+    let best=null,bestR=null;
+    const combos=[];
+    for(let i=0;i<cards.length;i++) for(let j=i+1;j<cards.length;j++){
+      const five=cards.filter((_,k)=>k!==i&&k!==j);
+      const r=handRank(five);
+      if(!bestR||(()=>{ for(let x=0;x<r.length;x++){ if(r[x]>bestR[x]) return true; if(r[x]<bestR[x]) return false; } return false; })()){
+        best=five; bestR=r;
+      }
+    }
+    return {hand:best||cards.slice(0,5),rank:bestR,name:HAND_NAMES[bestR?.[0]||0]};
+  }
+
+  // Game state
+  let deck,playerHand,aiHand,community,pot,playerChips,aiChips,playerBet,aiBet;
+  let stage,message,gameOver,playerFolded,showdown;
+  let callBtn,raiseBtn,foldBtn,dealBtn;
+
+  const BIG_BLIND=20;
+
+  function newHand(){
+    deck=shuffle(newDeck());
+    playerHand=[deck.pop(),deck.pop()];
+    aiHand=[deck.pop(),deck.pop()];
+    community=[];
+    stage=0; // 0=preflop,1=flop,2=turn,3=river,4=showdown
+    playerBet=BIG_BLIND; aiBet=BIG_BLIND/2;
+    pot=BIG_BLIND+BIG_BLIND/2;
+    playerChips-=BIG_BLIND; aiChips-=BIG_BLIND/2;
+    message='Your turn — call, raise, or fold';
+    gameOver=false; playerFolded=false; showdown=false;
+    setButtons(true);
+  }
+
+  function dealCommunity(){
+    if(stage===0){ community.push(deck.pop(),deck.pop(),deck.pop()); stage=1; }
+    else if(stage===1){ community.push(deck.pop()); stage=2; }
+    else if(stage===2){ community.push(deck.pop()); stage=3; }
+    else { stage=4; doShowdown(); return; }
+    // AI action (simplified: always call or check)
+    aiAction();
+  }
+
+  function aiAction(){
+    const allCards=[...aiHand,...community];
+    const hr=handRank(allCards);
+    if(hr[0]>=2) {
+      // AI raises if strong hand
+      const raise=Math.min(aiChips, BIG_BLIND*2);
+      aiBet+=raise; aiChips-=raise; pot+=raise;
+      message=`AI raises ${raise}. Your turn.`;
+    } else {
+      message='AI checks. Your turn.';
+    }
+  }
+
+  function doShowdown(){
+    showdown=true;
+    const allPlayer=[...playerHand,...community];
+    const allAi=[...aiHand,...community];
+    const pBest=best5(allPlayer);
+    const aBest=best5(allAi);
+    const cmp=compareHands(allPlayer,allAi);
+    if(cmp>0){ playerChips+=pot; message=`You win! (${pBest.name}) +${pot}`; }
+    else if(cmp<0){ aiChips+=pot; message=`AI wins (${aBest.name}) — ${aBest.name}`; }
+    else { playerChips+=Math.floor(pot/2); aiChips+=Math.floor(pot/2); message=`Split pot! (${pBest.name} each)`; }
+    pot=0; gameOver=true; setButtons(false);
+    if(playerChips<=0){ message+=' — You\'re broke! Restarting...'; setTimeout(fullReset,2500); }
+    else if(aiChips<=0){ message+=' — AI is broke! You win the game!'; }
+  }
+
+  function setButtons(on){
+    if(callBtn) callBtn.style.opacity=on?'1':'0.4';
+    if(raiseBtn) raiseBtn.style.opacity=on?'1':'0.4';
+    if(foldBtn) foldBtn.style.opacity=on?'1':'0.4';
+    if(callBtn) callBtn.disabled=!on;
+    if(raiseBtn) raiseBtn.disabled=!on;
+    if(foldBtn) foldBtn.disabled=!on;
+  }
+
+  function fullReset(){ playerChips=500; aiChips=500; newHand(); }
+
+  playerChips=500; aiChips=500;
+  newHand();
+
+  // Card drawing
+  function drawCard(x,y,cw,ch,card,faceUp,paper){
+    ctx.fillStyle=faceUp?( paper?'#fff':'#eee'):'#2244aa';
+    roundRect(ctx,x,y,cw,ch,4); ctx.fill();
+    ctx.strokeStyle=paper?'rgba(0,0,0,0.2)':'rgba(0,0,0,0.5)'; ctx.lineWidth=1;
+    roundRect(ctx,x,y,cw,ch,4); ctx.stroke();
+    if(faceUp&&card){
+      const isRed=card.s==='♥'||card.s==='♦';
+      ctx.fillStyle=isRed?'#cc2222':'#111';
+      ctx.font=`700 ${Math.floor(cw*0.38)}px 'IBM Plex Mono',monospace`;
+      ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillText(card.r,x+cw*0.5,y+ch*0.35);
+      ctx.font=`400 ${Math.floor(cw*0.4)}px 'IBM Plex Mono',monospace`;
+      ctx.fillText(card.s,x+cw*0.5,y+ch*0.7);
+    } else if(!faceUp){
+      // Card back pattern
+      ctx.fillStyle='rgba(255,255,255,0.15)';
+      for(let dy=0;dy<ch;dy+=4){ ctx.fillRect(x+2,y+dy,cw-4,1); }
+    }
+  }
+
+  let lastTs=0;
+  function draw(ts){
+    raf=requestAnimationFrame(draw);
+    W=c.width=body.clientWidth; H=c.height=body.clientHeight;
+    const paper=isPaper();
+    ctx.fillStyle=paper?'#2d5a27':'#1a3d14'; ctx.fillRect(0,0,W,H); // green felt
+    // Felt texture
+    ctx.fillStyle='rgba(0,0,0,0.08)';
+    for(let y=0;y<H;y+=3) ctx.fillRect(0,y,W,1);
+
+    const cw=Math.min(50,W*0.08),ch=cw*1.5;
+    const gap=6;
+
+    // AI hand (top)
+    const aiY=12;
+    for(let i=0;i<aiHand.length;i++){
+      drawCard(W/2-cw-gap/2+i*(cw+gap),aiY,cw,ch,aiHand[i],showdown,paper);
+    }
+    // AI chips
+    ctx.fillStyle='rgba(255,255,255,0.7)';
+    ctx.font=`300 9px 'IBM Plex Mono',monospace`;
+    ctx.textAlign='center';
+    ctx.fillText(`AI: $${aiChips}`,W/2,aiY+ch+12);
+
+    // Community cards
+    const comY=H/2-ch/2;
+    for(let i=0;i<5;i++){
+      const card=community[i]||null;
+      drawCard(W/2+(i-2)*(cw+gap),comY,cw,ch,card,!!card,paper);
+    }
+
+    // Pot
+    ctx.fillStyle='rgba(255,255,220,0.85)';
+    ctx.font=`500 11px 'IBM Plex Mono',monospace`;
+    ctx.textAlign='center';
+    ctx.fillText(`Pot: $${pot}`,W/2,comY-12);
+
+    // Player hand (bottom)
+    const plY=H-ch-60;
+    for(let i=0;i<playerHand.length;i++){
+      drawCard(W/2-cw-gap/2+i*(cw+gap),plY,cw,ch,playerHand[i],true,paper);
+    }
+    // Player chips
+    ctx.fillStyle='rgba(255,255,255,0.8)';
+    ctx.font=`300 9px 'IBM Plex Mono',monospace`;
+    ctx.fillText(`You: $${playerChips}`,W/2,plY-10);
+
+    // Message
+    ctx.fillStyle='rgba(255,255,220,0.9)';
+    ctx.font=`400 10px 'IBM Plex Mono',monospace`;
+    ctx.fillText(message,W/2,H-12);
+    ctx.textAlign='left';
+  }
+
+  // Controls
+  callBtn=mkBtn('Call/Check',ctrl);
+  callBtn.addEventListener('click',()=>{
+    if(gameOver) return;
+    const diff=aiBet-playerBet;
+    const amt=Math.min(diff,playerChips);
+    if(amt>0){ playerChips-=amt; pot+=amt; playerBet+=amt; }
+    message='You call.';
+    setTimeout(()=>{ if(!gameOver) dealCommunity(); },400);
+    callBtn.blur();
+  });
+
+  raiseBtn=mkBtn('Raise',ctrl);
+  raiseBtn.addEventListener('click',()=>{
+    if(gameOver) return;
+    const raise=Math.min(playerChips, BIG_BLIND*2);
+    if(raise<=0) return;
+    playerChips-=raise; pot+=raise; playerBet+=raise;
+    message=`You raise $${raise}.`;
+    setTimeout(()=>{ if(!gameOver) dealCommunity(); },400);
+    raiseBtn.blur();
+  });
+
+  foldBtn=mkBtn('Fold',ctrl);
+  foldBtn.addEventListener('click',()=>{
+    if(gameOver) return;
+    aiChips+=pot; pot=0;
+    message='You fold. AI wins the pot.';
+    gameOver=true; playerFolded=true;
+    setButtons(false);
+    foldBtn.blur();
+  });
+
+  dealBtn=mkBtn('New Hand',ctrl);
+  dealBtn.addEventListener('click',()=>{
+    if(playerChips<=0||aiChips<=0){ fullReset(); }
+    else newHand();
+    dealBtn.blur();
+  });
+  mkInfo(ctrl).textContent="Texas Hold'em";
+
+  requestAnimationFrame(draw);
+  return()=>{ cancelAnimationFrame(raf); ro.disconnect(); };
+}
+
+
+// ════════════════════════════════════════════════════════════════════════════
+// TOY — TYPING SPEED TEST
+// ════════════════════════════════════════════════════════════════════════════
+function initTypingSpeed(body,ctrl){
+  const {c,ctx,ro}=mkCanvas(body);
+  let W=c.width,H=c.height,raf;
+
+  const PASSAGES=[
+    "the quick brown fox jumps over the lazy dog near the riverbank on a sunny afternoon",
+    "practice makes perfect and every keystroke brings you closer to typing mastery",
+    "the stars at night sparkle brightly above the quiet mountain village in winter",
+    "a journey of a thousand miles begins with a single step taken in the right direction",
+    "coding is the art of turning ideas into reality one character at a time",
+    "the ocean waves crash gently against the shore while seagulls circle in the breeze",
+    "music is a universal language that speaks to every heart across every culture",
+    "science and curiosity together have unlocked the greatest mysteries of the universe",
+    "the library was silent except for the soft rustle of pages turning in the lamplight",
+    "hard work determination and a positive attitude are the keys to achieving great things",
+    "the morning sun painted the sky in brilliant shades of orange pink and gold",
+    "every great story begins with a single word written on a blank page with courage",
+    "vegetables fruits and grains form the foundation of a healthy and balanced diet",
+    "the ancient castle stood at the top of the hill overlooking the misty valley below",
+    "technology changes fast but the fundamentals of clear thinking remain timeless",
+  ];
+
+  let passage,typed,started,finished,startTime,endTime,wpm,accuracy,mistakes;
+  let cursorBlink=0;
+  let difficulty=1;
+  const DIFF_NAMES=['Easy','Normal','Hard'];
+  // Easy = shorter passage, Normal = normal, Hard = no backspace allowed
+  function pickPassage(){
+    const pool=difficulty===0?PASSAGES.slice(0,5):difficulty===1?PASSAGES.slice(0,10):PASSAGES;
+    return pool[Math.floor(Math.random()*pool.length)];
+  }
+
+  function newTest(){
+    passage=pickPassage();
+    typed=''; started=false; finished=false;
+    startTime=0; endTime=0; wpm=0; accuracy=0; mistakes=0;
+  }
+  newTest();
+
+  function calcStats(){
+    const elapsed=(endTime-startTime)/1000/60; // minutes
+    const wordCount=passage.split(' ').length;
+    wpm=elapsed>0?Math.round(wordCount/elapsed):0;
+    let correct=0;
+    for(let i=0;i<typed.length;i++) if(typed[i]===passage[i]) correct++;
+    accuracy=typed.length>0?Math.round((correct/typed.length)*100):100;
+  }
+
+  const onKey=e=>{
+    if(finished) return;
+    if(e.key==='Tab'){ e.preventDefault(); newTest(); return; }
+    if(e.key.length===1&&!e.ctrlKey&&!e.metaKey){
+      e.preventDefault();
+      if(!started){ started=true; startTime=Date.now(); }
+      if(typed.length<passage.length){
+        if(typed[typed.length]!==e.key) mistakes++;
+        typed+=e.key;
+        if(typed.length===passage.length){
+          finished=true; endTime=Date.now(); calcStats();
+        }
+      }
+    } else if(e.key==='Backspace'){
+      e.preventDefault();
+      if(difficulty===2) return; // no backspace on hard
+      if(typed.length>0) typed=typed.slice(0,-1);
+    }
+  };
+  document.addEventListener('keydown',onKey);
+
+  let lastTs=0;
+  function draw(ts){
+    raf=requestAnimationFrame(draw);
+    const dt=Math.min(60,ts-lastTs); lastTs=ts;
+    W=c.width=body.clientWidth; H=c.height=body.clientHeight;
+    const paper=isPaper();
+    ctx.fillStyle=paper?'#f5f1e8':'#0d1117'; ctx.fillRect(0,0,W,H);
+    cursorBlink=(cursorBlink+dt/500)%1;
+
+    const pad=20;
+    const fontSize=Math.min(16, Math.max(11, W/38));
+    ctx.font=`400 ${fontSize}px 'IBM Plex Mono',monospace`;
+    const lineH=fontSize*1.65;
+    const maxW=W-pad*2;
+
+    // Word-wrap passage into lines
+    const words=passage.split(' ');
+    const lines=[];
+    let cur='';
+    for(const w of words){
+      const test=cur+(cur?' ':'')+w;
+      if(ctx.measureText(test).width>maxW&&cur){ lines.push(cur); cur=w; }
+      else cur=test;
+    }
+    if(cur) lines.push(cur);
+
+    const totalH=lines.length*lineH;
+    const startY=(H-totalH)/2-20;
+
+    // Status line
+    ctx.textAlign='left'; ctx.textBaseline='top';
+    if(!started){
+      ctx.fillStyle=paper?'rgba(0,0,0,0.35)':'rgba(255,255,255,0.35)';
+      ctx.font=`300 10px 'IBM Plex Mono',monospace`;
+      ctx.fillText('start typing to begin · Tab for new passage',pad,8);
+    } else if(finished){
+      ctx.fillStyle=paper?'#226622':'#44ee88';
+      ctx.font=`700 13px 'IBM Plex Mono',monospace`;
+      ctx.fillText(`${wpm} WPM  ·  ${accuracy}% accuracy  ·  ${mistakes} mistakes`,pad,8);
+      ctx.fillStyle=paper?'rgba(0,0,0,0.35)':'rgba(255,255,255,0.35)';
+      ctx.font=`300 9px 'IBM Plex Mono',monospace`;
+      ctx.fillText('Tab or New Test for next',pad,24);
+    } else {
+      const elapsed=((Date.now()-startTime)/1000).toFixed(1);
+      const liveWords=typed.trim().split(/\s+/).filter(Boolean).length;
+      const liveWpm=elapsed>0?Math.round(liveWords/(elapsed/60)):0;
+      ctx.fillStyle=paper?'rgba(0,0,0,0.35)':'rgba(255,255,255,0.35)';
+      ctx.font=`300 10px 'IBM Plex Mono',monospace`;
+      ctx.fillText(`${elapsed}s · ~${liveWpm} wpm · ${typed.length}/${passage.length}`,pad,8);
+    }
+
+    // Render passage character by character
+    let charIdx=0;
+    for(let li=0;li<lines.length;li++){
+      const line=lines[li];
+      let x=pad;
+      const y=startY+li*lineH;
+      for(let ci=0;ci<line.length;ci++){
+        const ch=line[ci];
+        let colour,bgColour=null;
+        if(charIdx<typed.length){
+          if(typed[charIdx]===ch){
+            colour=paper?'rgba(0,0,0,0.5)':'rgba(255,255,255,0.4)'; // correct — dim
+          } else {
+            colour=paper?'#cc3333':'#ff5555'; // wrong
+            bgColour=paper?'rgba(200,0,0,0.08)':'rgba(255,0,0,0.12)';
+          }
+        } else if(charIdx===typed.length){
+          colour=paper?'#111':'#fff'; // current char
+        } else {
+          colour=paper?'rgba(0,0,0,0.28)':'rgba(255,255,255,0.28)'; // upcoming
+        }
+        ctx.font=`${charIdx<typed.length?'400':'400'} ${fontSize}px 'IBM Plex Mono',monospace`;
+        const cw2=ctx.measureText(ch).width;
+        if(bgColour){ ctx.fillStyle=bgColour; ctx.fillRect(x-1,y,cw2+2,lineH*0.9); }
+        // Cursor
+        if(charIdx===typed.length&&!finished){
+          const curAlpha=0.5+0.5*Math.sin(cursorBlink*Math.PI*2);
+          ctx.fillStyle=paper?`rgba(0,100,255,${curAlpha})`:`rgba(80,180,255,${curAlpha})`;
+          ctx.fillRect(x,y+2,2,lineH*0.78);
+        }
+        ctx.fillStyle=colour;
+        ctx.textBaseline='top';
+        ctx.fillText(ch,x,y);
+        x+=cw2;
+        charIdx++;
+      }
+      // Space between words (if not last line)
+      if(li<lines.length-1){
+        if(charIdx===typed.length&&!finished){
+          const curAlpha=0.5+0.5*Math.sin(cursorBlink*Math.PI*2);
+          ctx.fillStyle=paper?`rgba(0,100,255,${curAlpha})`:`rgba(80,180,255,${curAlpha})`;
+          ctx.fillRect(x,startY+li*lineH+2,2,lineH*0.78);
+        }
+        charIdx++; // space
+      }
+    }
+    ctx.textAlign='left';
+  }
+
+  const diffBtn=mkBtn(DIFF_NAMES[difficulty],ctrl);
+  diffBtn.addEventListener('click',()=>{
+    difficulty=(difficulty+1)%3;
+    diffBtn.textContent=DIFF_NAMES[difficulty];
+    newTest(); diffBtn.blur();
+  });
+  mkBtn('New Test',ctrl).addEventListener('click',()=>{ newTest(); });
+  mkInfo(ctrl).textContent='just start typing';
+
+  requestAnimationFrame(draw);
+  return()=>{ cancelAnimationFrame(raf); ro.disconnect(); document.removeEventListener('keydown',onKey); };
 }
 
 
