@@ -48,9 +48,8 @@ STYLE.textContent = `
 }
 #__SB_TITLE__ { font-size: 9px; font-weight: 300; letter-spacing: .24em; text-transform: uppercase; transition: color 0.18s; }
 #__SB_COLLAPSE__ { background: none; border: none; cursor: pointer; font-size: 14px; line-height: 1; padding: 2px 0 2px 8px; transition: color .15s; }
-#__SB_LIST__ { flex: 1; overflow-y: auto; padding: 8px 0; scrollbar-width: none; min-height: 0; }
+#__SB_LIST__ { flex: 1; overflow-y: auto; padding: 8px 0; scrollbar-width: none; }
 #__SB_LIST__::-webkit-scrollbar { display: none; }
-#__SB_SETTINGS__ { flex-shrink: 0; }
 .sb-item { display: flex; align-items: center; padding: 8px 14px; cursor: pointer; gap: 9px; border: none; background: none; width: 100%; text-align: left; transition: background 0.1s; }
 .sb-item-dot { width: 4px; height: 4px; border-radius: 50%; flex-shrink: 0; transition: background 0.18s; }
 .sb-item-name { font-size: 10px; font-weight: 300; letter-spacing: .05em; white-space: nowrap; transition: color 0.18s; }
@@ -92,7 +91,7 @@ document.body.appendChild(ROOT);
 
 const PANEL = document.createElement('div');
 PANEL.id = '__SB_PANEL__';
-PANEL.innerHTML = `<div id="__SB_PANEL_HEAD__"><span id="__SB_TITLE__">Sandbox</span><button id="__SB_COLLAPSE__" title="Minimise">‹</button></div><div id="__SB_LIST__"></div><div id="__SB_SETTINGS__"></div>`;
+PANEL.innerHTML = `<div id="__SB_PANEL_HEAD__"><span id="__SB_TITLE__">Sandbox</span><button id="__SB_COLLAPSE__" title="Minimise">‹</button></div><div id="__SB_LIST__"></div>`;
 ROOT.appendChild(PANEL);
 
 const TAB = document.createElement('button');
@@ -153,8 +152,6 @@ function tv() { return TH[theme]; }
 function applyTheme() {
   const v = tv();
   PANEL.style.cssText = `background:${v.panelBg};border-right:1px solid ${v.panelBorder};`;
-  const settings = document.getElementById('__SB_SETTINGS__');
-  if (settings) settings.style.background = v.panelBg;
   const head = document.getElementById('__SB_PANEL_HEAD__');
   head.style.borderBottom = `1px solid ${v.headBorder}`;
   document.getElementById('__SB_TITLE__').style.color = v.title;
@@ -163,7 +160,7 @@ function applyTheme() {
   colBtn.onmouseenter = () => colBtn.style.color = v.collapseHov;
   colBtn.onmouseleave = () => colBtn.style.color = v.collapse;
   LIST.querySelectorAll('.sb-item').forEach(item => refreshItem(item));
-  PANEL.querySelectorAll('.sb-divider').forEach(d => d.style.background = v.divider);
+  LIST.querySelectorAll('.sb-divider').forEach(d => d.style.background = v.divider);
   TAB.style.cssText = `background:${v.tabBg};border:1px solid ${v.tabBorder};border-left:none;color:${v.tabText};`;
   TAB.onmouseenter = () => TAB.style.color = v.tabTextHov;
   TAB.onmouseleave = () => TAB.style.color = v.tabText;
@@ -475,9 +472,9 @@ const TOYS = [
   {name:'Lights Out',           init:initLightsOut,      game:true},
   {name:'Poker',                init:initPoker,          game:true},
   {name:'Typing Speed',         init:initTypingSpeed,    game:true},
-  {name:'Othello',              init:initOthello,        game:true},
-  {name:'Battleship',          init:initBattleship,     game:true},
-
+  {name:'Plinko',               init:initPlinko,         game:true},
+  {name:'Roulette',             init:initRoulette,       game:true},
+  {name:'Battleships',          init:initBattleships,    game:true},
 ];
 const LIST  = document.getElementById('__SB_LIST__');
 const items = [];
@@ -492,15 +489,14 @@ const wigItem=document.createElement('button'); wigItem.className='sb-item';
 wigItem.innerHTML=`<span class="sb-item-dot"></span><span class="sb-item-name">Everything Wiggles</span>`;
 wigItem.addEventListener('click',()=>toggleWiggle(wigItem)); LIST.appendChild(wigItem);
 
-const SETTINGS = document.getElementById('__SB_SETTINGS__');
-const div2=document.createElement('div'); div2.className='sb-divider'; SETTINGS.appendChild(div2);
-const themeRow=document.createElement('div'); themeRow.style.padding='4px 14px 8px'; SETTINGS.appendChild(themeRow);
+const div2=document.createElement('div'); div2.className='sb-divider'; LIST.appendChild(div2);
+const themeRow=document.createElement('div'); themeRow.style.padding='4px 14px 8px'; LIST.appendChild(themeRow);
 const themeBtnEl=document.createElement('button'); themeBtnEl.className='sb-btn';
 themeBtnEl.style.cssText='width:100%;text-align:center;display:block;';
 themeBtnEl.addEventListener('click',()=>{ theme=theme==='dark'?'paper':'dark'; applyTheme(); });
 themeRow.appendChild(themeBtnEl);
 
-const tpRow=document.createElement('div'); tpRow.style.padding='0 14px 8px'; SETTINGS.appendChild(tpRow);
+const tpRow=document.createElement('div'); tpRow.style.padding='0 14px 8px'; LIST.appendChild(tpRow);
 const tpBtnEl=document.createElement('button'); tpBtnEl.className='sb-btn';
 tpBtnEl.style.cssText='width:100%;text-align:center;display:block;'; tpBtnEl.textContent='2 Player ○';
 tpBtnEl.addEventListener('click',()=>{
@@ -512,7 +508,7 @@ tpBtnEl.addEventListener('click',()=>{
 tpRow.appendChild(tpBtnEl);
 
 let gamesOnly=false;
-const goRow=document.createElement('div'); goRow.style.padding='0 14px 10px'; SETTINGS.appendChild(goRow);
+const goRow=document.createElement('div'); goRow.style.padding='0 14px 10px'; LIST.appendChild(goRow);
 const gamesBtnEl=document.createElement('button'); gamesBtnEl.className='sb-btn';
 gamesBtnEl.style.cssText='width:100%;text-align:center;display:block;'; gamesBtnEl.textContent='Games Only ○';
 gamesBtnEl.addEventListener('click',()=>{
@@ -941,7 +937,7 @@ function initBreakout(body, ctrl) {
     ctx.fillStyle=fgClr();ctx.font=`400 15px 'IBM Plex Mono',monospace`;
     ctx.textAlign='center';ctx.fillText(txt,W/2,H/2);
     ctx.font=`300 10px 'IBM Plex Mono',monospace`;
-    ctx.fillText('press R or click to retry',W/2,H/2+22);ctx.textAlign='left';
+    ctx.fillText('click to restart',W/2,H/2+22);ctx.textAlign='left';
   }
 
   const onMove=e=>{
@@ -1595,7 +1591,7 @@ function initTetris(body, ctrl) {
     const fg=paper?'rgba(30,20,10,0.7)':'rgba(255,255,255,0.5)';
     ctx.fillStyle=fg;ctx.font=`300 11px 'IBM Plex Mono',monospace`;ctx.textAlign='left';
     ctx.fillText(`score ${score}  lines ${lines}  level ${level+1}`,OX,OY+ROWS*CH+20);
-    if(gameOver){ctx.fillStyle=paper?'rgba(30,20,10,0.85)':'rgba(255,255,255,0.85)';ctx.font=`400 18px 'IBM Plex Mono',monospace`;ctx.textAlign='center';ctx.fillText('GAME OVER',W/2,H/2-10);ctx.font=`300 11px 'IBM Plex Mono',monospace`;ctx.fillText('press R or click to retry',W/2,H/2+14);}
+    if(gameOver){ctx.fillStyle=paper?'rgba(30,20,10,0.85)':'rgba(255,255,255,0.85)';ctx.font=`400 18px 'IBM Plex Mono',monospace`;ctx.textAlign='center';ctx.fillText('GAME OVER',W/2,H/2-10);ctx.font=`300 11px 'IBM Plex Mono',monospace`;ctx.fillText('press R to restart',W/2,H/2+14);}
     if(paused&&!gameOver){ctx.fillStyle=paper?'rgba(30,20,10,0.85)':'rgba(255,255,255,0.85)';ctx.font=`300 13px 'IBM Plex Mono',monospace`;ctx.textAlign='center';ctx.fillText('PAUSED',W/2,H/2);}
     scoreEl.textContent=`score ${score}`;
   }
@@ -1664,12 +1660,10 @@ function initMinesweeper(body, ctrl) {
     ctx.fillStyle=fg;ctx.font=`300 11px 'IBM Plex Mono',monospace`;ctx.textAlign='left';ctx.textBaseline='alphabetic';
     const flagCount=flagged.flat().filter(v=>v).length;
     ctx.fillText(`mines ${MINES-flagCount} remaining`,OX,OY+ROWS*CH+20);
-    if(gameOver){ctx.fillStyle=paper?'rgba(30,20,10,0.88)':'rgba(255,255,255,0.88)';ctx.font=`400 18px 'IBM Plex Mono',monospace`;ctx.textAlign='center';ctx.fillText(won?'YOU WIN':'BOOM',W/2,H/2-10);ctx.font=`300 11px 'IBM Plex Mono',monospace`;ctx.fillText('press R or click to retry',W/2,H/2+14);}
+    if(gameOver){ctx.fillStyle=paper?'rgba(30,20,10,0.88)':'rgba(255,255,255,0.88)';ctx.font=`400 18px 'IBM Plex Mono',monospace`;ctx.textAlign='center';ctx.fillText(won?'YOU WIN':'BOOM',W/2,H/2-10);ctx.font=`300 11px 'IBM Plex Mono',monospace`;ctx.fillText('click New to play again',W/2,H/2+14);}
   }
-  let mouseX=0, mouseY=0;
-  c.addEventListener('mousemove',e=>{const r2=c.getBoundingClientRect();mouseX=e.clientX-r2.left;mouseY=e.clientY-r2.top;});
   const onClick=e=>{
-    if(gameOver){init();return;}
+    if(gameOver)return;
     const r2=c.getBoundingClientRect();
     const mx=e.clientX-r2.left,my=e.clientY-r2.top;
     const cc=Math.floor((mx-OX)/CW),r=Math.floor((my-OY)/CH);
@@ -1680,14 +1674,6 @@ function initMinesweeper(body, ctrl) {
     if(board[r][cc]===-1){revealed[r][cc]=true;gameOver=true;for(let rr=0;rr<ROWS;rr++)for(let c2=0;c2<COLS;c2++)if(board[rr][c2]===-1)revealed[rr][c2]=true;}
     else{flood(r,cc);checkWin();}
   };
-  const onKey=e=>{
-    if((e.key===' '||e.key==='r'||e.key==='R')&&gameOver){init();if(e.key===' ')e.preventDefault();return;}
-    if((e.key==='f'||e.key==='F')&&!gameOver){
-      const cc=Math.floor((mouseX-OX)/CW),r=Math.floor((mouseY-OY)/CH);
-      if(cc>=0&&cc<COLS&&r>=0&&r<ROWS&&!revealed[r][cc])flagged[r][cc]=!flagged[r][cc];
-    }
-  };
-  document.addEventListener('keydown',onKey);
   c.addEventListener('click',onClick);
   c.addEventListener('contextmenu',onClick);
   mkBtn('New',ctrl).addEventListener('click',init);
@@ -1698,7 +1684,7 @@ function initMinesweeper(body, ctrl) {
     diffBtns[d.k]=b;
   });
   draw();
-  return ()=>{cancelAnimationFrame(raf2);ro.disconnect();c.removeEventListener('click',onClick);c.removeEventListener('contextmenu',onClick);document.removeEventListener('keydown',onKey);};
+  return ()=>{cancelAnimationFrame(raf2);ro.disconnect();c.removeEventListener('click',onClick);c.removeEventListener('contextmenu',onClick);};
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -1774,7 +1760,7 @@ function initAsteroids(body, ctrl) {
     const hfg=paper?'rgba(30,20,10,0.6)':'rgba(255,255,255,0.45)';
     ctx.fillStyle=hfg;ctx.font=`300 11px 'IBM Plex Mono',monospace`;ctx.textAlign='left';ctx.textBaseline='top';
     ctx.fillText(`level ${level+1}`,12,12);
-    if(gameOver){ctx.fillStyle=paper?'rgba(30,20,10,0.88)':'rgba(255,255,255,0.88)';ctx.font=`400 18px 'IBM Plex Mono',monospace`;ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText('GAME OVER',W/2,H/2-14);ctx.font=`300 11px 'IBM Plex Mono',monospace`;ctx.fillText(`final score ${score}`,W/2,H/2+10);ctx.fillText('press R or click to retry',W/2,H/2+30);}
+    if(gameOver){ctx.fillStyle=paper?'rgba(30,20,10,0.88)':'rgba(255,255,255,0.88)';ctx.font=`400 18px 'IBM Plex Mono',monospace`;ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText('GAME OVER',W/2,H/2-14);ctx.font=`300 11px 'IBM Plex Mono',monospace`;ctx.fillText(`final score ${score}`,W/2,H/2+10);ctx.fillText('press R to restart',W/2,H/2+30);}
   }
   const scoreEl=mkInfo(ctrl);
   mkBtn('New',ctrl).addEventListener('click',init);
@@ -2041,7 +2027,7 @@ function initAsteroidsRogue(body, ctrl) {
       ctx.font=`300 12px 'IBM Plex Mono',monospace`;
       ctx.fillText(`wave ${level+1}  ·  score ${score}`,W/2,H/2+10);
       ctx.fillStyle=paper?'rgba(30,20,10,0.5)':'rgba(255,255,255,0.45)';
-      ctx.fillText('press R or click to retry',W/2,H/2+34);
+      ctx.fillText('press R or click New to restart',W/2,H/2+34);
     }
     ctx.textAlign='left';
   }
@@ -2875,17 +2861,15 @@ function initFlappy(body, ctrl) {
       ctx.font=`400 22px 'IBM Plex Mono',monospace`;ctx.textAlign='center';ctx.textBaseline='middle';
       ctx.fillText('GAME OVER',W/2,H/2-18);
       ctx.font=`300 12px 'IBM Plex Mono',monospace`;
-      ctx.fillText(`score ${score} — press R or click to retry`,W/2,H/2+14);
+      ctx.fillText(`score ${score} — click to restart`,W/2,H/2+14);
     }
   }
   const scoreEl=mkInfo(ctrl);
   c.addEventListener('click',flap);
-  const onKeyFlap=e=>{if((e.key==='r'||e.key==='R')&&gameOver)init();};
-  document.addEventListener('keydown',onKeyFlap);
   const onKey=e=>{if(e.code==='Space'){e.preventDefault();flap();}};
   document.addEventListener('keydown',onKey);
   init();requestAnimationFrame(step);
-  return ()=>{cancelAnimationFrame(raf);ro.disconnect();document.removeEventListener('keydown',onKey);document.removeEventListener('keydown',onKeyFlap);};
+  return ()=>{cancelAnimationFrame(raf);ro.disconnect();document.removeEventListener('keydown',onKey);};
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -3153,7 +3137,7 @@ function initChess(body, ctrl) {
       ctx.fillStyle='#fff';ctx.font=`400 20px 'IBM Plex Mono',monospace`;ctx.textAlign='center';ctx.textBaseline='middle';
       ctx.fillText(gameStatus,ox+SZ/2,oy+SZ/2-8);
       ctx.font=`300 11px 'IBM Plex Mono',monospace`;ctx.fillStyle='rgba(255,255,255,0.6)';
-      ctx.fillText('press R or click to retry',ox+SZ/2,oy+SZ/2+14);
+      ctx.fillText('click New Game to play again',ox+SZ/2,oy+SZ/2+14);
     }
     if(aiThinking&&!gameStatus&&!twoPlayer){
       const fg=paper?'rgba(0,0,0,0.45)':'rgba(255,255,255,0.45)';
@@ -3197,10 +3181,8 @@ function initChess(body, ctrl) {
     diffBtn.textContent=diffLabels[difficulty];
   });
   mkInfo(ctrl);
-  const onKeyChess=e=>{if((e.key===' '||e.key==='r'||e.key==='R')&&gameStatus){init();if(e.key===' ')e.preventDefault();}};
-  document.addEventListener('keydown',onKeyChess);
   requestAnimationFrame(draw);
-  return ()=>{cancelAnimationFrame(raf);ro.disconnect();document.removeEventListener('keydown',onKeyChess);};
+  return ()=>{cancelAnimationFrame(raf);ro.disconnect();};
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -3780,7 +3762,7 @@ function initPacman(body, ctrl) {
       ctx.textAlign='center'; ctx.textBaseline='middle';
       ctx.fillText('LEVEL CLEAR!',W/2,H/2-14);
       ctx.fillStyle='rgba(255,255,255,0.55)'; ctx.font=`300 10px 'IBM Plex Mono',monospace`;
-      ctx.fillText('press R or click to retry',W/2,H/2+10);
+      ctx.fillText('press N or click New',W/2,H/2+10);
     }
     if(gameState==='gameover'){
       ctx.fillStyle='rgba(0,0,0,0.65)'; ctx.fillRect(0,0,W,H);
@@ -3954,7 +3936,7 @@ function init2048(body, ctrl) {
       ctx.font='700 '+(SZ*0.1)+'px \'IBM Plex Mono\',monospace';ctx.textAlign='center';ctx.textBaseline='middle';
       ctx.fillText(won?'You Win!':'Game Over',W/2,H/2-16);
       ctx.font='300 12px \'IBM Plex Mono\',monospace';ctx.fillStyle='#776e65';
-      ctx.fillText('press R or click to retry',W/2,H/2+18);
+      ctx.fillText('press R to restart',W/2,H/2+18);
     }
   }
   const scoreEl=mkInfo(ctrl);
@@ -4370,7 +4352,7 @@ function initSpaceInvaders(body, ctrl) {
       ctx.fillStyle=paper?'#fff':'#fff';ctx.font=`400 22px 'IBM Plex Mono',monospace`;ctx.textAlign='center';ctx.textBaseline='middle';
       ctx.fillText('GAME OVER',W/2,H/2-12);
       ctx.font=`300 11px 'IBM Plex Mono',monospace`;ctx.fillStyle='rgba(255,255,255,0.6)';
-      ctx.fillText(`score ${score} — press R or click to retry`,W/2,H/2+12);
+      ctx.fillText(`score ${score} — click to restart`,W/2,H/2+12);
     }
   }
 
@@ -4384,7 +4366,6 @@ function initSpaceInvaders(body, ctrl) {
         else if(gameOver)init();
         else if(bullets.length<4)bullets.push({x:player.x,y:player.y-player.h});
       }
-      if((e.code==='KeyR')&&gameOver){init();}
       if(e.code==='ArrowLeft'||e.code==='KeyA')player.vx=-1;
       if(e.code==='ArrowRight'||e.code==='KeyD')player.vx=1;
     } else {
@@ -4524,7 +4505,7 @@ function initWhackMole(body, ctrl) {
       ctx.fillStyle='#fff';ctx.font=`400 22px 'IBM Plex Mono',monospace`;ctx.textAlign='center';ctx.textBaseline='middle';
       ctx.fillText('TIME\'S UP!',W/2,H/2-14);
       ctx.font=`300 12px 'IBM Plex Mono',monospace`;ctx.fillStyle='rgba(255,255,255,0.65)';
-      ctx.fillText(`final score: ${score} — press R or click to retry`,W/2,H/2+12);
+      ctx.fillText(`final score: ${score} — click to play again`,W/2,H/2+12);
     }
   }
 
@@ -4538,12 +4519,10 @@ function initWhackMole(body, ctrl) {
       }
     }
   });
-  const onKeyWM=e=>{if((e.key===' '||e.key==='r'||e.key==='R')&&gameOver){init();if(e.key===' ')e.preventDefault();}};
-  document.addEventListener('keydown',onKeyWM);
   const scoreEl=mkInfo(ctrl);
   mkBtn('New Game',ctrl).addEventListener('click',init);
   requestAnimationFrame(draw);
-  return ()=>{cancelAnimationFrame(raf);ro.disconnect();document.removeEventListener('keydown',onKeyWM);};
+  return ()=>{cancelAnimationFrame(raf);ro.disconnect();};
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -6280,7 +6259,7 @@ function initTicTacToe(body, ctrl) {
     ctx.font=`300 11px 'IBM Plex Mono',monospace`;
     const statusY=oy+S+12;
     let status;
-    if(gameOver) status=winner==='draw'?'Draw! · press R or click to retry':`${winner} wins!  ·  press R or click to retry`;
+    if(gameOver) status=winner==='draw'?'Draw!':`${winner} wins!  ·  click to play again`;
     else if(twoPlayer) status=`Player ${turn==='X'?'1 (X)':'2 (O)'}'s turn`;
     else status=turn==='X'?'Your turn (X)':(thinking?'AI thinking…':'AI\'s turn (O)');
     ctx.fillText(status,W/2,statusY);
@@ -6309,10 +6288,8 @@ function initTicTacToe(body, ctrl) {
   mkBtn('New Game',ctrl).addEventListener('click',()=>init());
   mkBtn('Reset Scores',ctrl).addEventListener('click',()=>{scores={X:0,O:0,draws:0};init();});
 
-  const onKeyTTT=e=>{if((e.key===' '||e.key==='r'||e.key==='R')&&gameOver){init();if(e.key===' ')e.preventDefault();}};
-  document.addEventListener('keydown',onKeyTTT);
   requestAnimationFrame(draw);
-  return ()=>{cancelAnimationFrame(raf);ro.disconnect();document.removeEventListener('keydown',onKeyTTT);};
+  return ()=>{cancelAnimationFrame(raf);ro.disconnect();};
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -6637,7 +6614,7 @@ function initGalaga(body, ctrl) {
       ctx.fillText('GAME OVER',W/2,H/2-18);
       ctx.fillStyle=paper?'rgba(255,255,255,0.7)':'rgba(255,255,255,0.5)';
       ctx.font=`300 11px 'IBM Plex Mono',monospace`;
-      ctx.fillText(`score: ${score}  ·  press R or click to retry`,W/2,H/2+14);
+      ctx.fillText(`score: ${score}  ·  click to retry`,W/2,H/2+14);
       ctx.textAlign='left';ctx.textBaseline='top';
     }
   }
@@ -6646,7 +6623,6 @@ function initGalaga(body, ctrl) {
 
   const onKey=e=>{
     keys2[e.key]=e.type==='keydown';
-    if(e.type==='keydown'&&(e.key==='r'||e.key==='R')&&gameOver)init();
     // prevent page scroll for game keys
     if(['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Space',' ','w','a','s','d','W','A','S','D'].includes(e.key))
       e.preventDefault();
@@ -6702,8 +6678,6 @@ function initMissileCommand(body, ctrl) {
   let salvoQueue;  // pending salvo missile specs [{delay,sx,tx,ty}]
   let bossAlive;   // true while boss wave boss is in play
   let waveHadMissiles; // true once first missile spawns this wave
-  let waveQuota;   // total missiles to spawn this wave
-  let waveSpawned; // how many have been spawned so far
 
   function groundY(){ return H-28; }
 
@@ -6734,12 +6708,9 @@ function initMissileCommand(body, ctrl) {
     waveTimer=90;
     tick5=0;
     waveHadMissiles=false;
-    waveSpawned=0;
-    // Wave quota: 8–11 on wave 1, grows by ~2 per wave, capped at 30
-    waveQuota = Math.min(30, 8 + Math.floor(Math.random()*4) + (wave-1)*2);
     const t=waveType(wave);
     if(t==='boss')       waveLabel=`WAVE ${wave}  ★ BOSS INCOMING ★`;
-    else if(t==='mirv')  waveLabel=`WAVE ${wave}  — MIRV THREAT`;
+    else if(t==='mirv')  waveLabel=`WAVE ${wave}  — MIRV ALERT`;
     else if(t==='salvo') waveLabel=`WAVE ${wave}  — SATURATION VOLLEY`;
     else                 waveLabel=`WAVE ${wave}`;
 
@@ -6792,11 +6763,7 @@ function initMissileCommand(body, ctrl) {
     if(!tgt) return;
     const t=waveType(wave);
     const sx=Math.random()*W;
-    // On mirv waves, only a fraction of missiles are actually MIRVs
-    // Starts at ~15% on wave 4, rises slowly to ~40% by wave 12+
-    const mirvChance = t==='mirv' ? Math.min(0.4, 0.1 + (wave-4)*0.04) : 0;
-    const spawnMirv = t==='mirv' && Math.random() < mirvChance;
-    if(spawnMirv){
+    if(t==='mirv'){
       // MIRV parent targets a mid-screen split point, NOT the ground.
       // It flies to that point then splits into 3 fast children targeting cities.
       const splitX=tgt.x+(Math.random()-0.5)*W*0.3; // slight horizontal drift
@@ -6880,11 +6847,8 @@ function initMissileCommand(body, ctrl) {
         missiles.push(makeMissile(s.sx,0,s.tx,s.ty));
       }
     } else {
-      // Normal / mirv: trickle spawn up to waveQuota
-      if(waveSpawned < waveQuota && Math.random()<DIFF.spawnRate[difficulty]*(1+wave*0.12)) {
-        spawnMissile();
-        waveSpawned++;
-      }
+      // Normal / mirv: probabilistic spawn
+      if(Math.random()<DIFF.spawnRate[difficulty]*(1+wave*0.12)) spawnMissile();
     }
 
     // Move missiles — use pendingMissiles so children aren't iterated mid-loop
@@ -7007,9 +6971,7 @@ function initMissileCommand(body, ctrl) {
     // Wave clear check
     // Only consider wave done once at least one missile has actually appeared
     if(missiles.length>0||interceptors.length>0) waveHadMissiles=true;
-    const t2=waveType(wave);
-    const quotaDone = (t2==='boss'||t2==='salvo') ? true : waveSpawned>=waveQuota;
-    const allGone=waveHadMissiles&&missiles.length===0&&interceptors.length===0&&salvoQueue.length===0&&quotaDone&&tick5>60;
+    const allGone=waveHadMissiles&&missiles.length===0&&interceptors.length===0&&salvoQueue.length===0&&tick5>60;
     if(allGone&&wavePhase==='playing'){
       if(cities.some(c2=>c2.alive)) startWaveClear();
     }
@@ -7195,7 +7157,7 @@ function initMissileCommand(body, ctrl) {
       ctx.textAlign='center';ctx.textBaseline='middle';
       ctx.fillText('THE CITIES HAVE FALLEN',W/2,H/2-20);
       ctx.fillStyle='rgba(255,255,255,0.6)'; ctx.font=`300 11px 'IBM Plex Mono',monospace`;
-      ctx.fillText(`final score: ${score}  ·  press R or click to retry`,W/2,H/2+10);
+      ctx.fillText(`final score: ${score}  ·  click to retry`,W/2,H/2+10);
       ctx.textAlign='left';ctx.textBaseline='top';
     }
   }
@@ -7213,11 +7175,10 @@ function initMissileCommand(body, ctrl) {
   diffBtn.addEventListener('click',()=>{difficulty=(difficulty+1)%3;diffBtn.textContent=DIFF_NAMES[difficulty];init();});
   mkBtn('Restart',ctrl).addEventListener('click',init);
   mkInfo(ctrl).textContent='click to fire interceptors';
-  const onKeyMC=e=>{if((e.key==='r'||e.key==='R')&&gameOver)init();};
-  document.addEventListener('keydown',onKeyMC);
+
   init();
   requestAnimationFrame(draw);
-  return ()=>{cancelAnimationFrame(raf);ro.disconnect();document.removeEventListener('keydown',onKeyMC);};
+  return ()=>{cancelAnimationFrame(raf);ro.disconnect();};
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -8330,14 +8291,14 @@ function initConnectFour(body, ctrl) {
       ctx.font=`400 18px 'IBM Plex Mono',monospace`;
       ctx.fillText(twoPlayer?(winPlayer===1?'Player 1 wins!':'Player 2 wins!'):(winPlayer===1?'You win!':'AI wins!'),W/2,H/2-16);
       ctx.fillStyle='rgba(255,255,255,0.5)'; ctx.font=`300 10px 'IBM Plex Mono',monospace`;
-      ctx.fillText('press R or click to retry',W/2,H/2+8);
+      ctx.fillText('click to play again',W/2,H/2+8);
     } else if(gameState==='draw'){
       ctx.fillStyle='rgba(0,0,0,0.55)'; ctx.fillRect(0,0,W,H);
       ctx.textAlign='center'; ctx.textBaseline='middle';
       ctx.fillStyle='rgba(255,255,255,0.8)'; ctx.font=`400 18px 'IBM Plex Mono',monospace`;
-      ctx.fillText('Draw! · press R or click to retry',W/2,H/2-16);
+      ctx.fillText('Draw!',W/2,H/2-16);
       ctx.fillStyle='rgba(255,255,255,0.5)'; ctx.font=`300 10px 'IBM Plex Mono',monospace`;
-      ctx.fillText('press R or click to retry',W/2,H/2+8);
+      ctx.fillText('click to play again',W/2,H/2+8);
     }
     ctx.textAlign='left'; ctx.textBaseline='top';
   }
@@ -8369,11 +8330,12 @@ function initConnectFour(body, ctrl) {
   diffBtn.addEventListener('click',()=>{difficulty=(difficulty+1)%3;diffBtn.textContent=DIFF_NAMES[difficulty];scores={player:0,ai:0,draws:0};init();});
   mkBtn('New Game',ctrl).addEventListener('click',()=>init());
 
-  const onKeyCF=e=>{if((e.key===' '||e.key==='r'||e.key==='R')&&gameState!=='playing'){init();if(e.key===' ')e.preventDefault();}};
-  document.addEventListener('keydown',onKeyCF);
   requestAnimationFrame(draw);
-  return ()=>{cancelAnimationFrame(raf);ro.disconnect();document.removeEventListener('keydown',onKeyCF);};
+  return ()=>{cancelAnimationFrame(raf);ro.disconnect();};
 }
+
+// ════════════════════════════════════════════════════════════════════════════
+// TOY 48 — BLACKJACK
 // ════════════════════════════════════════════════════════════════════════════
 function initBlackjack(body, ctrl) {
   const {c,ctx,ro} = mkCanvas(body);
@@ -9137,7 +9099,7 @@ function initSolitaire(body, ctrl) {
       ctx.fillText('You Win! 🎉', W/2, H/2 - 18);
       ctx.fillStyle = 'rgba(255,255,255,0.6)';
       ctx.font = `300 11px 'IBM Plex Mono', monospace`;
-      ctx.fillText(`${moves} moves · press R or click to retry`, W/2, H/2 + 14);
+      ctx.fillText(`${moves} moves · click to play again`, W/2, H/2 + 14);
     }
 
     ctx.textAlign = 'left'; ctx.textBaseline = 'top';
@@ -9303,9 +9265,7 @@ function initSolitaire(body, ctrl) {
   const info = mkInfo(ctrl);
   info.textContent = 'drag cards · dbl-click → foundation';
 
-  const onKeySol=e=>{if((e.key===' '||e.key==='r'||e.key==='R')&&won){newGame();if(e.key===' ')e.preventDefault();}};
-  document.addEventListener('keydown',onKeySol);
-  return () => { cancelAnimationFrame(raf); ro.disconnect(); document.removeEventListener('keydown',onKeySol); };
+  return () => { cancelAnimationFrame(raf); ro.disconnect(); };
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -9776,7 +9736,7 @@ function initBackgammon(body, ctrl) {
       ctx.textAlign='center'; ctx.textBaseline='middle';
       ctx.fillText(msg,W/2,H/2-16);
       ctx.fillStyle='rgba(255,255,255,0.5)'; ctx.font=`300 10px 'IBM Plex Mono',monospace`;
-      ctx.fillText('press R or click to retry',W/2,H/2+10);
+      ctx.fillText('click to play again',W/2,H/2+10);
       ctx.textAlign='left';
     }
   }
@@ -9852,11 +9812,12 @@ function initBackgammon(body, ctrl) {
   mkBtn('New Game',ctrl).addEventListener('click',()=>initGame());
   const info=mkInfo(ctrl); info.textContent='select checker · click target';
 
-  const onKeyBG=e=>{if((e.key===' '||e.key==='r'||e.key==='R')&&gameOver){initGame();if(e.key===' ')e.preventDefault();}};
-  document.addEventListener('keydown',onKeyBG);
   requestAnimationFrame(draw);
-  return ()=>{ cancelAnimationFrame(raf); ro.disconnect(); document.removeEventListener('keydown',onKeyBG); };
+  return ()=>{ cancelAnimationFrame(raf); ro.disconnect(); };
 }
+
+// ════════════════════════════════════════════════════════════════════════════
+// TOY — BOUNCING DVD
 // ════════════════════════════════════════════════════════════════════════════
 function initBouncingDVD(body, ctrl) {
   const {c,ctx,ro} = mkCanvas(body);
@@ -11151,77 +11112,56 @@ function init8Ball(body, ctrl) {
   function stepPhysics() {
     const t=tableRect();
     const pocketed_this_frame=[];
-    const SUBSTEPS=4; // subdivide each frame to prevent tunnelling
 
-    // Apply friction once per frame
     for (const b of balls) {
       if (b.pocketed) continue;
+      b.x+=b.vx; b.y+=b.vy;
       b.vx*=FRICTION; b.vy*=FRICTION;
       if (Math.abs(b.vx)<MIN_SPD) b.vx=0;
       if (Math.abs(b.vy)<MIN_SPD) b.vy=0;
-    }
 
-    for (let sub=0; sub<SUBSTEPS; sub++) {
-      for (const b of balls) {
-        if (b.pocketed) continue;
-        b.x+=b.vx/SUBSTEPS; b.y+=b.vy/SUBSTEPS;
-
-        // Pocket check
-        let pocketed=false;
-        for (const p of pockets) {
-          const dx=b.x-p.x, dy=b.y-p.y;
-          if (dx*dx+dy*dy<POCKET_R*POCKET_R) {
-            b.pocketed=true; b.vx=0; b.vy=0;
-            if (!pocketed_this_frame.includes(b)) pocketed_this_frame.push(b);
-            pocketed=true; break;
-          }
-        }
-        if (pocketed) continue;
-
-        // Wall bounces - check nearness using ball position, not wall edge point
-        const nearPocket=(bx,by)=>pockets.some(p=>{
-          const dx=bx-p.x, dy=by-p.y;
-          return dx*dx+dy*dy < (POCKET_R*2.4)**2;
-        });
-
-        if (b.x-b.r<t.ox) {
-          b.x=t.ox+b.r;
-          if (!nearPocket(b.x,b.y)) b.vx=Math.abs(b.vx)*0.75; else b.vx=0;
-        }
-        if (b.x+b.r>t.ox+t.tw) {
-          b.x=t.ox+t.tw-b.r;
-          if (!nearPocket(b.x,b.y)) b.vx=-Math.abs(b.vx)*0.75; else b.vx=0;
-        }
-        if (b.y-b.r<t.oy) {
-          b.y=t.oy+b.r;
-          if (!nearPocket(b.x,b.y)) b.vy=Math.abs(b.vy)*0.75; else b.vy=0;
-        }
-        if (b.y+b.r>t.oy+t.th) {
-          b.y=t.oy+t.th-b.r;
-          if (!nearPocket(b.x,b.y)) b.vy=-Math.abs(b.vy)*0.75; else b.vy=0;
+      // Pocket check FIRST — before wall bounce
+      let pocketed=false;
+      for (const p of pockets) {
+        const dx=b.x-p.x, dy=b.y-p.y;
+        if (dx*dx+dy*dy<POCKET_R*POCKET_R) {
+          b.pocketed=true; b.vx=0; b.vy=0;
+          pocketed_this_frame.push(b); pocketed=true; break;
         }
       }
+      if (pocketed) continue;
 
-      // Ball-ball collisions each substep
-      for (let i=0;i<balls.length;i++) {
-        for (let j=i+1;j<balls.length;j++) {
-          const a=balls[i], b2=balls[j];
-          if (a.pocketed||b2.pocketed) continue;
-          const dx=b2.x-a.x, dy=b2.y-a.y;
-          const dist=Math.sqrt(dx*dx+dy*dy);
-          const minD=a.r+b2.r;
-          if (dist<minD&&dist>0.01) {
-            const nx=dx/dist, ny=dy/dist;
-            const overlap=(minD-dist)/2;
-            a.x-=nx*overlap; a.y-=ny*overlap;
-            b2.x+=nx*overlap; b2.y+=ny*overlap;
-            const dvx=a.vx-b2.vx, dvy=a.vy-b2.vy;
-            const dot=dvx*nx+dvy*ny;
-            if (dot>0) {
-              const imp=dot*0.92;
-              a.vx-=imp*nx; a.vy-=imp*ny;
-              b2.vx+=imp*nx; b2.vy+=imp*ny;
-            }
+      // Wall bounces — but suppress near pocket openings so balls roll in
+      const nearPocket=(wx,wy)=>pockets.some(p=>{
+        const dx=wx-p.x, dy=wy-p.y;
+        return dx*dx+dy*dy < (POCKET_R*2.2)**2;
+      });
+
+      if (b.x-b.r<t.ox     && !nearPocket(t.ox,     b.y)) { b.x=t.ox+b.r;     b.vx=Math.abs(b.vx)*0.75; }
+      if (b.x+b.r>t.ox+t.tw && !nearPocket(t.ox+t.tw,b.y)) { b.x=t.ox+t.tw-b.r; b.vx=-Math.abs(b.vx)*0.75; }
+      if (b.y-b.r<t.oy     && !nearPocket(b.x,     t.oy)) { b.y=t.oy+b.r;     b.vy=Math.abs(b.vy)*0.75; }
+      if (b.y+b.r>t.oy+t.th && !nearPocket(b.x,t.oy+t.th)) { b.y=t.oy+t.th-b.r; b.vy=-Math.abs(b.vy)*0.75; }
+    }
+
+    // Ball-ball collisions
+    for (let i=0;i<balls.length;i++) {
+      for (let j=i+1;j<balls.length;j++) {
+        const a=balls[i], b2=balls[j];
+        if (a.pocketed||b2.pocketed) continue;
+        const dx=b2.x-a.x, dy=b2.y-a.y;
+        const dist=Math.sqrt(dx*dx+dy*dy);
+        const minD=a.r+b2.r;
+        if (dist<minD&&dist>0.01) {
+          const nx=dx/dist, ny=dy/dist;
+          const overlap=(minD-dist)/2;
+          a.x-=nx*overlap; a.y-=ny*overlap;
+          b2.x+=nx*overlap; b2.y+=ny*overlap;
+          const dvx=a.vx-b2.vx, dvy=a.vy-b2.vy;
+          const dot=dvx*nx+dvy*ny;
+          if (dot>0) {
+            const imp=dot*0.92;
+            a.vx-=imp*nx; a.vy-=imp*ny;
+            b2.vx+=imp*nx; b2.vy+=imp*ny;
           }
         }
       }
@@ -11794,7 +11734,7 @@ function init8Ball(body, ctrl) {
       ctx.fillText(message, W/2, H/2-16);
       ctx.font=`300 10px 'IBM Plex Mono',monospace`;
       ctx.fillStyle=paper?'rgba(0,0,0,0.4)':'rgba(255,255,255,0.4)';
-      ctx.fillText('press R or click to retry', W/2, H/2+16);
+      ctx.fillText('click New Game to play again', W/2, H/2+16);
     }
     ctx.textAlign='left'; ctx.textBaseline='top';
   }
@@ -11884,7 +11824,6 @@ function init8Ball(body, ctrl) {
 
   // ── Keyboard: W/S or Up/Down = power, fire on Space/Enter ─────────────────
   const poolKeyDown=e=>{
-    if((e.key===' '||e.key==='r'||e.key==='R')&&gameOver){initGame();e.preventDefault();return;}
     // Only act when it's human's turn, idle, not ballInHand
     if(gameOver||anyMoving()||ballInHand) return;
     if(!twoPlayer && turn!==0) return;
@@ -14232,681 +14171,874 @@ function initTypingSpeed(body,ctrl){
   requestAnimationFrame(draw);
   return()=>{ cancelAnimationFrame(raf); ro.disconnect(); document.removeEventListener('keydown',onKey); };
 }
+
+
+
 // ════════════════════════════════════════════════════════════════════════════
-// TOY — OTHELLO
+// TOY — PLINKO
 // ════════════════════════════════════════════════════════════════════════════
-function initOthello(body, ctrl) {
-  const {c, ctx, ro} = mkCanvas(body);
-  let W = c.width, H = c.height, raf;
-  const N = 8;
-  let difficulty = 1; // 0=Easy 1=Medium 2=Hard
-  const DIFF_NAMES = ['Easy', 'Medium', 'Hard'];
-  const DIFF_DEPTH = [1, 3, 6];
-  let board, turn, scores, gameState, thinking, hoverCell;
+function initPlinko(body,ctrl){
+  const c=document.createElement('canvas');
+  c.style.cssText='position:absolute;inset:0;display:block;';
+  body.appendChild(c);
+  const ctx=c.getContext('2d');
+  let raf;
 
-  function emptyBoard() {
-    const b = Array.from({length: N}, () => Array(N).fill(0));
-    b[3][3] = 1; b[4][4] = 1; b[3][4] = 2; b[4][3] = 2;
-    return b;
-  }
+  const ROWS=8, BALL_R=6, PEG_R=4, GRAVITY=0.25, BOUNCE=0.45, FRICTION=0.995;
+  const SLOTS=ROWS+1;
+  const MULTIPLIERS=[10,3,1,0.5,0,0.5,1,3,10];
 
-  const DIRS = [[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]];
+  let balls=[], score=1000;
 
-  function flips(b, r, c, p) {
-    if (b[r][c] !== 0) return [];
-    const all = [];
-    for (const [dr, dc] of DIRS) {
-      const line = [];
-      let nr = r+dr, nc = c+dc;
-      while (nr>=0&&nr<N&&nc>=0&&nc<N&&b[nr][nc]===3-p) { line.push([nr,nc]); nr+=dr; nc+=dc; }
-      if (line.length && nr>=0&&nr<N&&nc>=0&&nc<N&&b[nr][nc]===p) all.push(...line);
-    }
-    return all;
-  }
-
-  function validMoves(b, p) {
-    const moves = [];
-    for (let r=0;r<N;r++) for (let c=0;c<N;c++) if (flips(b,r,c,p).length) moves.push([r,c]);
-    return moves;
-  }
-
-  function applyMove(b, r, c, p) {
-    const toFlip = flips(b, r, c, p);
-    const nb = b.map(row => [...row]);
-    nb[r][c] = p;
-    toFlip.forEach(([fr, fc]) => nb[fr][fc] = p);
-    return nb;
-  }
-
-  function countDiscs(b) {
-    let p1=0, p2=0;
-    for (let r=0;r<N;r++) for (let c=0;c<N;c++) { if(b[r][c]===1) p1++; else if(b[r][c]===2) p2++; }
-    return {p1, p2};
-  }
-
-  // Othello heuristic: disc count + corner weight + mobility
-  const CORNER_WEIGHT = [[100,-20,10,5,5,10,-20,100],[-20,-50,-2,-2,-2,-2,-50,-20],[10,-2,5,1,1,5,-2,10],[5,-2,1,0,0,1,-2,5],[5,-2,1,0,0,1,-2,5],[10,-2,5,1,1,5,-2,10],[-20,-50,-2,-2,-2,-2,-50,-20],[100,-20,10,5,5,10,-20,100]];
-
-  function heuristic(b, p) {
-    let score = 0;
-    for (let r=0;r<N;r++) for (let c=0;c<N;c++) {
-      if (b[r][c]===p) score += CORNER_WEIGHT[r][c];
-      else if (b[r][c]===3-p) score -= CORNER_WEIGHT[r][c];
-    }
-    score += (validMoves(b,p).length - validMoves(b,3-p).length) * 5;
-    return score;
-  }
-
-  function minimax(b, depth, alpha, beta, isMax, p) {
-    const moves = validMoves(b, isMax?p:3-p);
-    if (depth===0 || moves.length===0) {
-      const oppMoves = validMoves(b, isMax?3-p:p);
-      if (moves.length===0 && oppMoves.length===0) {
-        const {p1,p2} = countDiscs(b);
-        const myCount = p===1?p1:p2, oppCount = p===1?p2:p1;
-        return myCount > oppCount ? 100000 : myCount < oppCount ? -100000 : 0;
+  function getPegs(W,H){
+    const pegs=[];
+    const padX=W*0.1, padY=H*0.08;
+    const usableW=W-padX*2, usableH=H*0.74;
+    const colSpacing=usableW/ROWS;
+    const rowSpacing=usableH/ROWS;
+    for(let row=0;row<ROWS;row++){
+      const cols=row+2;
+      for(let col=0;col<cols;col++){
+        const x=W/2-(cols-1)/2*colSpacing+col*colSpacing;
+        const y=padY+row*rowSpacing;
+        pegs.push({x,y});
       }
-      return heuristic(b, p);
     }
-    if (isMax) {
-      let best = -Infinity;
-      for (const [r,c] of moves) {
-        best = Math.max(best, minimax(applyMove(b,r,c,p), depth-1, alpha, beta, false, p));
-        alpha = Math.max(alpha, best);
-        if (beta <= alpha) break;
+    return pegs;
+  }
+
+  function getSlots(W,H){
+    const slots=[];
+    const padX=W*0.1, usableW=W-padX*2, slotW=usableW/SLOTS;
+    const y=H*0.86;
+    for(let i=0;i<SLOTS;i++) slots.push({x:padX+i*slotW+slotW/2,y,w:slotW});
+    return slots;
+  }
+
+  function draw(){
+    raf=requestAnimationFrame(draw);
+    const W=body.offsetWidth, H=body.offsetHeight;
+    if(W<1||H<1) return;
+    c.width=W; c.height=H;
+    const paper=isPaper();
+    ctx.fillStyle=paper?'#e8e0d0':'#0d1117'; ctx.fillRect(0,0,W,H);
+
+    const pegs=getPegs(W,H);
+    const slots=getSlots(W,H);
+    const floorY=H*0.86;
+    const padX=W*0.1, slotW=(W-padX*2)/SLOTS;
+
+    // physics
+    for(const b of balls){
+      if(b.settled) continue;
+      b.trail.push({x:b.x,y:b.y});
+      if(b.trail.length>14) b.trail.shift();
+      b.vy+=GRAVITY; b.vx*=FRICTION; b.vy*=FRICTION;
+      b.x+=b.vx; b.y+=b.vy;
+      for(const p of pegs){
+        const dx=b.x-p.x, dy=b.y-p.y, dist=Math.hypot(dx,dy), minD=BALL_R+PEG_R;
+        if(dist<minD&&dist>0){
+          const nx=dx/dist, ny=dy/dist;
+          b.x=p.x+nx*minD; b.y=p.y+ny*minD;
+          const dot=b.vx*nx+b.vy*ny;
+          b.vx=(b.vx-2*dot*nx)*BOUNCE+(Math.random()-0.5)*1.2;
+          b.vy=Math.abs((b.vy-2*dot*ny)*BOUNCE)+0.5;
+        }
       }
-      return best;
-    } else {
-      let best = Infinity;
-      for (const [r,c] of moves) {
-        best = Math.min(best, minimax(applyMove(b,r,c,3-p), depth-1, alpha, beta, true, p));
-        beta = Math.min(beta, best);
-        if (beta <= alpha) break;
-      }
-      return best;
-    }
-  }
-
-  function bestMove(b, p, depth) {
-    const moves = validMoves(b, p);
-    if (!moves.length) return null;
-    if (depth === 1) {
-      // Easy: random from valid moves
-      return moves[Math.floor(Math.random()*moves.length)];
-    }
-    let best = -Infinity, bestM = moves[0];
-    for (const [r,c] of moves) {
-      const s = minimax(applyMove(b,r,c,p), depth-1, -Infinity, Infinity, false, p);
-      if (s > best) { best=s; bestM=[r,c]; }
-    }
-    return bestM;
-  }
-
-  function init() {
-    W = c.width = body.clientWidth||480; H = c.height = body.clientHeight||360;
-    board = emptyBoard(); turn = 1; gameState = 'playing'; thinking = false; hoverCell = null;
-    if (!scores) scores = {p1:0, p2:0};
-  }
-  init();
-
-  function cellSize() { return Math.min(W, H-40) / (N+1); }
-
-  function boardOffset() {
-    const cs = cellSize();
-    return { ox: (W - cs*N)/2, oy: (H-40 - cs*N)/2 };
-  }
-
-  function draw() {
-    raf = requestAnimationFrame(draw);
-    W = c.width = body.clientWidth||480; H = c.height = body.clientHeight||360;
-    const paper = isPaper();
-    const cs = cellSize();
-    const {ox, oy} = boardOffset();
-
-    ctx.clearRect(0,0,W,H);
-    // background
-    ctx.fillStyle = bgClr(); ctx.fillRect(0,0,W,H);
-
-    // board bg
-    const boardW = cs*N, boardH = cs*N;
-    ctx.fillStyle = paper ? '#2a6b2a' : '#1a4a1a';
-    roundRect(ctx, ox, oy, boardW, boardH, 4);
-    ctx.fill();
-
-    // grid lines
-    ctx.strokeStyle = paper ? 'rgba(0,0,0,0.25)' : 'rgba(255,255,255,0.15)';
-    ctx.lineWidth = 0.5;
-    for (let i=0;i<=N;i++) {
-      ctx.beginPath(); ctx.moveTo(ox+i*cs, oy); ctx.lineTo(ox+i*cs, oy+boardH); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(ox, oy+i*cs); ctx.lineTo(ox+boardW, oy+i*cs); ctx.stroke();
-    }
-
-    // dot markers
-    const dots = [[2,2],[2,6],[6,2],[6,6]];
-    ctx.fillStyle = paper ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.3)';
-    for (const [dr,dc] of dots) {
-      ctx.beginPath(); ctx.arc(ox+dc*cs+cs/2, oy+dr*cs+cs/2, 3, 0, Math.PI*2); ctx.fill();
-    }
-
-    // valid move hints
-    const validP = gameState==='playing' ? validMoves(board, turn) : [];
-    const showHints = !twoPlayer ? turn===1 : true;
-    if (showHints) {
-      for (const [vr,vc] of validP) {
-        ctx.fillStyle = paper ? 'rgba(0,0,0,0.18)' : 'rgba(255,255,255,0.15)';
-        ctx.beginPath(); ctx.arc(ox+vc*cs+cs/2, oy+vr*cs+cs/2, cs*0.18, 0, Math.PI*2); ctx.fill();
+      if(b.x<padX+BALL_R){b.x=padX+BALL_R;b.vx=Math.abs(b.vx)*BOUNCE;}
+      if(b.x>W-padX-BALL_R){b.x=W-padX-BALL_R;b.vx=-Math.abs(b.vx)*BOUNCE;}
+      if(b.y>=floorY-BALL_R){
+        b.y=floorY-BALL_R; b.vy=0; b.vx=0; b.settled=true;
+        let best=0,bestD=Infinity;
+        slots.forEach((s,i)=>{const d=Math.abs(b.x-s.x);if(d<bestD){bestD=d;best=i;}});
+        b.slot=best;
+        const mult=MULTIPLIERS[best];
+        score+=Math.round(100*mult);
+        b.mult=mult;
       }
     }
 
-    // hover highlight
-    if (hoverCell && gameState==='playing') {
-      const [hr,hc] = hoverCell;
-      if (validMoves(board,turn).some(([r,c])=>r===hr&&c===hc)) {
-        ctx.fillStyle = paper ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.1)';
-        ctx.fillRect(ox+hc*cs, oy+hr*cs, cs, cs);
+    // slot buckets
+    for(let i=0;i<=SLOTS;i++){
+      ctx.strokeStyle=paper?'rgba(0,0,0,0.15)':'rgba(255,255,255,0.1)';
+      ctx.lineWidth=1;
+      ctx.beginPath(); ctx.moveTo(padX+i*slotW,floorY); ctx.lineTo(padX+i*slotW,H); ctx.stroke();
+    }
+    slots.forEach((s,i)=>{
+      const mult=MULTIPLIERS[i];
+      const hot=mult>=3;
+      ctx.fillStyle=hot?(paper?'#aa2200':'#cc3300'):(mult>=1?(paper?'#554400':'#443300'):(paper?'#333':'#1a1a1a'));
+      ctx.fillRect(padX+i*slotW+1,floorY,slotW-1,H-floorY);
+      ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillStyle=hot?'#fff':(paper?'#bbb':'#888');
+      ctx.font=`700 ${Math.max(7,slotW*0.3|0)}px 'IBM Plex Mono',monospace`;
+      ctx.fillText(mult+'×',s.x,(floorY+H)/2);
+    });
+
+    // pegs
+    for(const p of pegs){
+      ctx.fillStyle=paper?'rgba(0,0,0,0.45)':'rgba(255,255,255,0.55)';
+      ctx.beginPath(); ctx.arc(p.x,p.y,PEG_R,0,Math.PI*2); ctx.fill();
+    }
+
+    // balls + trails
+    for(const b of balls){
+      for(let i=0;i<b.trail.length;i++){
+        ctx.fillStyle=paper?`rgba(0,80,200,${(i/b.trail.length)*0.25})`:`rgba(60,160,255,${(i/b.trail.length)*0.25})`;
+        ctx.beginPath(); ctx.arc(b.trail[i].x,b.trail[i].y,BALL_R*(i/b.trail.length)*0.8,0,Math.PI*2); ctx.fill();
+      }
+      ctx.fillStyle=b.settled?(paper?'#999':'#555'):(paper?'#1144cc':'#3388ff');
+      ctx.beginPath(); ctx.arc(b.x,b.y,BALL_R,0,Math.PI*2); ctx.fill();
+      ctx.strokeStyle='rgba(255,255,255,0.25)'; ctx.lineWidth=1; ctx.stroke();
+      if(b.settled&&b.mult!==undefined){
+        ctx.textAlign='center'; ctx.textBaseline='middle';
+        ctx.fillStyle=b.mult>=3?'#ffcc00':(paper?'rgba(0,0,0,0.4)':'rgba(255,255,255,0.4)');
+        ctx.font=`700 ${Math.max(6,BALL_R*1.1|0)}px 'IBM Plex Mono',monospace`;
+        ctx.fillText(b.mult+'×',b.x,b.y-BALL_R-4);
       }
     }
 
-    // discs
-    for (let r=0;r<N;r++) for (let c2=0;c2<N;c2++) {
-      if (!board[r][c2]) continue;
-      const p = board[r][c2];
-      const cx2 = ox+c2*cs+cs/2, cy2 = oy+r*cs+cs/2, rad = cs*0.38;
-      const g = ctx.createRadialGradient(cx2-rad*0.3, cy2-rad*0.3, 0, cx2, cy2, rad);
-      if (p===1) { g.addColorStop(0,'#fff'); g.addColorStop(1,'#aaa'); }
-      else       { g.addColorStop(0,'#555'); g.addColorStop(1,'#000'); }
-      ctx.beginPath(); ctx.arc(cx2, cy2, rad, 0, Math.PI*2);
-      ctx.fillStyle = g; ctx.fill();
+    // drop zone hint
+    ctx.strokeStyle=paper?'rgba(0,0,0,0.1)':'rgba(255,255,255,0.08)';
+    ctx.setLineDash([4,4]); ctx.lineWidth=1;
+    ctx.beginPath(); ctx.moveTo(padX,0); ctx.lineTo(padX,floorY);
+    ctx.moveTo(W-padX,0); ctx.lineTo(W-padX,floorY); ctx.stroke();
+    ctx.setLineDash([]);
+
+    // HUD
+    ctx.textAlign='left'; ctx.textBaseline='top';
+    ctx.fillStyle=paper?'rgba(0,0,0,0.4)':'rgba(255,255,255,0.35)';
+    ctx.font=`300 9px 'IBM Plex Mono',monospace`;
+    ctx.fillText(`score: ${score}  |  click to drop`,6,4);
+    ctx.textAlign='left';
+  }
+
+  c.addEventListener('click',e=>{
+    const W=c.width, H=c.height;
+    const rect=c.getBoundingClientRect();
+    const mx=(e.clientX-rect.left)*(W/rect.width);
+    balls.push({x:Math.max(W*0.1+BALL_R,Math.min(W*0.9-BALL_R,mx)),y:16,vx:(Math.random()-0.5)*1.5,vy:0,settled:false,slot:-1,trail:[],mult:undefined});
+    if(balls.length>40) balls=balls.filter(b=>!b.settled).concat(balls.filter(b=>b.settled).slice(-12));
+  });
+
+  mkBtn('Drop',ctrl).addEventListener('click',()=>{
+    const W=c.width;
+    balls.push({x:W/2+(Math.random()-0.5)*W*0.1,y:16,vx:(Math.random()-0.5)*1.5,vy:0,settled:false,slot:-1,trail:[],mult:undefined});
+    if(balls.length>40) balls=balls.filter(b=>!b.settled).concat(balls.filter(b=>b.settled).slice(-12));
+  });
+  mkBtn('Clear',ctrl).addEventListener('click',()=>{balls=[];score=1000;});
+  mkInfo(ctrl).textContent='click anywhere to drop · aim for 10×';
+
+  requestAnimationFrame(draw);
+  return()=>cancelAnimationFrame(raf);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// TOY — ROULETTE
+// ════════════════════════════════════════════════════════════════════════════
+function initRoulette(body,ctrl){
+  const c=document.createElement('canvas');
+  c.style.cssText='position:absolute;inset:0;display:block;';
+  body.appendChild(c);
+  const ctx=c.getContext('2d');
+  let raf;
+
+  const NUMS=[0,32,15,19,4,21,2,25,17,34,6,27,13,36,11,30,8,23,10,5,24,16,33,1,20,14,31,9,22,18,29,7,28,12,35,3,26];
+  const N=NUMS.length;
+  const RED=new Set([1,3,5,7,9,12,14,16,18,19,21,23,25,27,30,32,34,36]);
+  function numCol(n){return n===0?'#118833':RED.has(n)?'#bb2200':'#111111';}
+
+  let spinning=false, wheelAngle=0, wheelOmega=0;
+  let ballAngle=0, ballOmega=0, ballDist=1;
+  let result=null, resultAlpha=0, lastWin=null;
+  let chips=1000, bet=50, betType='red';
+
+  const BET_TYPES=['red','black','even','odd','1-18','19-36'];
+  const BET_PAYS=[2,2,2,2,2,2]; // all pay 1:1 (evens)
+  const infoEl=mkInfo(ctrl);
+  function updateInfo(){ infoEl.textContent=`chips: ${chips}  bet: ${bet}`; }
+
+  function spin(){
+    if(spinning) return;
+    if(chips<=0){chips=1000;updateInfo();return;}
+    spinning=true; result=null; resultAlpha=0; lastWin=null;
+    wheelOmega=-(9+Math.random()*5);
+    ballAngle=wheelAngle+Math.PI*(1+Math.random());
+    ballOmega=12+Math.random()*6;
+    ballDist=0.88;
+  }
+
+  function draw(){
+    raf=requestAnimationFrame(draw);
+    const W=body.offsetWidth, H=body.offsetHeight;
+    if(W<1||H<1) return;
+    c.width=W; c.height=H;
+    const paper=isPaper();
+    ctx.fillStyle=paper?'#e8e0d0':'#0d1117'; ctx.fillRect(0,0,W,H);
+
+    // Layout
+    const tableW=Math.min(W*0.44,200);
+    const wheelD=Math.min(H-64, W-tableW-24);
+    const R=wheelD/2-6;
+    const cx=tableW+12+wheelD/2, cy=H/2;
+
+    // update physics
+    if(spinning){
+      wheelAngle+=wheelOmega*0.016;
+      wheelOmega*=0.989;
+      ballAngle+=ballOmega*0.016;
+      ballOmega*=0.992;
+      const speed=Math.abs(ballOmega);
+      ballDist=speed>2?0.88-0.33*(1-(speed-2)/Math.max(1,Math.abs(wheelOmega)+speed-2)):0.62;
+      if(Math.abs(wheelOmega)<0.018){
+        spinning=false;
+        const norm=((-wheelAngle%(Math.PI*2))+Math.PI*2)%(Math.PI*2);
+        const slotI=Math.round(norm/(Math.PI*2)*N)%N;
+        result=NUMS[slotI];
+        resultAlpha=1;
+        // resolve
+        let win=false;
+        if(betType==='red'&&RED.has(result)) win=true;
+        else if(betType==='black'&&result!==0&&!RED.has(result)) win=true;
+        else if(betType==='even'&&result!==0&&result%2===0) win=true;
+        else if(betType==='odd'&&result%2===1) win=true;
+        else if(betType==='1-18'&&result>=1&&result<=18) win=true;
+        else if(betType==='19-36'&&result>=19&&result<=36) win=true;
+        if(win){chips+=bet;lastWin=true;}else{chips-=bet;lastWin=false;}
+        chips=Math.max(0,chips);
+        if(bet>chips) bet=Math.max(10,Math.min(chips,10));
+        updateInfo();
+      }
+    }
+    if(resultAlpha>0&&!spinning) resultAlpha=Math.max(0,resultAlpha-0.008);
+
+    // ── Wheel ──
+    ctx.save(); ctx.translate(cx,cy);
+    // wood rim
+    ctx.beginPath(); ctx.arc(0,0,R+8,0,Math.PI*2);
+    ctx.fillStyle=paper?'#7a5010':'#4a2800'; ctx.fill();
+    // segments
+    const sa=Math.PI*2/N;
+    for(let i=0;i<N;i++){
+      const a1=wheelAngle+i*sa-sa/2, a2=a1+sa;
+      ctx.beginPath(); ctx.moveTo(0,0); ctx.arc(0,0,R,a1,a2); ctx.closePath();
+      ctx.fillStyle=numCol(NUMS[i]); ctx.fill();
+      ctx.strokeStyle='rgba(255,255,255,0.18)'; ctx.lineWidth=0.6; ctx.stroke();
+      // number
+      ctx.save();
+      ctx.rotate(wheelAngle+i*sa);
+      ctx.translate(R*0.70,0); ctx.rotate(Math.PI/2);
+      const fs=Math.max(6,R*0.10|0);
+      ctx.font=`700 ${fs}px 'IBM Plex Mono',monospace`;
+      ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillStyle='#fff';
+      ctx.fillText(NUMS[i],0,0);
+      ctx.restore();
+    }
+    // inner ring
+    ctx.beginPath(); ctx.arc(0,0,R*0.18,0,Math.PI*2);
+    ctx.fillStyle=paper?'#7a5010':'#4a2800'; ctx.fill();
+    ctx.strokeStyle='rgba(255,255,255,0.2)'; ctx.lineWidth=2; ctx.stroke();
+    // ball
+    const bx=Math.cos(ballAngle)*R*ballDist, by=Math.sin(ballAngle)*R*ballDist;
+    ctx.beginPath(); ctx.arc(bx,by,5,0,Math.PI*2);
+    const bg=ctx.createRadialGradient(bx-1,by-1,0,bx,by,5);
+    bg.addColorStop(0,'#fff'); bg.addColorStop(1,'#bbb');
+    ctx.fillStyle=bg; ctx.fill();
+    ctx.strokeStyle='rgba(0,0,0,0.4)'; ctx.lineWidth=1; ctx.stroke();
+    ctx.restore();
+
+    // pointer
+    ctx.fillStyle=paper?'#cc2200':'#ff3311';
+    ctx.beginPath(); ctx.moveTo(cx,cy-R+2); ctx.lineTo(cx-7,cy-R-14); ctx.lineTo(cx+7,cy-R-14); ctx.closePath(); ctx.fill();
+
+    // result overlay on wheel
+    if(result!==null&&resultAlpha>0){
+      ctx.save(); ctx.globalAlpha=resultAlpha;
+      ctx.textAlign='center'; ctx.textBaseline='middle';
+      const fs=Math.max(18,R*0.28|0);
+      ctx.font=`900 ${fs}px 'IBM Plex Mono',monospace`;
+      const rc=numCol(result);
+      ctx.fillStyle=rc==='#118833'?'#44ee88':(rc==='#bb2200'?'#ff6644':'#ffffff');
+      ctx.fillText(result,cx,cy);
+      ctx.restore();
+    }
+
+    // ── Betting table (left side) ──
+    const rows=3, cols2=2;
+    const bw2=Math.floor((tableW-8)/cols2)-2;
+    const bh2=Math.min(46,Math.floor((H-80)/rows)-4);
+    const startY=(H-(rows*(bh2+4)))/2;
+
+    BET_TYPES.forEach((bt,i)=>{
+      const col=i%cols2, row=Math.floor(i/cols2);
+      const bx2=4+col*(bw2+4), by2=startY+row*(bh2+4);
+      const isSel=betType===bt;
+      let bg2='';
+      if(isSel) bg2=paper?'#ffe84d':'#ffe030';
+      else if(bt==='red') bg2=paper?'#aa2200':'#881800';
+      else if(bt==='black') bg2=paper?'#333':'#1a1a1a';
+      else bg2=paper?'#667788':'#334455';
+      ctx.fillStyle=bg2;
+      ctx.beginPath(); ctx.roundRect(bx2,by2,bw2,bh2,4); ctx.fill();
+      if(isSel){ctx.strokeStyle='#cc9900';ctx.lineWidth=2;ctx.beginPath();ctx.roundRect(bx2,by2,bw2,bh2,4);ctx.stroke();}
+      ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillStyle=isSel?'#222':'#eee';
+      const fs2=Math.max(7,bh2*0.26|0);
+      ctx.font=`700 ${fs2}px 'IBM Plex Mono',monospace`;
+      const labels=['Red','Black','Even','Odd','Low','High'];
+      const sub=['','','','','1-18','19-36'];
+      ctx.fillText(labels[i],bx2+bw2/2,by2+bh2/2-(sub[i]?fs2*0.5:0));
+      if(sub[i]){
+        ctx.font=`300 ${Math.max(6,fs2*0.75|0)}px 'IBM Plex Mono',monospace`;
+        ctx.fillStyle=isSel?'#444':'rgba(255,255,255,0.6)';
+        ctx.fillText(sub[i],bx2+bw2/2,by2+bh2/2+fs2*0.65);
+      }
+    });
+
+    // last win/loss display
+    if(lastWin!==null){
+      ctx.textAlign='center'; ctx.textBaseline='top';
+      ctx.fillStyle=lastWin?(paper?'#226622':'#44dd66'):(paper?'#882222':'#dd4444');
+      ctx.font=`700 10px 'IBM Plex Mono',monospace`;
+      ctx.fillText(lastWin?`+${bet}`:`-${bet}`, tableW/2, startY-20);
     }
 
     // HUD
-    const {p1, p2} = countDiscs(board);
-    ctx.fillStyle = paper?'rgba(0,0,0,0.5)':'rgba(255,255,255,0.5)';
-    ctx.font = `300 9px 'IBM Plex Mono',monospace`;
-    ctx.textAlign = 'left'; ctx.textBaseline = 'top';
-    const p1label = twoPlayer?'P1':'You'; const p2label = twoPlayer?'P2':'AI';
-    ctx.fillText(`${p1label}(○) ${p1}  ${p2label}(●) ${p2}  ${p1label} ${scores.p1} – ${scores.p2} ${p2label}`, 8, 6);
-    if (thinking) { ctx.textAlign='right'; ctx.fillText('AI thinking…', W-8, 6); ctx.textAlign='left'; }
-
-    // turn indicator
-    if (gameState==='playing') {
-      ctx.textAlign='center';
-      const label = twoPlayer ? (turn===1?`${p1label}'s turn (○)`:`${p2label}'s turn (●)`) : (turn===1?'Your turn (○)':'AI thinking…');
-      ctx.fillText(label, W/2, oy+boardH+8);
-    }
-
-    // end overlay
-    if (gameState==='over') {
-      ctx.fillStyle='rgba(0,0,0,0.55)'; ctx.fillRect(0,0,W,H);
-      ctx.textAlign='center'; ctx.textBaseline='middle';
-      let msg;
-      if (p1>p2) { msg=twoPlayer?'Player 1 wins!':'You win!'; ctx.fillStyle='#fff'; }
-      else if (p2>p1) { msg=twoPlayer?'Player 2 wins!':'AI wins!'; ctx.fillStyle='#ff6644'; }
-      else { msg='Draw! · press R or click to retry'; ctx.fillStyle='rgba(255,255,255,0.8)'; }
-      ctx.font=`400 18px 'IBM Plex Mono',monospace`; ctx.fillText(msg, W/2, H/2-14);
-      ctx.fillStyle='rgba(255,255,255,0.5)'; ctx.font=`300 10px 'IBM Plex Mono',monospace`;
-      ctx.fillText('press R or click to retry', W/2, H/2+10);
-    }
     ctx.textAlign='left'; ctx.textBaseline='top';
+    ctx.fillStyle=paper?'rgba(0,0,0,0.35)':'rgba(255,255,255,0.35)';
+    ctx.font=`300 9px 'IBM Plex Mono',monospace`;
+    ctx.fillText(`chips: ${chips}  bet: ${bet}`,6,4);
+    ctx.textAlign='left';
   }
 
-  function endGame() {
-    gameState='over';
-    const {p1,p2} = countDiscs(board);
-    if (p1>p2) scores.p1++;
-    else if (p2>p1) scores.p2++;
-  }
-
-  function doAIMove() {
-    if (twoPlayer || turn!==2 || gameState!=='playing') return;
-    thinking=true;
-    setTimeout(()=>{
-      if (gameState!=='playing') { thinking=false; return; }
-      const mv = bestMove(board, 2, DIFF_DEPTH[difficulty]);
-      if (mv) {
-        board = applyMove(board, mv[0], mv[1], 2);
-        // check if player can move
-        if (validMoves(board,1).length) {
-          turn=1;
-        } else if (validMoves(board,2).length) {
-          // player must pass, AI goes again
-          setTimeout(doAIMove, 400);
-          thinking=false;
-          return;
-        } else {
-          endGame();
-        }
-      } else {
-        // AI has no moves — pass back to player if they can move
-        if (validMoves(board,1).length) { turn=1; }
-        else { endGame(); }
-      }
-      thinking=false;
-    }, 30);
-  }
-
-  c.addEventListener('mousemove', e => {
-    const cs=cellSize(), {ox,oy}=boardOffset();
+  c.addEventListener('click',e=>{
+    if(spinning) return;
+    const W=c.width, H=c.height;
+    const tableW=Math.min(W*0.44,200);
     const rect=c.getBoundingClientRect();
-    const mx=(e.clientX-rect.left)*(W/rect.width), my=(e.clientY-rect.top)*(H/rect.height);
-    const r=Math.floor((my-oy)/cs), c2=Math.floor((mx-ox)/cs);
-    hoverCell=(r>=0&&r<N&&c2>=0&&c2<N)?[r,c2]:null;
+    const mx=(e.clientX-rect.left)*(W/rect.width);
+    const my=(e.clientY-rect.top)*(H/rect.height);
+    if(mx>tableW) return; // clicked wheel side — ignore
+    const bw2=Math.floor((tableW-8)/2)-2;
+    const bh2=Math.min(46,Math.floor((H-80)/3)-4);
+    const startY=(H-(3*(bh2+4)))/2;
+    BET_TYPES.forEach((bt,i)=>{
+      const col=i%2, row=Math.floor(i/2);
+      const bx=4+col*(bw2+4), by=startY+row*(bh2+4);
+      if(mx>=bx&&mx<=bx+bw2&&my>=by&&my<=by+bh2){ betType=bt; updateInfo(); }
+    });
   });
 
-  c.addEventListener('click', e => {
-    if (gameState==='over') { board=emptyBoard(); turn=1; gameState='playing'; thinking=false; return; }
-    if (thinking) return;
-    if (!twoPlayer && turn===2) return;
-    const cs=cellSize(), {ox,oy}=boardOffset();
-    const rect=c.getBoundingClientRect();
-    const mx=(e.clientX-rect.left)*(W/rect.width), my=(e.clientY-rect.top)*(H/rect.height);
-    const r=Math.floor((my-oy)/cs), c2=Math.floor((mx-ox)/cs);
-    if (r<0||r>=N||c2<0||c2>=N) return;
-    if (!flips(board,r,c2,turn).length) return;
-    board = applyMove(board,r,c2,turn);
-    const nextP = 3-turn;
-    const nextMoves = validMoves(board, nextP);
-    const curMoves  = validMoves(board, turn);
-    if (nextMoves.length) {
-      // normal: switch to next player
-      turn = nextP;
-      if (!twoPlayer && turn===2) setTimeout(doAIMove, 80);
-    } else if (curMoves.length) {
-      // next player must pass, current player goes again
-      // (turn stays the same — no action needed for human, AI re-triggers)
-      if (!twoPlayer && turn===2) setTimeout(doAIMove, 80);
-    } else {
-      // neither player can move — game over
-      endGame();
-    }
-  });
+  mkBtn('Spin',ctrl).addEventListener('click',()=>spin());
+  mkBtn('+10',ctrl).addEventListener('click',()=>{bet=Math.min(chips,bet+10);updateInfo();});
+  mkBtn('-10',ctrl).addEventListener('click',()=>{bet=Math.max(10,bet-10);updateInfo();});
+  updateInfo();
 
-  const diffBtn = mkBtn(DIFF_NAMES[difficulty], ctrl);
-  diffBtn.addEventListener('click',()=>{ difficulty=(difficulty+1)%3; diffBtn.textContent=DIFF_NAMES[difficulty]; scores={p1:0,p2:0}; board=emptyBoard(); turn=1; gameState='playing'; thinking=false; });
-  mkBtn('New Game', ctrl).addEventListener('click',()=>{ board=emptyBoard(); turn=1; gameState='playing'; thinking=false; });
-
-  const onKeyOth=e=>{if((e.key===' '||e.key==='r'||e.key==='R')&&gameState==='over'){board=emptyBoard();turn=1;gameState='playing';thinking=false;if(e.key===' ')e.preventDefault();}};
-  document.addEventListener('keydown',onKeyOth);
   requestAnimationFrame(draw);
-  return ()=>{ cancelAnimationFrame(raf); ro.disconnect(); document.removeEventListener('keydown',onKeyOth); };
+  return()=>cancelAnimationFrame(raf);
 }
-// ════════════════════════════════════════════════════════════════════════════
-function initBattleship(body, ctrl) {
-  const {c, ctx, ro} = mkCanvas(body);
-  let W = c.width, H = c.height, raf;
-  const N = 10;
-  let difficulty = 1;
-  const DIFF_NAMES = ['Easy','Medium','Hard'];
-  // Easy: random shots. Medium: hunt/target. Hard: hunt/target + parity
-  let gameState, scores, playerBoard, aiBoard, playerShots, aiShots, aiHits, aiTargets, aiParity, phase, placingIdx, placingH, preview, hoverCell, winner;
 
-  const SHIPS = [
-    {name:'Carrier',    size:5},
-    {name:'Battleship', size:4},
-    {name:'Cruiser',    size:3},
-    {name:'Submarine',  size:3},
-    {name:'Destroyer',  size:2},
+// ════════════════════════════════════════════════════════════════════════════
+// TOY — BATTLESHIPS (2-player pass-and-play)
+// ════════════════════════════════════════════════════════════════════════════
+function initBattleships(body, ctrl) {
+
+  // ── canvas ──
+  const c = document.createElement('canvas');
+  c.style.cssText = 'position:absolute;inset:0;display:block;cursor:pointer;';
+  body.appendChild(c);
+  const ctx = c.getContext('2d');
+  let W, H, raf;
+
+  const GRID = 10;
+  const REVIEW_MS = 3000; // ms to show result before handoff overlay appears
+  const SHIPS_DEF = [
+    { name: 'Carrier',    size: 5 },
+    { name: 'Battleship', size: 4 },
+    { name: 'Cruiser',    size: 3 },
+    { name: 'Submarine',  size: 3 },
+    { name: 'Destroyer',  size: 2 },
   ];
 
-  function emptyGrid() { return Array.from({length:N},()=>Array(N).fill(0)); }
-  // grid values: 0=empty, 1=ship, 2=miss(shot empty), 3=hit
-
-  function placeShipRandom(grid, size) {
-    let attempts = 0;
-    while (attempts<1000) {
-      attempts++;
-      const horiz = Math.random()<0.5;
-      const r = Math.floor(Math.random()*(horiz?N:N-size+1));
-      const c2 = Math.floor(Math.random()*(horiz?N-size+1:N));
-      let ok=true;
-      for (let i=0;i<size;i++) {
-        const nr=r+(horiz?0:i), nc=c2+(horiz?i:0);
-        if (grid[nr][nc]) { ok=false; break; }
-      }
-      if (ok) {
-        const cells=[];
-        for (let i=0;i<size;i++) { const nr=r+(horiz?0:i),nc=c2+(horiz?i:0); grid[nr][nc]=1; cells.push([nr,nc]); }
-        return cells;
-      }
-    }
-    return [];
+  function makeBoard() {
+    return {
+      grid: Array.from({length:GRID}, () => Array(GRID).fill(0)),
+      shots: Array.from({length:GRID}, () => Array(GRID).fill('')),
+      ships: SHIPS_DEF.map((s,i) => ({ ...s, id: i+1, cells: [], sunk: false })),
+    };
   }
 
-  function buildAIBoard() {
-    const g = emptyGrid();
-    const cells = SHIPS.map(s => placeShipRandom(g, s.size));
-    return {grid: g, cells};
-  }
-
-  function isSunk(board, shots, shipCells) {
-    return shipCells.every(([r,c2]) => shots[r][c2]);
-  }
-
-  function allSunk(board, shots) {
-    for (let r=0;r<N;r++) for (let c2=0;c2<N;c2++) if (board[r][c2]===1 && !shots[r][c2]) return false;
-    return true;
-  }
-
-  // Store ship cell lists for each board
-  let playerShipCells, aiShipCells;
-
-  function initGame() {
-    W=c.width=body.clientWidth||600; H=c.height=body.clientHeight||400;
-    gameState = twoPlayer ? 'p2place' : 'placing';
-    playerBoard = emptyGrid();
-    const ai = buildAIBoard();
-    aiBoard = ai.grid; aiShipCells = ai.cells;
-    playerShots = emptyGrid(); aiShots = emptyGrid();
-    aiHits=[]; aiTargets=[]; aiParity=0;
-    placingIdx=0; placingH=true; preview=null; hoverCell=null;
-    winner=null; phase='player';
-    if(!scores) scores={p1:0,p2:0};
-    playerShipCells=[];
-    if (twoPlayer) {
-      aiBoard=emptyGrid(); aiShipCells=[];
-    }
-  }
-  initGame();
-
-  function currentShipSize() { return placingIdx<SHIPS.length?SHIPS[placingIdx].size:0; }
-
-  function canPlace(grid, r, c2, size, horiz) {
-    for (let i=0;i<size;i++) {
-      const nr=r+(horiz?0:i), nc=c2+(horiz?i:0);
-      if (nr<0||nr>=N||nc<0||nc>=N||grid[nr][nc]) return false;
+  function canPlace(board, r, c2, size, horiz) {
+    for (let i = 0; i < size; i++) {
+      const rr = horiz ? r : r + i;
+      const cc = horiz ? c2 + i : c2;
+      if (rr < 0 || rr >= GRID || cc < 0 || cc >= GRID) return false;
+      if (board.grid[rr][cc] !== 0) return false;
     }
     return true;
   }
 
-  function doPlace(grid, r, c2, size, horiz) {
-    const cells=[];
-    for (let i=0;i<size;i++) { grid[r+(horiz?0:i)][c2+(horiz?i:0)]=1; cells.push([r+(horiz?0:i),c2+(horiz?i:0)]); }
-    return cells;
+  function doPlace(board, r, c2, size, horiz, id) {
+    const cells = [];
+    for (let i = 0; i < size; i++) {
+      const rr = horiz ? r : r + i;
+      const cc = horiz ? c2 + i : c2;
+      board.grid[rr][cc] = id;
+      cells.push([rr, cc]);
+    }
+    board.ships[id - 1].cells = cells;
   }
 
-  // AI shooting logic
-  function aiShoot() {
-    let r,c2;
-    if (difficulty===0) {
-      // Easy: random
-      const avail=[];
-      for(let i=0;i<N;i++) for(let j=0;j<N;j++) if(!aiShots[i][j]) avail.push([i,j]);
-      if(!avail.length) return;
-      [r,c2]=avail[Math.floor(Math.random()*avail.length)];
+  function randomPlace(board) {
+    for (const ship of board.ships) {
+      let placed = false;
+      while (!placed) {
+        const horiz = Math.random() < 0.5;
+        const r = Math.floor(Math.random() * GRID);
+        const c2 = Math.floor(Math.random() * GRID);
+        if (canPlace(board, r, c2, ship.size, horiz)) {
+          doPlace(board, r, c2, ship.size, horiz, ship.id);
+          placed = true;
+        }
+      }
+    }
+  }
+
+  function checkSunk(board, id) {
+    const ship = board.ships[id - 1];
+    if (ship.sunk) return;
+    if (ship.cells.every(([r, c2]) => board.shots[r][c2] === 'hit')) ship.sunk = true;
+  }
+
+  function allSunk(board) { return board.ships.every(s => s.sunk); }
+
+  // ── state ──
+  // phase: 'place1'|'place2'|'fire1'|'fire2'|'win'
+  // mode:  'play'|'review'|'overlay'
+  //   play   → normal gameplay / placing
+  //   review → 3s countdown showing last result; click skips to overlay
+  //   overlay → blank handoff screen; click starts next turn
+  let phase, mode, boards, currentShipIdx, placing, hovR, hovC, winner;
+  let reviewTimer = 0, reviewFn = null;   // reviewFn fires when timer expires or on click
+  let overlayTitle = '', overlaySub = '', overlayFn = null;
+
+  function init() {
+    boards = [makeBoard(), makeBoard()];
+    phase = 'place1';
+    mode  = 'overlay';
+    currentShipIdx = 0;
+    placing = { horiz: true };
+    hovR = -1; hovC = -1;
+    winner = -1;
+    reviewTimer = 0; reviewFn = null;
+  }
+
+  // Call after a shot or placement-complete to show 3-s review then handoff overlay.
+  function beginReview(nextTitle, nextSub, nextFn) {
+    mode = 'review';
+    reviewTimer = performance.now();
+    reviewFn = () => {
+      reviewTimer = 0; reviewFn = null;
+      overlayTitle = nextTitle;
+      overlaySub   = nextSub;
+      overlayFn    = nextFn;
+      mode = 'overlay';
+    };
+  }
+
+  function skipReview() {
+    if (reviewFn) reviewFn();
+  }
+
+  function dismissOverlay() {
+    const fn = overlayFn;
+    overlayTitle = ''; overlaySub = ''; overlayFn = null;
+    mode = 'play';
+    if (fn) fn();
+  }
+
+  // ── sizing ──
+  function resize() {
+    const rect = body.getBoundingClientRect();
+    W = c.width = rect.width || 500;
+    H = c.height = rect.height || 480;
+  }
+  const ro = new ResizeObserver(() => resize());
+  ro.observe(body); resize();
+
+  // layout(dual) — dual=true for firing (two grids), false for placing (one grid)
+  function layout(dual) {
+    const labelW = 22, pad = 12, gap = 10;
+    const topReserve = 52;  // space for title text above col letters
+    const botReserve = 28;  // space for hint text below grid
+    const usableH = H - topReserve - botReserve;
+    let cs;
+    if (dual) {
+      const byW = Math.floor((W - labelW * 2 - gap - pad * 2) / (GRID * 2 + 1));
+      const byH = Math.floor((usableH - labelW) / GRID); // labelW reused as col-letter row height
+      cs = Math.max(4, Math.min(byW, byH, 32));
     } else {
-      // Medium/Hard: hunt & target
-      if (aiTargets.length) {
-        [r,c2]=aiTargets.shift();
-        // skip if already shot
-        if (aiShots[r][c2]) { aiShoot(); return; }
-      } else {
-        // Hunt phase — Hard uses parity to halve search space
-        const avail=[];
-        for(let i=0;i<N;i++) for(let j=0;j<N;j++) {
-          if(!aiShots[i][j]) {
-            if (difficulty===2 && (i+j)%2!==aiParity) continue;
-            avail.push([i,j]);
-          }
-        }
-        if (!avail.length) {
-          // fallback: ignore parity
-          for(let i=0;i<N;i++) for(let j=0;j<N;j++) if(!aiShots[i][j]) avail.push([i,j]);
-        }
-        if(!avail.length) return;
-        [r,c2]=avail[Math.floor(Math.random()*avail.length)];
-      }
+      const byW = Math.floor((W - labelW - pad * 2 - 110) / GRID);
+      const byH = Math.floor((usableH - labelW) / GRID);
+      cs = Math.max(4, Math.min(byW, byH, 36));
     }
-    const hit = playerBoard[r][c2]===1;
-    aiShots[r][c2]=1;
-    if (hit) {
-      aiHits.push([r,c2]);
-      // add adjacent cells as targets
-      const adj=[[r-1,c2],[r+1,c2],[r,c2-1],[r,c2+1]];
-      // if we have 2+ hits, try to align
-      if (aiHits.length>=2) {
-        const last=aiHits[aiHits.length-2];
-        const dr=r-last[0], dc=c2-last[1];
-        if (dr!==0||dc!==0) {
-          // extend in line
-          const nxt=[[r+dr,c2+dc],[last[0]-dr,last[1]-dc]];
-          aiTargets.unshift(...nxt.filter(([nr,nc])=>nr>=0&&nr<N&&nc>=0&&nc<N&&!aiShots[nr][nc]));
-        } else aiTargets.push(...adj.filter(([nr,nc])=>nr>=0&&nr<N&&nc>=0&&nc<N&&!aiShots[nr][nc]));
-      } else {
-        aiTargets.push(...adj.filter(([nr,nc])=>nr>=0&&nr<N&&nc>=0&&nc<N&&!aiShots[nr][nc]));
-      }
+    // startY = below title text AND below col-letter row
+    const startY = topReserve + labelW; // title area + col-letter row
+    if (dual) {
+      const totalW = cs * GRID * 2 + gap + labelW * 2;
+      const startX = (W - totalW) / 2 + labelW;
+      return { cs, startX, startY, gap };
+    } else {
+      const startX = (W - cs * GRID - 110) / 2 + labelW;
+      return { cs, startX, startY, gap: 0 };
     }
-    if (allSunk(playerBoard, aiShots)) { winner=twoPlayer?2:2; gameState='over'; scores.p2++; }
-    else { phase='player'; }
   }
 
-  function getSunkCells(shipCells, shots) {
-    const sunk = new Set();
-    for (const ship of shipCells) {
-      if (ship.every(([r,c2]) => shots[r][c2])) {
-        ship.forEach(([r,c2]) => sunk.add(`${r},${c2}`));
-      }
-    }
-    return sunk;
+  function gridCoords(px, py, gx, gy, cs) {
+    return [Math.floor((py - gy) / cs), Math.floor((px - gx) / cs)];
   }
 
-  function drawGrid(gx, gy, gs, grid, shots, showShips, label, isActive, shipCells) {
-    const paper=isPaper();
-    const sunkCells = getSunkCells(shipCells||[], shots);
-    // border
-    ctx.strokeStyle=isActive?(paper?'#2a6b2a':'#44aa44'):(paper?'rgba(0,0,0,0.2)':'rgba(255,255,255,0.15)');
-    ctx.lineWidth=isActive?2:1;
-    ctx.strokeRect(gx, gy, gs*N, gs*N);
-    ctx.lineWidth=0.5;
+  // ── draw helpers ──
+  function drawGrid(gx, gy, cs, board, showShips) {
+    const isDark = theme === 'dark';
+    ctx.fillStyle = isDark ? 'rgba(0,40,80,0.7)' : 'rgba(180,220,255,0.5)';
+    ctx.fillRect(gx, gy, cs * GRID, cs * GRID);
 
-    for(let r=0;r<N;r++) for(let c2=0;c2<N;c2++) {
-      const x=gx+c2*gs, y=gy+r*gs;
-      const isSunkCell = sunkCells.has(`${r},${c2}`);
-      // cell bg
-      let bg=paper?'#c8dce8':'#0a1a2a';
-      if (isSunkCell) bg=paper?'#c03020':'#8a1a10';
-      else if (showShips&&grid[r][c2]===1) bg=paper?'#8ab0c0':'#1a3a5a';
-      ctx.fillStyle=bg; ctx.fillRect(x,y,gs,gs);
-      // grid line
-      ctx.strokeStyle=paper?'rgba(0,0,0,0.12)':'rgba(255,255,255,0.07)'; ctx.lineWidth=0.5;
-      ctx.strokeRect(x,y,gs,gs);
-      // shot overlay — skip for sunk cells (whole cell is red already)
-      if (shots[r][c2] && !isSunkCell) {
-        const hit=grid[r][c2]===1;
-        ctx.fillStyle=hit?'#e84030':'#6090b0';
-        ctx.beginPath(); ctx.arc(x+gs/2,y+gs/2,gs*0.28,0,Math.PI*2); ctx.fill();
-        if (hit) {
-          ctx.strokeStyle='#ff6050'; ctx.lineWidth=1.5;
-          ctx.beginPath(); ctx.arc(x+gs/2,y+gs/2,gs*0.28,0,Math.PI*2); ctx.stroke();
+    if (showShips) {
+      for (let r = 0; r < GRID; r++) for (let cc = 0; cc < GRID; cc++) {
+        if (board.grid[r][cc]) {
+          ctx.fillStyle = isDark ? 'rgba(160,180,200,0.55)' : 'rgba(70,90,120,0.38)';
+          ctx.fillRect(gx + cc*cs+1, gy + r*cs+1, cs-2, cs-2);
         }
       }
     }
-    // label
-    ctx.fillStyle=paper?'rgba(0,0,0,0.4)':'rgba(255,255,255,0.4)';
-    ctx.font=`300 9px 'IBM Plex Mono',monospace`; ctx.textAlign='center'; ctx.textBaseline='bottom';
-    ctx.fillText(label, gx+gs*N/2, gy-2);
-  }
 
-  function gridLayout() {
-    const paper=isPaper();
-    const margin=8, labelH=14, ctrlH=40;
-    const availW=W-margin*3, availH=H-ctrlH-margin*2-labelH*2;
-    const gs=Math.max(14,Math.min(Math.floor(availW/2/N), Math.floor(availH/N)));
-    const totalW=gs*N*2+margin;
-    const gx1=Math.floor((W-totalW)/2);
-    const gx2=gx1+gs*N+margin;
-    const gy=Math.floor((H-ctrlH-gs*N)/2)+labelH;
-    return {gs, gx1, gx2, gy};
-  }
-
-  function drawPlacing(board2, idx2, horiz2, label) {
-    const paper=isPaper();
-    const {gs,gx1,gy}=gridLayout();
-    ctx.clearRect(0,0,W,H);
-    ctx.fillStyle=bgClr(); ctx.fillRect(0,0,W,H);
-    // draw the board being placed on
-    drawGrid(gx1, gy, gs, board2, emptyGrid(), true, label, true);
-    // placement preview
-    if (hoverCell && idx2<SHIPS.length) {
-      const [hr,hc]=hoverCell;
-      const size=SHIPS[idx2].size;
-      const ok=canPlace(board2,hr,hc,size,horiz2);
-      for(let i=0;i<size;i++) {
-        const nr=hr+(horiz2?0:i), nc=hc+(horiz2?i:0);
-        if(nr>=0&&nr<N&&nc>=0&&nc<N) {
-          ctx.fillStyle=ok?(paper?'rgba(0,180,0,0.45)':'rgba(0,255,0,0.3)'):(paper?'rgba(220,0,0,0.45)':'rgba(255,0,0,0.3)');
-          ctx.fillRect(gx1+nc*gs, gy+nr*gs, gs, gs);
-        }
+    for (let r = 0; r < GRID; r++) for (let cc = 0; cc < GRID; cc++) {
+      const s = board.shots[r][cc];
+      const cx2 = gx + cc*cs + cs/2, cy2 = gy + r*cs + cs/2;
+      if (s === 'hit') {
+        ctx.fillStyle = isDark ? '#ff4444' : '#cc2200';
+        ctx.beginPath(); ctx.arc(cx2, cy2, cs*0.3, 0, Math.PI*2); ctx.fill();
+        ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5;
+        const m = cs*0.18;
+        ctx.beginPath(); ctx.moveTo(cx2-m,cy2-m); ctx.lineTo(cx2+m,cy2+m);
+        ctx.moveTo(cx2+m,cy2-m); ctx.lineTo(cx2-m,cy2+m); ctx.stroke();
+      } else if (s === 'miss') {
+        ctx.fillStyle = isDark ? 'rgba(255,255,255,0.18)' : 'rgba(0,0,0,0.14)';
+        ctx.beginPath(); ctx.arc(cx2, cy2, cs*0.18, 0, Math.PI*2); ctx.fill();
       }
     }
-    ctx.fillStyle=paper?'rgba(0,0,0,0.55)':'rgba(255,255,255,0.55)';
-    ctx.font=`300 10px 'IBM Plex Mono',monospace`; ctx.textAlign='center'; ctx.textBaseline='top';
-    if (idx2<SHIPS.length) ctx.fillText(`Place your ${SHIPS[idx2].name} (size ${SHIPS[idx2].size}) — R to rotate`, W/2, gy+gs*N+8);
-    else ctx.fillText('All ships placed! Press Play or click to start.', W/2, gy+gs*N+8);
+
+    ctx.strokeStyle = isDark ? 'rgba(255,255,255,0.09)' : 'rgba(0,0,0,0.1)';
+    ctx.lineWidth = 0.5;
+    for (let i = 0; i <= GRID; i++) {
+      ctx.beginPath(); ctx.moveTo(gx+i*cs, gy); ctx.lineTo(gx+i*cs, gy+GRID*cs); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(gx, gy+i*cs); ctx.lineTo(gx+GRID*cs, gy+i*cs); ctx.stroke();
+    }
+    ctx.strokeStyle = isDark ? 'rgba(255,255,255,0.28)' : 'rgba(0,0,0,0.28)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(gx, gy, cs*GRID, cs*GRID);
+
+    // labels
+    ctx.fillStyle = isDark ? 'rgba(255,255,255,0.38)' : 'rgba(0,0,0,0.38)';
+    ctx.font = `${Math.max(7, cs*0.42)}px 'IBM Plex Mono', monospace`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    for (let cc = 0; cc < GRID; cc++)
+      ctx.fillText(String.fromCharCode(65+cc), gx+cc*cs+cs/2, gy - cs*0.55);
+    ctx.textAlign = 'right';
+    for (let r = 0; r < GRID; r++)
+      ctx.fillText(String(r+1), gx-3, gy+r*cs+cs/2);
   }
 
+  function drawPlaceHover(gx, gy, cs, board) {
+    if (hovR < 0 || hovC < 0) return;
+    const ship = board.ships[currentShipIdx];
+    if (!ship) return;
+    const ok = canPlace(board, hovR, hovC, ship.size, placing.horiz);
+    ctx.fillStyle = ok ? 'rgba(60,200,60,0.32)' : 'rgba(220,40,40,0.32)';
+    for (let i = 0; i < ship.size; i++) {
+      const rr = placing.horiz ? hovR : hovR+i;
+      const cc = placing.horiz ? hovC+i : hovC;
+      if (rr>=0 && rr<GRID && cc>=0 && cc<GRID)
+        ctx.fillRect(gx+cc*cs+1, gy+rr*cs+1, cs-2, cs-2);
+    }
+  }
+
+  function drawShipList(x, y, board, activeIdx) {
+    const isDark = theme === 'dark';
+    ctx.font = `10px 'IBM Plex Mono', monospace`;
+    ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    board.ships.forEach((ship, i) => {
+      let col;
+      if (ship.sunk) col = isDark ? '#ff5555' : '#cc2200';
+      else if (activeIdx !== undefined && i === activeIdx) col = isDark ? '#a8e6a0' : '#226622';
+      else if (activeIdx !== undefined && ship.cells.length > 0) col = isDark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.45)';
+      else col = isDark ? 'rgba(255,255,255,0.28)' : 'rgba(0,0,0,0.28)';
+      ctx.fillStyle = col;
+      const bar = ship.sunk ? '░'.repeat(ship.size) : '█'.repeat(ship.size);
+      ctx.fillText(`${ship.name} ${bar}`, x, y + i*16);
+    });
+  }
+
+  // ── review countdown bar ──
+  function drawReviewBar(pct) {
+    const isDark = theme === 'dark';
+    const bw = W * 0.5, bh = 4;
+    const bx = (W-bw)/2, by = H - 16;
+    ctx.fillStyle = isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)';
+    ctx.fillRect(bx, by, bw, bh);
+    ctx.fillStyle = isDark ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.38)';
+    ctx.fillRect(bx, by, bw * pct, bh);
+    ctx.fillStyle = isDark ? 'rgba(255,255,255,0.22)' : 'rgba(0,0,0,0.22)';
+    ctx.font = `9px 'IBM Plex Mono', monospace`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('click anywhere to continue', W/2, by - 8);
+  }
+
+  // ── main draw ──
   function draw() {
-    raf=requestAnimationFrame(draw);
-    W=c.width=body.clientWidth||600; H=c.height=body.clientHeight||400;
-    const paper=isPaper();
-    ctx.clearRect(0,0,W,H);
-    ctx.fillStyle=bgClr(); ctx.fillRect(0,0,W,H);
+    raf = requestAnimationFrame(draw);
+    const isDark = theme === 'dark';
+    ctx.clearRect(0, 0, W, H);
 
-    if (gameState==='placing') { drawPlacing(playerBoard, placingIdx, placingH, 'Your Fleet'); return; }
-    if (gameState==='p2place') { drawPlacing(aiBoard, placingIdx, placingH, 'P2 Fleet'); return; }
+    // advance review timer
+    if (mode === 'review' && reviewFn) {
+      if (performance.now() - reviewTimer >= REVIEW_MS) { reviewFn(); return; }
+    }
 
-    const {gs,gx1,gx2,gy}=gridLayout();
-    const p1label=twoPlayer?'P1 Fleet':'Your Fleet';
-    const p2label=twoPlayer?'P2 Fleet':'AI Fleet';
-    const revealAI=gameState==='over'||twoPlayer;
+    // overlay (handoff blank screen)
+    if (mode === 'overlay') {
+      ctx.fillStyle = isDark ? '#0a0a09' : '#f5f1e8';
+      ctx.fillRect(0, 0, W, H);
+      ctx.fillStyle = isDark ? 'rgba(255,255,255,0.88)' : '#18100a';
+      ctx.font = `bold ${Math.min(26, W*0.056)}px 'IBM Plex Mono', monospace`;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(overlayTitle, W/2, H/2 - 28);
+      ctx.fillStyle = isDark ? 'rgba(255,255,255,0.38)' : 'rgba(0,0,0,0.42)';
+      ctx.font = `12px 'IBM Plex Mono', monospace`;
+      ctx.fillText(overlaySub, W/2, H/2 + 8);
+      ctx.fillStyle = isDark ? 'rgba(255,255,255,0.18)' : 'rgba(0,0,0,0.2)';
+      ctx.font = `10px 'IBM Plex Mono', monospace`;
+      ctx.fillText('tap anywhere to begin', W/2, H/2 + 44);
+      return;
+    }
 
-    drawGrid(gx1,gy,gs,playerBoard,aiShots,true,p1label,phase==='ai'||gameState==='over',playerShipCells);
-    drawGrid(gx2,gy,gs,aiBoard,playerShots,revealAI,p2label,phase==='player'&&gameState==='playing',aiShipCells);
+    ctx.fillStyle = isDark ? '#0a0a09' : '#f5f1e8';
+    ctx.fillRect(0, 0, W, H);
 
-    // hover on AI grid during player turn
-    if (hoverCell&&phase==='player'&&gameState==='playing') {
-      const [hr,hc]=hoverCell;
-      if (!playerShots[hr][hc]) {
-        ctx.fillStyle=paper?'rgba(0,0,0,0.15)':'rgba(255,255,255,0.12)';
-        ctx.fillRect(gx2+hc*gs, gy+hr*gs, gs, gs);
+    const isDual = phase === 'fire1' || phase === 'fire2' || phase === 'win';
+    const { cs, startX, startY, gap } = layout(isDual);
+    const inReview = mode === 'review';
+
+    // ── placing phase ──
+    if (phase === 'place1' || phase === 'place2') {
+      const pIdx = phase === 'place1' ? 0 : 1;
+      const board = boards[pIdx];
+      const gx = startX, gy = startY;
+
+      ctx.fillStyle = isDark ? 'rgba(255,255,255,0.52)' : 'rgba(0,0,0,0.48)';
+      ctx.font = `bold 12px 'IBM Plex Mono', monospace`;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(`Player ${pIdx+1}  —  Place Your Fleet`, W/2, 20);
+
+      drawGrid(gx, gy, cs, board, true);
+      if (!inReview) drawPlaceHover(gx, gy, cs, board);
+      drawShipList(gx + GRID*cs + 14, gy + 8, board, inReview ? undefined : currentShipIdx);
+
+      if (inReview) {
+        const pct = Math.max(0, 1 - (performance.now() - reviewTimer) / REVIEW_MS);
+        drawReviewBar(pct);
+      } else {
+        const ship = board.ships[currentShipIdx];
+        ctx.font = `10px 'IBM Plex Mono', monospace`;
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        if (ship) {
+          ctx.fillStyle = isDark ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.3)';
+          ctx.fillText(`Placing: ${ship.name} (${ship.size})  ·  [R] rotate`, W/2, gy + GRID*cs + 16);
+        } else {
+          ctx.fillStyle = isDark ? '#a8e6a0' : '#226622';
+          ctx.fillText('Fleet placed — click anywhere to continue', W/2, gy + GRID*cs + 16);
+        }
       }
-    }
 
-    // HUD
-    ctx.fillStyle=paper?'rgba(0,0,0,0.45)':'rgba(255,255,255,0.45)';
-    ctx.font=`300 9px 'IBM Plex Mono',monospace`; ctx.textAlign='left'; ctx.textBaseline='top';
-    const p1w=scores.p1,p2w=scores.p2;
-    ctx.fillText(`${twoPlayer?'P1':'You'} ${p1w} – ${p2w} ${twoPlayer?'P2':'AI'}`, 8, 6);
+    // ── firing phase ──
+    } else if (phase === 'fire1' || phase === 'fire2') {
+      const aIdx = phase === 'fire1' ? 0 : 1;
+      const dIdx = 1 - aIdx;
+      const gx1 = startX, gx2 = startX + cs*GRID + gap, gy1 = startY;
 
-    // turn / phase label
-    ctx.textAlign='center'; ctx.textBaseline='top';
-    if (gameState==='playing') {
-      if (phase==='player') ctx.fillText(twoPlayer?'P1: click AI fleet to fire':'Click AI fleet to fire', W/2, 6);
-      else ctx.fillText(twoPlayer?'P2: click your fleet to fire':'AI is firing…', W/2, 6);
-    }
+      ctx.font = `bold 11px 'IBM Plex Mono', monospace`;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillStyle = isDark ? 'rgba(255,255,255,0.38)' : 'rgba(0,0,0,0.36)';
+      ctx.fillText(`Player ${aIdx+1}'s turn  —  fire!`, W/2, 20);
+      ctx.font = `bold 10px 'IBM Plex Mono', monospace`;
+      ctx.fillStyle = isDark ? 'rgba(255,255,255,0.32)' : 'rgba(0,0,0,0.3)';
+      ctx.fillText('Your fleet', gx1 + (cs*GRID)/2, gy1 - cs*0.7);
+      ctx.fillText('Enemy waters', gx2 + (cs*GRID)/2, gy1 - cs*0.7);
 
-    // end overlay
-    if (gameState==='over') {
-      ctx.fillStyle='rgba(0,0,0,0.55)'; ctx.fillRect(0,0,W,H);
-      ctx.textAlign='center'; ctx.textBaseline='middle';
-      ctx.fillStyle='#fff'; ctx.font=`400 18px 'IBM Plex Mono',monospace`;
-      const winMsg = twoPlayer ? (winner===1?'Player 1 wins!':'Player 2 wins!') : (winner===1?'You win!':'AI wins!');
-      ctx.fillText(winMsg, W/2, H/2-14);
-      ctx.fillStyle='rgba(255,255,255,0.5)'; ctx.font=`300 10px 'IBM Plex Mono',monospace`;
-      ctx.fillText('press R or click to retry', W/2, H/2+10);
+      drawGrid(gx1, gy1, cs, boards[aIdx], true);
+      drawGrid(gx2, gy1, cs, boards[dIdx], false);
+
+      if (inReview) {
+        const pct = Math.max(0, 1 - (performance.now() - reviewTimer) / REVIEW_MS);
+        drawReviewBar(pct);
+      } else {
+        ctx.fillStyle = isDark ? 'rgba(255,255,255,0.28)' : 'rgba(0,0,0,0.28)';
+        ctx.font = `10px 'IBM Plex Mono', monospace`;
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText('click enemy grid to fire', W/2, gy1 + GRID*cs + 16);
+      }
+
+    // ── win ──
+    } else if (phase === 'win') {
+      const gx1 = startX, gx2 = startX + cs*GRID + gap;
+      drawGrid(gx1, startY, cs, boards[0], true);
+      drawGrid(gx2, startY, cs, boards[1], true);
+      ctx.fillStyle = isDark ? '#a8e6a0' : '#226622';
+      ctx.font = `bold 16px 'IBM Plex Mono', monospace`;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(`Player ${winner+1} wins!`, W/2, 22);
+      ctx.fillStyle = isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.2)';
+      ctx.font = `10px 'IBM Plex Mono', monospace`;
+      ctx.fillText('click anywhere to play again', W/2, startY + GRID*cs + 16);
     }
-    ctx.textAlign='left'; ctx.textBaseline='top';
   }
 
-  c.addEventListener('mousemove', e => {
-    const rect=c.getBoundingClientRect();
-    const mx=(e.clientX-rect.left)*(W/rect.width), my=(e.clientY-rect.top)*(H/rect.height);
-    const {gs,gx1,gx2,gy}=gridLayout();
-    // which grid?
-    let gx = (gameState==='placing'||gameState==='p2place') ? gx1 : (phase==='player'?gx2:gx1);
-    const r=Math.floor((my-gy)/gs), c2=Math.floor((mx-gx)/gs);
-    hoverCell=(r>=0&&r<N&&c2>=0&&c2<N)?[r,c2]:null;
-  });
-
-  c.addEventListener('keydown', e => {
-    if (e.key==='r'||e.key==='R') { placingH=!placingH; }
-  });
+  // ── input ──
+  function getXY(e) {
+    const rect = c.getBoundingClientRect();
+    const t = e.touches ? e.touches[0] : e;
+    return [(t.clientX - rect.left)*(W/rect.width), (t.clientY - rect.top)*(H/rect.height)];
+  }
 
   c.addEventListener('click', e => {
-    const rect=c.getBoundingClientRect();
-    const mx=(e.clientX-rect.left)*(W/rect.width), my=(e.clientY-rect.top)*(H/rect.height);
-    const {gs,gx1,gx2,gy}=gridLayout();
+    // Overlay → start the next player's turn
+    if (mode === 'overlay') { dismissOverlay(); return; }
 
-    if (gameState==='over') { initGame(); return; }
+    // Review → skip wait, jump straight to overlay
+    if (mode === 'review') { skipReview(); return; }
 
-    if (gameState==='placing') {
-      // placing on player board (gx1)
-      const r=Math.floor((my-gy)/gs), c2=Math.floor((mx-gx1)/gs);
-      if (r<0||r>=N||c2<0||c2>=N) return;
-      if (placingIdx>=SHIPS.length) return;
-      const size=SHIPS[placingIdx].size;
-      if (!canPlace(playerBoard,r,c2,size,placingH)) return;
-      const cells=doPlace(playerBoard,r,c2,size,placingH);
-      playerShipCells.push(cells);
-      placingIdx++;
-      if (placingIdx>=SHIPS.length) {
-        gameState='playing'; phase='player'; placingIdx=0;
+    // Normal play
+    const [mx, my] = getXY(e);
+    const isDual = phase === 'fire1' || phase === 'fire2';
+    const { cs, startX, startY, gap } = layout(isDual);
+
+    if (phase === 'place1' || phase === 'place2') {
+      const pIdx = phase === 'place1' ? 0 : 1;
+      const board = boards[pIdx];
+      const ship  = board.ships[currentShipIdx];
+
+      if (!ship) {
+        // All placed — start 3-s review, then hand off
+        if (pIdx === 0) {
+          beginReview(
+            'Player 2 — Placing',
+            'Pass to Player 2 to place their fleet',
+            () => { currentShipIdx = 0; placing.horiz = true; hovR = -1; hovC = -1; phase = 'place2'; }
+          );
+        } else {
+          beginReview(
+            'Player 1 — Guessing',
+            'Pass to Player 1 to begin the battle',
+            () => { phase = 'fire1'; }
+          );
+        }
+        return;
       }
-      return;
-    }
 
-    if (gameState==='p2place') {
-      // twoPlayer: P2 places on aiBoard (gx1 in placing mode)
-      const r=Math.floor((my-gy)/gs), c2=Math.floor((mx-gx1)/gs);
-      if (r<0||r>=N||c2<0||c2>=N) return;
-      if (placingIdx>=SHIPS.length) return;
-      const size=SHIPS[placingIdx].size;
-      if (!canPlace(aiBoard,r,c2,size,placingH)) return;
-      const cells2=doPlace(aiBoard,r,c2,size,placingH);
-      aiShipCells.push(cells2);
-      placingIdx++;
-      if (placingIdx>=SHIPS.length) {
-        // now P1 places
-        gameState='placing'; placingIdx=0; placingH=true;
+      // Place a ship
+      const [r, cc] = gridCoords(mx, my, startX, startY, cs);
+      if (r < 0 || r >= GRID || cc < 0 || cc >= GRID) return;
+      if (canPlace(board, r, cc, ship.size, placing.horiz)) {
+        doPlace(board, r, cc, ship.size, placing.horiz, ship.id);
+        currentShipIdx++;
       }
-      return;
-    }
 
-    if (gameState==='playing') {
-      if (phase==='player') {
-        // click on AI grid (gx2)
-        const r=Math.floor((my-gy)/gs), c2=Math.floor((mx-gx2)/gs);
-        if (r<0||r>=N||c2<0||c2>=N) return;
-        if (playerShots[r][c2]) return;
-        playerShots[r][c2]=1;
-        if (allSunk(aiBoard, playerShots)) { winner=1; gameState='over'; scores.p1++; return; }
-        if (twoPlayer) { phase='ai'; }
-        else { phase='ai'; setTimeout(aiShoot, 600); }
-      } else if (phase==='ai' && twoPlayer) {
-        // P2 clicks on player grid (gx1)
-        const r=Math.floor((my-gy)/gs), c2=Math.floor((mx-gx1)/gs);
-        if (r<0||r>=N||c2<0||c2>=N) return;
-        if (aiShots[r][c2]) return;
-        aiShots[r][c2]=1;
-        if (allSunk(playerBoard, aiShots)) { winner=2; gameState='over'; scores.p2++; return; }
-        phase='player';
-      }
+    } else if (phase === 'fire1' || phase === 'fire2') {
+      const aIdx = phase === 'fire1' ? 0 : 1;
+      const dIdx = 1 - aIdx;
+      const dBoard = boards[dIdx];
+      const gx2 = startX + cs*GRID + gap;
+      const [r, cc] = gridCoords(mx, my, gx2, startY, cs);
+      if (r < 0 || r >= GRID || cc < 0 || cc >= GRID) return;
+      if (dBoard.shots[r][cc] !== '') return;
+
+      const hit = dBoard.grid[r][cc] !== 0;
+      dBoard.shots[r][cc] = hit ? 'hit' : 'miss';
+      if (hit) checkSunk(dBoard, dBoard.grid[r][cc]);
+
+      if (allSunk(dBoard)) { winner = aIdx; phase = 'win'; return; }
+
+      const next = 1 - aIdx;
+      beginReview(
+        `Player ${next+1} — Guessing`,
+        `Pass to Player ${next+1}`,
+        () => { phase = next === 0 ? 'fire1' : 'fire2'; }
+      );
+
+    } else if (phase === 'win') {
+      init();
+      overlayTitle = 'Player 1 — Placing';
+      overlaySub   = 'Place your fleet, then pass to Player 2';
+      overlayFn    = () => { phase = 'place1'; };
+      // mode is already 'overlay' from init()
     }
   });
 
-  const onKeyBS=e=>{
-    if((e.key==='r'||e.key==='R')&&gameState==='over'){initGame();return;}
-    if(e.key==='r'||e.key==='R') placingH=!placingH;
-    if(e.key===' '&&gameState==='over'){initGame();e.preventDefault();}
-  };
-  document.addEventListener('keydown',onKeyBS);
+  c.addEventListener('mousemove', e => {
+    if (mode !== 'play') return;
+    const [mx, my] = getXY(e);
+    const { cs, startX, startY } = layout(false);
+    if (phase === 'place1' || phase === 'place2')
+      [hovR, hovC] = gridCoords(mx, my, startX, startY, cs);
+  });
 
-  const diffBtn=mkBtn(DIFF_NAMES[difficulty],ctrl);
-  diffBtn.addEventListener('click',()=>{ difficulty=(difficulty+1)%3; diffBtn.textContent=DIFF_NAMES[difficulty]; scores={p1:0,p2:0}; initGame(); });
-  mkBtn('New Game',ctrl).addEventListener('click',()=>{ initGame(); });
-  mkInfo(ctrl).textContent='R = rotate';
+  c.addEventListener('mouseleave', () => { hovR = -1; hovC = -1; });
+
+  function onKey(e) {
+    if ((e.key === 'r' || e.key === 'R') && mode === 'play') placing.horiz = !placing.horiz;
+  }
+  window.addEventListener('keydown', onKey);
+
+  // ── ctrl buttons (no Next button) ──
+  const rotBtn = mkBtn('Rotate [R]', ctrl);
+  rotBtn.addEventListener('click', () => {
+    if (mode === 'play') placing.horiz = !placing.horiz;
+  });
+
+  const rndBtn = mkBtn('Random', ctrl);
+  rndBtn.addEventListener('click', () => {
+    if (mode !== 'play') return;
+    if (phase === 'place1' || phase === 'place2') {
+      const pIdx = phase === 'place1' ? 0 : 1;
+      boards[pIdx] = makeBoard();
+      randomPlace(boards[pIdx]);
+      currentShipIdx = SHIPS_DEF.length;
+    }
+  });
+
+  const newBtn = mkBtn('New Game', ctrl);
+  newBtn.addEventListener('click', () => {
+    init();
+    overlayTitle = 'Player 1 — Placing';
+    overlaySub   = 'Place your fleet, then pass to Player 2';
+    overlayFn    = () => { phase = 'place1'; };
+  });
+
+  // ── boot ──
+  init();
+  overlayTitle = 'Player 1 — Placing';
+  overlaySub   = 'Place your fleet, then pass to Player 2';
+  overlayFn    = () => { phase = 'place1'; };
 
   requestAnimationFrame(draw);
-  return ()=>{ cancelAnimationFrame(raf); ro.disconnect(); document.removeEventListener('keydown',onKeyBS); };
+
+  return () => {
+    cancelAnimationFrame(raf);
+    ro.disconnect();
+    window.removeEventListener('keydown', onKey);
+  };
 }
 
 // ── final init ────────────────────────────────────────────────────────────────
