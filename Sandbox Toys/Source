@@ -472,6 +472,8 @@ const TOYS = [
   {name:'Lights Out',           init:initLightsOut,      game:true},
   {name:'Poker',                init:initPoker,          game:true},
   {name:'Typing Speed',         init:initTypingSpeed,    game:true},
+  {name:'Plinko',               init:initPlinko,         game:true},
+  {name:'Roulette',             init:initRoulette,       game:true},
 ];
 const LIST  = document.getElementById('__SB_LIST__');
 const items = [];
@@ -14169,6 +14171,372 @@ function initTypingSpeed(body,ctrl){
   return()=>{ cancelAnimationFrame(raf); ro.disconnect(); document.removeEventListener('keydown',onKey); };
 }
 
+
+
+// ════════════════════════════════════════════════════════════════════════════
+// TOY — PLINKO
+// ════════════════════════════════════════════════════════════════════════════
+function initPlinko(body,ctrl){
+  const c=document.createElement('canvas');
+  c.style.cssText='position:absolute;inset:0;display:block;';
+  body.appendChild(c);
+  const ctx=c.getContext('2d');
+  let raf;
+
+  const ROWS=8, BALL_R=6, PEG_R=4, GRAVITY=0.25, BOUNCE=0.45, FRICTION=0.995;
+  const SLOTS=ROWS+1;
+  const MULTIPLIERS=[10,3,1,0.5,0,0.5,1,3,10];
+
+  let balls=[], score=1000;
+
+  function getPegs(W,H){
+    const pegs=[];
+    const padX=W*0.1, padY=H*0.08;
+    const usableW=W-padX*2, usableH=H*0.74;
+    const colSpacing=usableW/ROWS;
+    const rowSpacing=usableH/ROWS;
+    for(let row=0;row<ROWS;row++){
+      const cols=row+2;
+      for(let col=0;col<cols;col++){
+        const x=W/2-(cols-1)/2*colSpacing+col*colSpacing;
+        const y=padY+row*rowSpacing;
+        pegs.push({x,y});
+      }
+    }
+    return pegs;
+  }
+
+  function getSlots(W,H){
+    const slots=[];
+    const padX=W*0.1, usableW=W-padX*2, slotW=usableW/SLOTS;
+    const y=H*0.86;
+    for(let i=0;i<SLOTS;i++) slots.push({x:padX+i*slotW+slotW/2,y,w:slotW});
+    return slots;
+  }
+
+  function draw(){
+    raf=requestAnimationFrame(draw);
+    const W=body.offsetWidth, H=body.offsetHeight;
+    if(W<1||H<1) return;
+    c.width=W; c.height=H;
+    const paper=isPaper();
+    ctx.fillStyle=paper?'#e8e0d0':'#0d1117'; ctx.fillRect(0,0,W,H);
+
+    const pegs=getPegs(W,H);
+    const slots=getSlots(W,H);
+    const floorY=H*0.86;
+    const padX=W*0.1, slotW=(W-padX*2)/SLOTS;
+
+    // physics
+    for(const b of balls){
+      if(b.settled) continue;
+      b.trail.push({x:b.x,y:b.y});
+      if(b.trail.length>14) b.trail.shift();
+      b.vy+=GRAVITY; b.vx*=FRICTION; b.vy*=FRICTION;
+      b.x+=b.vx; b.y+=b.vy;
+      for(const p of pegs){
+        const dx=b.x-p.x, dy=b.y-p.y, dist=Math.hypot(dx,dy), minD=BALL_R+PEG_R;
+        if(dist<minD&&dist>0){
+          const nx=dx/dist, ny=dy/dist;
+          b.x=p.x+nx*minD; b.y=p.y+ny*minD;
+          const dot=b.vx*nx+b.vy*ny;
+          b.vx=(b.vx-2*dot*nx)*BOUNCE+(Math.random()-0.5)*1.2;
+          b.vy=Math.abs((b.vy-2*dot*ny)*BOUNCE)+0.5;
+        }
+      }
+      if(b.x<padX+BALL_R){b.x=padX+BALL_R;b.vx=Math.abs(b.vx)*BOUNCE;}
+      if(b.x>W-padX-BALL_R){b.x=W-padX-BALL_R;b.vx=-Math.abs(b.vx)*BOUNCE;}
+      if(b.y>=floorY-BALL_R){
+        b.y=floorY-BALL_R; b.vy=0; b.vx=0; b.settled=true;
+        let best=0,bestD=Infinity;
+        slots.forEach((s,i)=>{const d=Math.abs(b.x-s.x);if(d<bestD){bestD=d;best=i;}});
+        b.slot=best;
+        const mult=MULTIPLIERS[best];
+        score+=Math.round(100*mult);
+        b.mult=mult;
+      }
+    }
+
+    // slot buckets
+    for(let i=0;i<=SLOTS;i++){
+      ctx.strokeStyle=paper?'rgba(0,0,0,0.15)':'rgba(255,255,255,0.1)';
+      ctx.lineWidth=1;
+      ctx.beginPath(); ctx.moveTo(padX+i*slotW,floorY); ctx.lineTo(padX+i*slotW,H); ctx.stroke();
+    }
+    slots.forEach((s,i)=>{
+      const mult=MULTIPLIERS[i];
+      const hot=mult>=3;
+      ctx.fillStyle=hot?(paper?'#aa2200':'#cc3300'):(mult>=1?(paper?'#554400':'#443300'):(paper?'#333':'#1a1a1a'));
+      ctx.fillRect(padX+i*slotW+1,floorY,slotW-1,H-floorY);
+      ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillStyle=hot?'#fff':(paper?'#bbb':'#888');
+      ctx.font=`700 ${Math.max(7,slotW*0.3|0)}px 'IBM Plex Mono',monospace`;
+      ctx.fillText(mult+'×',s.x,(floorY+H)/2);
+    });
+
+    // pegs
+    for(const p of pegs){
+      ctx.fillStyle=paper?'rgba(0,0,0,0.45)':'rgba(255,255,255,0.55)';
+      ctx.beginPath(); ctx.arc(p.x,p.y,PEG_R,0,Math.PI*2); ctx.fill();
+    }
+
+    // balls + trails
+    for(const b of balls){
+      for(let i=0;i<b.trail.length;i++){
+        ctx.fillStyle=paper?`rgba(0,80,200,${(i/b.trail.length)*0.25})`:`rgba(60,160,255,${(i/b.trail.length)*0.25})`;
+        ctx.beginPath(); ctx.arc(b.trail[i].x,b.trail[i].y,BALL_R*(i/b.trail.length)*0.8,0,Math.PI*2); ctx.fill();
+      }
+      ctx.fillStyle=b.settled?(paper?'#999':'#555'):(paper?'#1144cc':'#3388ff');
+      ctx.beginPath(); ctx.arc(b.x,b.y,BALL_R,0,Math.PI*2); ctx.fill();
+      ctx.strokeStyle='rgba(255,255,255,0.25)'; ctx.lineWidth=1; ctx.stroke();
+      if(b.settled&&b.mult!==undefined){
+        ctx.textAlign='center'; ctx.textBaseline='middle';
+        ctx.fillStyle=b.mult>=3?'#ffcc00':(paper?'rgba(0,0,0,0.4)':'rgba(255,255,255,0.4)');
+        ctx.font=`700 ${Math.max(6,BALL_R*1.1|0)}px 'IBM Plex Mono',monospace`;
+        ctx.fillText(b.mult+'×',b.x,b.y-BALL_R-4);
+      }
+    }
+
+    // drop zone hint
+    ctx.strokeStyle=paper?'rgba(0,0,0,0.1)':'rgba(255,255,255,0.08)';
+    ctx.setLineDash([4,4]); ctx.lineWidth=1;
+    ctx.beginPath(); ctx.moveTo(padX,0); ctx.lineTo(padX,floorY);
+    ctx.moveTo(W-padX,0); ctx.lineTo(W-padX,floorY); ctx.stroke();
+    ctx.setLineDash([]);
+
+    // HUD
+    ctx.textAlign='left'; ctx.textBaseline='top';
+    ctx.fillStyle=paper?'rgba(0,0,0,0.4)':'rgba(255,255,255,0.35)';
+    ctx.font=`300 9px 'IBM Plex Mono',monospace`;
+    ctx.fillText(`score: ${score}  |  click to drop`,6,4);
+    ctx.textAlign='left';
+  }
+
+  c.addEventListener('click',e=>{
+    const W=c.width, H=c.height;
+    const rect=c.getBoundingClientRect();
+    const mx=(e.clientX-rect.left)*(W/rect.width);
+    balls.push({x:Math.max(W*0.1+BALL_R,Math.min(W*0.9-BALL_R,mx)),y:16,vx:(Math.random()-0.5)*1.5,vy:0,settled:false,slot:-1,trail:[],mult:undefined});
+    if(balls.length>40) balls=balls.filter(b=>!b.settled).concat(balls.filter(b=>b.settled).slice(-12));
+  });
+
+  mkBtn('Drop',ctrl).addEventListener('click',()=>{
+    const W=c.width;
+    balls.push({x:W/2+(Math.random()-0.5)*W*0.1,y:16,vx:(Math.random()-0.5)*1.5,vy:0,settled:false,slot:-1,trail:[],mult:undefined});
+    if(balls.length>40) balls=balls.filter(b=>!b.settled).concat(balls.filter(b=>b.settled).slice(-12));
+  });
+  mkBtn('Clear',ctrl).addEventListener('click',()=>{balls=[];score=1000;});
+  mkInfo(ctrl).textContent='click anywhere to drop · aim for 10×';
+
+  requestAnimationFrame(draw);
+  return()=>cancelAnimationFrame(raf);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// TOY — ROULETTE
+// ════════════════════════════════════════════════════════════════════════════
+function initRoulette(body,ctrl){
+  const c=document.createElement('canvas');
+  c.style.cssText='position:absolute;inset:0;display:block;';
+  body.appendChild(c);
+  const ctx=c.getContext('2d');
+  let raf;
+
+  const NUMS=[0,32,15,19,4,21,2,25,17,34,6,27,13,36,11,30,8,23,10,5,24,16,33,1,20,14,31,9,22,18,29,7,28,12,35,3,26];
+  const N=NUMS.length;
+  const RED=new Set([1,3,5,7,9,12,14,16,18,19,21,23,25,27,30,32,34,36]);
+  function numCol(n){return n===0?'#118833':RED.has(n)?'#bb2200':'#111111';}
+
+  let spinning=false, wheelAngle=0, wheelOmega=0;
+  let ballAngle=0, ballOmega=0, ballDist=1;
+  let result=null, resultAlpha=0, lastWin=null;
+  let chips=1000, bet=50, betType='red';
+
+  const BET_TYPES=['red','black','even','odd','1-18','19-36'];
+  const BET_PAYS=[2,2,2,2,2,2]; // all pay 1:1 (evens)
+  const infoEl=mkInfo(ctrl);
+  function updateInfo(){ infoEl.textContent=`chips: ${chips}  bet: ${bet}`; }
+
+  function spin(){
+    if(spinning) return;
+    if(chips<=0){chips=1000;updateInfo();return;}
+    spinning=true; result=null; resultAlpha=0; lastWin=null;
+    wheelOmega=-(9+Math.random()*5);
+    ballAngle=wheelAngle+Math.PI*(1+Math.random());
+    ballOmega=12+Math.random()*6;
+    ballDist=0.88;
+  }
+
+  function draw(){
+    raf=requestAnimationFrame(draw);
+    const W=body.offsetWidth, H=body.offsetHeight;
+    if(W<1||H<1) return;
+    c.width=W; c.height=H;
+    const paper=isPaper();
+    ctx.fillStyle=paper?'#e8e0d0':'#0d1117'; ctx.fillRect(0,0,W,H);
+
+    // Layout
+    const tableW=Math.min(W*0.44,200);
+    const wheelD=Math.min(H-64, W-tableW-24);
+    const R=wheelD/2-6;
+    const cx=tableW+12+wheelD/2, cy=H/2;
+
+    // update physics
+    if(spinning){
+      wheelAngle+=wheelOmega*0.016;
+      wheelOmega*=0.989;
+      ballAngle+=ballOmega*0.016;
+      ballOmega*=0.992;
+      const speed=Math.abs(ballOmega);
+      ballDist=speed>2?0.88-0.33*(1-(speed-2)/Math.max(1,Math.abs(wheelOmega)+speed-2)):0.62;
+      if(Math.abs(wheelOmega)<0.018){
+        spinning=false;
+        const norm=((-wheelAngle%(Math.PI*2))+Math.PI*2)%(Math.PI*2);
+        const slotI=Math.round(norm/(Math.PI*2)*N)%N;
+        result=NUMS[slotI];
+        resultAlpha=1;
+        // resolve
+        let win=false;
+        if(betType==='red'&&RED.has(result)) win=true;
+        else if(betType==='black'&&result!==0&&!RED.has(result)) win=true;
+        else if(betType==='even'&&result!==0&&result%2===0) win=true;
+        else if(betType==='odd'&&result%2===1) win=true;
+        else if(betType==='1-18'&&result>=1&&result<=18) win=true;
+        else if(betType==='19-36'&&result>=19&&result<=36) win=true;
+        if(win){chips+=bet;lastWin=true;}else{chips-=bet;lastWin=false;}
+        chips=Math.max(0,chips);
+        if(bet>chips) bet=Math.max(10,Math.min(chips,10));
+        updateInfo();
+      }
+    }
+    if(resultAlpha>0&&!spinning) resultAlpha=Math.max(0,resultAlpha-0.008);
+
+    // ── Wheel ──
+    ctx.save(); ctx.translate(cx,cy);
+    // wood rim
+    ctx.beginPath(); ctx.arc(0,0,R+8,0,Math.PI*2);
+    ctx.fillStyle=paper?'#7a5010':'#4a2800'; ctx.fill();
+    // segments
+    const sa=Math.PI*2/N;
+    for(let i=0;i<N;i++){
+      const a1=wheelAngle+i*sa-sa/2, a2=a1+sa;
+      ctx.beginPath(); ctx.moveTo(0,0); ctx.arc(0,0,R,a1,a2); ctx.closePath();
+      ctx.fillStyle=numCol(NUMS[i]); ctx.fill();
+      ctx.strokeStyle='rgba(255,255,255,0.18)'; ctx.lineWidth=0.6; ctx.stroke();
+      // number
+      ctx.save();
+      ctx.rotate(wheelAngle+i*sa);
+      ctx.translate(R*0.70,0); ctx.rotate(Math.PI/2);
+      const fs=Math.max(6,R*0.10|0);
+      ctx.font=`700 ${fs}px 'IBM Plex Mono',monospace`;
+      ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillStyle='#fff';
+      ctx.fillText(NUMS[i],0,0);
+      ctx.restore();
+    }
+    // inner ring
+    ctx.beginPath(); ctx.arc(0,0,R*0.18,0,Math.PI*2);
+    ctx.fillStyle=paper?'#7a5010':'#4a2800'; ctx.fill();
+    ctx.strokeStyle='rgba(255,255,255,0.2)'; ctx.lineWidth=2; ctx.stroke();
+    // ball
+    const bx=Math.cos(ballAngle)*R*ballDist, by=Math.sin(ballAngle)*R*ballDist;
+    ctx.beginPath(); ctx.arc(bx,by,5,0,Math.PI*2);
+    const bg=ctx.createRadialGradient(bx-1,by-1,0,bx,by,5);
+    bg.addColorStop(0,'#fff'); bg.addColorStop(1,'#bbb');
+    ctx.fillStyle=bg; ctx.fill();
+    ctx.strokeStyle='rgba(0,0,0,0.4)'; ctx.lineWidth=1; ctx.stroke();
+    ctx.restore();
+
+    // pointer
+    ctx.fillStyle=paper?'#cc2200':'#ff3311';
+    ctx.beginPath(); ctx.moveTo(cx,cy-R+2); ctx.lineTo(cx-7,cy-R-14); ctx.lineTo(cx+7,cy-R-14); ctx.closePath(); ctx.fill();
+
+    // result overlay on wheel
+    if(result!==null&&resultAlpha>0){
+      ctx.save(); ctx.globalAlpha=resultAlpha;
+      ctx.textAlign='center'; ctx.textBaseline='middle';
+      const fs=Math.max(18,R*0.28|0);
+      ctx.font=`900 ${fs}px 'IBM Plex Mono',monospace`;
+      const rc=numCol(result);
+      ctx.fillStyle=rc==='#118833'?'#44ee88':(rc==='#bb2200'?'#ff6644':'#ffffff');
+      ctx.fillText(result,cx,cy);
+      ctx.restore();
+    }
+
+    // ── Betting table (left side) ──
+    const rows=3, cols2=2;
+    const bw2=Math.floor((tableW-8)/cols2)-2;
+    const bh2=Math.min(46,Math.floor((H-80)/rows)-4);
+    const startY=(H-(rows*(bh2+4)))/2;
+
+    BET_TYPES.forEach((bt,i)=>{
+      const col=i%cols2, row=Math.floor(i/cols2);
+      const bx2=4+col*(bw2+4), by2=startY+row*(bh2+4);
+      const isSel=betType===bt;
+      let bg2='';
+      if(isSel) bg2=paper?'#ffe84d':'#ffe030';
+      else if(bt==='red') bg2=paper?'#aa2200':'#881800';
+      else if(bt==='black') bg2=paper?'#333':'#1a1a1a';
+      else bg2=paper?'#667788':'#334455';
+      ctx.fillStyle=bg2;
+      ctx.beginPath(); ctx.roundRect(bx2,by2,bw2,bh2,4); ctx.fill();
+      if(isSel){ctx.strokeStyle='#cc9900';ctx.lineWidth=2;ctx.beginPath();ctx.roundRect(bx2,by2,bw2,bh2,4);ctx.stroke();}
+      ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillStyle=isSel?'#222':'#eee';
+      const fs2=Math.max(7,bh2*0.26|0);
+      ctx.font=`700 ${fs2}px 'IBM Plex Mono',monospace`;
+      const labels=['Red','Black','Even','Odd','Low','High'];
+      const sub=['','','','','1-18','19-36'];
+      ctx.fillText(labels[i],bx2+bw2/2,by2+bh2/2-(sub[i]?fs2*0.5:0));
+      if(sub[i]){
+        ctx.font=`300 ${Math.max(6,fs2*0.75|0)}px 'IBM Plex Mono',monospace`;
+        ctx.fillStyle=isSel?'#444':'rgba(255,255,255,0.6)';
+        ctx.fillText(sub[i],bx2+bw2/2,by2+bh2/2+fs2*0.65);
+      }
+    });
+
+    // last win/loss display
+    if(lastWin!==null){
+      ctx.textAlign='center'; ctx.textBaseline='top';
+      ctx.fillStyle=lastWin?(paper?'#226622':'#44dd66'):(paper?'#882222':'#dd4444');
+      ctx.font=`700 10px 'IBM Plex Mono',monospace`;
+      ctx.fillText(lastWin?`+${bet}`:`-${bet}`, tableW/2, startY-20);
+    }
+
+    // HUD
+    ctx.textAlign='left'; ctx.textBaseline='top';
+    ctx.fillStyle=paper?'rgba(0,0,0,0.35)':'rgba(255,255,255,0.35)';
+    ctx.font=`300 9px 'IBM Plex Mono',monospace`;
+    ctx.fillText(`chips: ${chips}  bet: ${bet}`,6,4);
+    ctx.textAlign='left';
+  }
+
+  c.addEventListener('click',e=>{
+    if(spinning) return;
+    const W=c.width, H=c.height;
+    const tableW=Math.min(W*0.44,200);
+    const rect=c.getBoundingClientRect();
+    const mx=(e.clientX-rect.left)*(W/rect.width);
+    const my=(e.clientY-rect.top)*(H/rect.height);
+    if(mx>tableW) return; // clicked wheel side — ignore
+    const bw2=Math.floor((tableW-8)/2)-2;
+    const bh2=Math.min(46,Math.floor((H-80)/3)-4);
+    const startY=(H-(3*(bh2+4)))/2;
+    BET_TYPES.forEach((bt,i)=>{
+      const col=i%2, row=Math.floor(i/2);
+      const bx=4+col*(bw2+4), by=startY+row*(bh2+4);
+      if(mx>=bx&&mx<=bx+bw2&&my>=by&&my<=by+bh2){ betType=bt; updateInfo(); }
+    });
+  });
+
+  mkBtn('Spin',ctrl).addEventListener('click',()=>spin());
+  mkBtn('+10',ctrl).addEventListener('click',()=>{bet=Math.min(chips,bet+10);updateInfo();});
+  mkBtn('-10',ctrl).addEventListener('click',()=>{bet=Math.max(10,bet-10);updateInfo();});
+  updateInfo();
+
+  requestAnimationFrame(draw);
+  return()=>cancelAnimationFrame(raf);
+}
 
 // ── final init ────────────────────────────────────────────────────────────────
 applyTheme();
