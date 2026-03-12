@@ -476,7 +476,7 @@ const TOYS = [
   {name:'Roulette',             init:initRoulette,       game:true},
   {name:'Battleships',          init:initBattleships,    game:true},
   {name:'Reversi',              init:initReversi,        game:true},
-  {name:'Unblock Car',          init:initUnblockCar,     game:true},
+  {name:'Gravity Flip',         init:initGravityFlip,    game:true},
 ];
 const LIST  = document.getElementById('__SB_LIST__');
 const items = [];
@@ -15515,410 +15515,377 @@ function initReversi(body, ctrl) {
 }
 
 
+
 // ════════════════════════════════════════════════════════════════════════════
-// TOY — UNBLOCK CAR  (Rush Hour clone, 10 levels, all BFS-verified solvable)
+// TOY — GRAVITY FLIP  (VVVVVV-style platformer)
 // ════════════════════════════════════════════════════════════════════════════
-function initUnblockCar(body, ctrl) {
+function initGravityFlip(body, ctrl) {
   const {c, ctx, ro} = mkCanvas(body);
-  let W = c.width, H = c.height, raf;
+  let W, H, raf;
+  const paper = () => isPaper();
 
-  const N = 6; // 6x6 grid
-  const EXIT_ROW = 2; // red car always on row 2
+  const TILE = 24;
+  const COLS = 20, ROWS = 12;
+  // Player hitbox is exactly one tile minus 2px margin on each side
+  const PW = TILE - 4, PH = TILE - 4; // 20×20
+  const GRAV = 0.45, MAX_VY = 9, MOVE_SPD = 2.5;
 
-  // Each level: array of piece defs. Index 0 = red car (always horiz, row 2)
-  // {r, c, len, horiz, clr}
+  let gravDir, px, py, pvx, pvy, onGround;
+  let dead, deadTimer, won, wonTimer;
+  let totalDeaths = 0, levelIdx = 0;
+  let tileMap = [], startCol = 1, startRow = 5;
+
+  // grid: W=wall, _=empty, S=start, E=exit, T=spike(floor-facing up), B=spike(ceil-facing down)
   const LEVELS = [
-    // Level 1 — Easy
-    [ {r:2,c:3,len:2,horiz:true, clr:'#e53935'},
-      {r:0,c:5,len:2,horiz:false,clr:'#42a5f5'},
-      {r:3,c:3,len:3,horiz:true, clr:'#66bb6a'},
-      {r:4,c:1,len:2,horiz:false,clr:'#ffa726'} ],
-    // Level 2
-    [ {r:2,c:1,len:2,horiz:true, clr:'#e53935'},
-      {r:0,c:3,len:2,horiz:false,clr:'#42a5f5'},
-      {r:2,c:3,len:2,horiz:false,clr:'#ab47bc'},
-      {r:0,c:4,len:3,horiz:false,clr:'#66bb6a'},
-      {r:3,c:1,len:2,horiz:true, clr:'#ffa726'} ],
-    // Level 3
-    [ {r:2,c:0,len:2,horiz:true, clr:'#e53935'},
-      {r:0,c:2,len:2,horiz:false,clr:'#42a5f5'},
-      {r:2,c:2,len:2,horiz:false,clr:'#ab47bc'},
-      {r:1,c:3,len:2,horiz:true, clr:'#66bb6a'},
-      {r:3,c:3,len:3,horiz:false,clr:'#ffa726'},
-      {r:4,c:0,len:3,horiz:true, clr:'#ef5350'} ],
-    // Level 4
-    [ {r:2,c:0,len:2,horiz:true, clr:'#e53935'},
-      {r:0,c:2,len:2,horiz:false,clr:'#42a5f5'},
-      {r:2,c:2,len:3,horiz:false,clr:'#ab47bc'},
-      {r:0,c:3,len:2,horiz:true, clr:'#66bb6a'},
-      {r:1,c:4,len:2,horiz:false,clr:'#ffa726'},
-      {r:3,c:3,len:2,horiz:true, clr:'#26c6da'},
-      {r:4,c:1,len:3,horiz:true, clr:'#d4e157'} ],
-    // Level 5
-    [ {r:2,c:1,len:2,horiz:true, clr:'#e53935'},
-      {r:0,c:0,len:2,horiz:false,clr:'#42a5f5'},
-      {r:0,c:3,len:3,horiz:false,clr:'#ab47bc'},
-      {r:2,c:3,len:2,horiz:false,clr:'#ffa726'},
-      {r:1,c:1,len:2,horiz:true, clr:'#66bb6a'},
-      {r:3,c:1,len:3,horiz:true, clr:'#26c6da'},
-      {r:4,c:4,len:2,horiz:false,clr:'#d4e157'},
-      {r:0,c:4,len:2,horiz:true, clr:'#ef5350'} ],
-    // Level 6
-    [ {r:2,c:0,len:2,horiz:true, clr:'#e53935'},
-      {r:0,c:2,len:2,horiz:false,clr:'#42a5f5'},
-      {r:0,c:4,len:2,horiz:false,clr:'#ab47bc'},
-      {r:2,c:2,len:2,horiz:false,clr:'#ffa726'},
-      {r:2,c:4,len:2,horiz:false,clr:'#66bb6a'},
-      {r:0,c:0,len:2,horiz:true, clr:'#26c6da'},
-      {r:1,c:3,len:2,horiz:true, clr:'#d4e157'},
-      {r:3,c:2,len:3,horiz:true, clr:'#ef5350'},
-      {r:4,c:0,len:2,horiz:true, clr:'#ec407a'} ],
-    // Level 7
-    [ {r:2,c:0,len:2,horiz:true, clr:'#e53935'},
-      {r:0,c:2,len:3,horiz:false,clr:'#42a5f5'},
-      {r:0,c:3,len:2,horiz:true, clr:'#ab47bc'},
-      {r:1,c:4,len:3,horiz:false,clr:'#ffa726'},
-      {r:2,c:3,len:2,horiz:false,clr:'#66bb6a'},
-      {r:3,c:0,len:2,horiz:true, clr:'#26c6da'},
-      {r:3,c:3,len:3,horiz:true, clr:'#d4e157'},
-      {r:4,c:1,len:2,horiz:false,clr:'#ef5350'},
-      {r:5,c:2,len:3,horiz:true, clr:'#ec407a'} ],
-    // Level 8
-    [ {r:2,c:0,len:2,horiz:true, clr:'#e53935'},
-      {r:0,c:0,len:2,horiz:false,clr:'#42a5f5'},
-      {r:0,c:2,len:2,horiz:true, clr:'#ab47bc'},
-      {r:0,c:5,len:3,horiz:false,clr:'#ffa726'},
-      {r:1,c:2,len:2,horiz:false,clr:'#66bb6a'},
-      {r:2,c:2,len:2,horiz:false,clr:'#26c6da'},
-      {r:3,c:0,len:3,horiz:true, clr:'#d4e157'},
-      {r:3,c:3,len:2,horiz:false,clr:'#ef5350'},
-      {r:4,c:4,len:2,horiz:true, clr:'#ec407a'},
-      {r:5,c:1,len:3,horiz:true, clr:'#78909c'} ],
-    // Level 9
-    [ {r:2,c:1,len:2,horiz:true, clr:'#e53935'},
-      {r:0,c:0,len:3,horiz:false,clr:'#42a5f5'},
-      {r:0,c:1,len:2,horiz:true, clr:'#ab47bc'},
-      {r:0,c:4,len:3,horiz:false,clr:'#ffa726'},
-      {r:1,c:2,len:2,horiz:false,clr:'#66bb6a'},
-      {r:2,c:3,len:2,horiz:false,clr:'#26c6da'},
-      {r:3,c:1,len:2,horiz:true, clr:'#d4e157'},
-      {r:3,c:4,len:2,horiz:true, clr:'#ef5350'},
-      {r:4,c:0,len:2,horiz:false,clr:'#ec407a'},
-      {r:4,c:3,len:2,horiz:false,clr:'#78909c'},
-      {r:5,c:1,len:4,horiz:true, clr:'#8d6e63'} ],
-    // Level 10 — Hard
-    [ {r:2,c:0,len:2,horiz:true, clr:'#e53935'},
-      {r:0,c:0,len:2,horiz:true, clr:'#42a5f5'},
-      {r:0,c:2,len:3,horiz:false,clr:'#ab47bc'},
-      {r:0,c:4,len:2,horiz:true, clr:'#ffa726'},
-      {r:1,c:5,len:2,horiz:false,clr:'#66bb6a'},
-      {r:2,c:3,len:3,horiz:false,clr:'#26c6da'},
-      {r:3,c:1,len:3,horiz:true, clr:'#d4e157'},
-      {r:4,c:0,len:2,horiz:false,clr:'#ef5350'},
-      {r:4,c:4,len:2,horiz:true, clr:'#ec407a'},
-      {r:5,c:2,len:3,horiz:true, clr:'#78909c'} ],
+    // ── Level 1: Tutorial ──
+    // Walk right on the floor. Flip to ceiling to get past the wall. E is on floor.
+    // No spikes. Safe to experiment with flipping.
+    [ 'WWWWWWWWWWWWWWWWWWWW',
+      'W__________________W',
+      'W__________________W',
+      'W__________________W',
+      'W________WWWWWWWW__W',  // row 4: platform blocking floor path
+      'WS_______W_________W',  // row 5: start, wall at col 9 forces flip
+      'W________W_________W',
+      'W________WWWWWWWW__W',
+      'W__________________W',
+      'W__________________W',
+      'W________________E_W',  // row 10: E on floor, reachable after getting past wall
+      'WWWWWWWWWWWWWWWWWWWW' ],
+
+    // ── Level 2: First spikes ──
+    // T spikes on floor cols 3-8. Must flip to ceiling to pass over them.
+    // Ceiling is clear. E is on floor right side, past the spikes.
+    // Row 1 ceiling has no B spikes so landing after flip is safe.
+    [ 'WWWWWWWWWWWWWWWWWWWW',
+      'W__________________W',  // row 1: ceiling — safe to walk upside-down
+      'W__________________W',
+      'W__________________W',
+      'W__________________W',
+      'WS_________________W',  // row 5: start on floor
+      'W__________________W',
+      'W__________________W',
+      'W__TTTTTTTTTT______W',  // row 8: T spikes on floor, cols 3-12
+      'W__________________W',
+      'W______________E___W',  // row 10: E on floor, past the spikes
+      'WWWWWWWWWWWWWWWWWWWW' ],
+
+    // ── Level 3: Ceiling run ──
+    // B spikes on ceiling right side. E is on ceiling left side.
+    // Must flip up, walk left along ceiling past the B-free zone to reach E.
+    // Floor is safe. Ceiling col 1 is safe (E is there). B starts col 6.
+    [ 'WWWWWWWWWWWWWWWWWWWW',
+      'WE____BBBBBBBBBBBBBW',  // row 1: E at col 1; B spikes cols 6-18 on ceiling
+      'W__________________W',
+      'W__________________W',
+      'W__________________W',
+      'W________________S_W',  // row 5: start far right on floor
+      'W__________________W',
+      'W__________________W',
+      'W__________________W',
+      'W__________________W',
+      'W__________________W',  // row 10: floor clear
+      'WWWWWWWWWWWWWWWWWWWW' ],
+
+    // ── Level 4: Alternating ──
+    // Must flip between floor and ceiling multiple times to navigate platforms.
+    // T spikes block floor path in middle. B spikes block ceiling path on right.
+    // E is on floor at the far right — reach it by going under the B-spike gap.
+    // Path: start on floor → walk right → spikes force flip up → walk right on ceiling
+    //       → gap in B spikes at cols 14-17 → flip back down → walk to E.
+    [ 'WWWWWWWWWWWWWWWWWWWW',
+      'W________BBBBBB____W',  // row 1: B spikes cols 9-14 on ceiling; cols 1-8 & 15-18 safe
+      'W__________________W',
+      'W______WWWW________W',  // row 3: platform
+      'W__________________W',
+      'WS_________________W',  // row 5: start
+      'W__________________W',
+      'W____WWWW__________W',  // row 7: platform
+      'W__________________W',
+      'W__TTTTTTTTT_______W',  // row 9: T spikes cols 3-11 on floor
+      'W_______________E__W',  // row 10: E at col 15, past the T spikes
+      'WWWWWWWWWWWWWWWWWWWW' ],
+
+    // ── Level 5: Gauntlet ──
+    // Both ceiling and floor spiked in alternating sections.
+    // Safe corridors are offset so player must flip at the right moment.
+    // Ceiling safe zones: cols 1-5, 12-18. Floor safe zones: cols 1-4, 9-18.
+    // E is on ceiling at col 17 — must be on ceiling to reach it.
+    [ 'WWWWWWWWWWWWWWWWWWWW',
+      'W____BBBBBBB_____E_W',  // row 1: B cols 5-11; E at col 17 on ceiling
+      'W__________________W',
+      'W____WWWW__________W',  // row 3: platform
+      'W__________________W',
+      'WS_________________W',  // row 5: start on floor
+      'W__________________W',
+      'W__________WWWW____W',  // row 7: platform
+      'W__________________W',
+      'W____TTTTT_________W',  // row 9: T spikes cols 4-8 on floor
+      'W__________________W',  // row 10: floor clear (needed to walk and flip)
+      'WWWWWWWWWWWWWWWWWWWW' ],
   ];
 
-  let levelIdx = 0;
-  let pieces = [];   // live state, each {r,c,len,horiz,clr}
-  let moveCount = 0;
-  let won = false;
-  let winAnim = 0; // 0..1 progress
-
-  // drag state
-  let drag = null; // {idx, startPos, axisPx}
-
-  function deepCopy(lvl) { return lvl.map(p=>({...p})); }
-
-  function loadLevel(idx) {
-    levelIdx = idx;
-    pieces = deepCopy(LEVELS[idx]);
-    moveCount = 0;
-    won = false;
-    winAnim = 0;
-    drag = null;
-  }
-
-  function getGrid() {
-    const g = Array.from({length:N},()=>Array(N).fill(-1));
-    pieces.forEach((p,i)=>{
-      for(let k=0;k<p.len;k++){
-        const r=p.horiz?p.r:p.r+k, c=p.horiz?p.c+k:p.c;
-        if(r>=0&&r<N&&c>=0&&c<N) g[r][c]=i;
+  function parseLevel(idx) {
+    const grid = LEVELS[idx];
+    tileMap = [];
+    for (let r = 0; r < ROWS; r++) {
+      tileMap[r] = [];
+      for (let cc = 0; cc < COLS; cc++) {
+        const ch = (grid[r] || '')[cc] || 'W';
+        tileMap[r][cc] = ch;
+        if (ch === 'S') { startCol = cc; startRow = r; }
       }
-    });
-    return g;
+    }
   }
 
-  function cellSize() {
-    W = c.width; H = c.height;
-    const usable = Math.min(W*0.9, H*0.85);
-    return Math.floor(usable / N);
+  function initLevel(idx) {
+    levelIdx = idx;
+    parseLevel(idx);
+    // Place player centred in its start tile
+    px = startCol * TILE + (TILE - PW) / 2;
+    py = startRow * TILE + (TILE - PH) / 2;
+    pvx = 0; pvy = 0; gravDir = 1; onGround = false;
+    dead = false; deadTimer = 0; won = false; wonTimer = 0;
   }
 
-  function boardOrigin(cs) {
-    return [(W - cs*N)/2, (H - cs*N)/2 - 10];
+  function tileAt(tc, tr) {
+    if (tc < 0 || tc >= COLS || tr < 0 || tr >= ROWS) return 'W';
+    return tileMap[tr][tc] || 'W';
   }
 
-  // Convert canvas coords to cell
-  function toCellCoords(px, py, cs, ox, oy) {
-    return [Math.floor((py-oy)/cs), Math.floor((px-ox)/cs)];
+  // Returns all tile coords overlapped by the AABB (x,y,w,h)
+  function overlappedTiles(x, y, w, h) {
+    const out = [];
+    const c0 = Math.floor(x / TILE),       c1 = Math.floor((x + w - 0.01) / TILE);
+    const r0 = Math.floor(y / TILE),       r1 = Math.floor((y + h - 0.01) / TILE);
+    for (let tr = r0; tr <= r1; tr++)
+      for (let tc = c0; tc <= c1; tc++)
+        out.push({tc, tr, ch: tileAt(tc, tr)});
+    return out;
   }
 
-  function hitPiece(px, py, cs, ox, oy) {
-    const [mr, mc] = toCellCoords(px, py, cs, ox, oy);
-    if(mr<0||mr>=N||mc<0||mc>=N) return -1;
-    const g = getGrid();
-    return g[mr][mc];
+  let keys = {};
+  function onKey(e) {
+    keys[e.code] = e.type === 'keydown';
+    if (['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code)) e.preventDefault();
+  }
+  window.addEventListener('keydown', onKey);
+  window.addEventListener('keyup',   onKey);
+
+  let flipQueued = false, prevFlipKey = false;
+
+  function update() {
+    if (dead) {
+      if (++deadTimer > 55) { totalDeaths++; initLevel(levelIdx); }
+      return;
+    }
+    if (won) { wonTimer++; return; }
+
+    // ── input ──
+    pvx = 0;
+    if (keys['ArrowLeft']  || keys['KeyA']) pvx = -MOVE_SPD;
+    if (keys['ArrowRight'] || keys['KeyD']) pvx =  MOVE_SPD;
+
+    const flipKey = keys['Space'] || keys['ArrowUp'] || keys['KeyX'] || keys['KeyZ'];
+    if (flipKey && !prevFlipKey) flipQueued = true;
+    prevFlipKey = flipKey;
+
+    if (flipQueued && onGround) {
+      gravDir *= -1;
+      pvy = 0;
+      flipQueued = false;
+    }
+
+    // ── gravity ──
+    pvy += GRAV * gravDir;
+    pvy = Math.max(-MAX_VY, Math.min(MAX_VY, pvy));
+
+    // ── move X (one pixel at a time to avoid tunnelling at high speed) ──
+    const stepsX = Math.ceil(Math.abs(pvx));
+    const dx = pvx / stepsX;
+    for (let s = 0; s < stepsX; s++) {
+      px += dx;
+      const hits = overlappedTiles(px, py, PW, PH);
+      for (const {tc, tr, ch} of hits) {
+        if (ch === 'W') {
+          if (dx > 0) px = tc * TILE - PW;          // push left
+          else        px = (tc + 1) * TILE;          // push right
+          pvx = 0;
+          break;
+        }
+        if (ch === 'T' || ch === 'B') { dead = true; return; }
+        if (ch === 'E') { won = true; wonTimer = 0; return; }
+      }
+    }
+
+    // ── move Y (sub-step for safety) ──
+    const stepsY = Math.ceil(Math.abs(pvy));
+    const dy = pvy / stepsY;
+    onGround = false;
+    for (let s = 0; s < stepsY; s++) {
+      py += dy;
+      const hits = overlappedTiles(px, py, PW, PH);
+      for (const {tc, tr, ch} of hits) {
+        if (ch === 'W') {
+          if (dy * gravDir > 0) {
+            // landed on a surface
+            py = gravDir > 0 ? tr * TILE - PH : (tr + 1) * TILE;
+            onGround = true;
+          } else {
+            // hit a surface from the wrong side (head/feet hit opposite wall)
+            py = gravDir > 0 ? (tr + 1) * TILE : tr * TILE - PH;
+          }
+          pvy = 0;
+          break;
+        }
+        if (ch === 'T' || ch === 'B') { dead = true; return; }
+        if (ch === 'E') { won = true; wonTimer = 0; return; }
+      }
+    }
   }
 
   function draw() {
-    raf = requestAnimationFrame(draw);
-    W = c.width = body.clientWidth;
-    H = c.height = body.clientHeight;
-    const paper = isPaper();
-    ctx.fillStyle = bgClr(); ctx.fillRect(0,0,W,H);
+    W = c.width; H = c.height;
+    const p = paper();
 
-    const cs = cellSize();
-    const [ox, oy] = boardOrigin(cs);
-    const GAP = Math.max(2, cs*0.06);
-    const R = cs*0.12;
+    // fit level to canvas
+    const scale = Math.min(W / (COLS * TILE), H / (ROWS * TILE));
+    const offX  = Math.floor((W - COLS * TILE * scale) / 2);
+    const offY  = Math.floor((H - ROWS * TILE * scale) / 2);
 
-    // Board bg
-    ctx.fillStyle = paper ? '#c8a96e' : '#2a1f14';
-    roundRect(ctx, ox-4, oy-4, cs*N+8, cs*N+8, 8); ctx.fill();
+    ctx.fillStyle = p ? '#e8e0d0' : '#0d0d1a';
+    ctx.fillRect(0, 0, W, H);
 
-    // Grid cells
-    for(let r=0;r<N;r++) for(let cc=0;cc<N;cc++){
-      ctx.fillStyle = paper ? '#d4b483' : '#3a2a18';
-      roundRect(ctx, ox+cc*cs+GAP, oy+r*cs+GAP, cs-GAP*2, cs-GAP*2, 4);
-      ctx.fill();
-    }
+    ctx.save();
+    ctx.translate(offX, offY);
+    ctx.scale(scale, scale);
 
-    // Exit arrow on right side of row 2
-    const arrX = ox + N*cs + 6;
-    const arrY = oy + EXIT_ROW*cs + cs/2;
-    ctx.fillStyle = '#e53935';
-    ctx.beginPath();
-    ctx.moveTo(arrX, arrY-cs*0.18);
-    ctx.lineTo(arrX+cs*0.28, arrY-cs*0.18);
-    ctx.lineTo(arrX+cs*0.28, arrY-cs*0.32);
-    ctx.lineTo(arrX+cs*0.52, arrY);
-    ctx.lineTo(arrX+cs*0.28, arrY+cs*0.32);
-    ctx.lineTo(arrX+cs*0.28, arrY+cs*0.18);
-    ctx.lineTo(arrX, arrY+cs*0.18);
-    ctx.closePath(); ctx.fill();
-
-    // Draw pieces
-    pieces.forEach((p,i)=>{
-      const isRed = i===0;
-      const isDragging = drag && drag.idx===i;
-      const pw = p.horiz ? p.len*cs - GAP*2 : cs - GAP*2;
-      const ph = p.horiz ? cs - GAP*2 : p.len*cs - GAP*2;
-      let px = ox + p.c*cs + GAP;
-      let py = oy + p.r*cs + GAP;
-
-      // Win animation: slide red car off right edge
-      if(won && isRed) {
-        px += winAnim * (N - p.c) * cs * 1.5;
-      }
-
-      // Shadow
-      ctx.fillStyle = 'rgba(0,0,0,0.3)';
-      roundRect(ctx, px+2, py+3, pw, ph, R*1.2); ctx.fill();
-
-      // Piece body gradient
-      const grad = ctx.createLinearGradient(px, py, px+pw*0.5, py+ph*0.5);
-      const base = p.clr;
-      grad.addColorStop(0, lighten(base, 0.25));
-      grad.addColorStop(1, darken(base, 0.15));
-      ctx.fillStyle = grad;
-      roundRect(ctx, px, py, pw, ph, R*1.2); ctx.fill();
-
-      // Gloss
-      ctx.fillStyle = 'rgba(255,255,255,0.18)';
-      roundRect(ctx, px+pw*0.1, py+ph*0.08, pw*0.8, ph*0.28, R); ctx.fill();
-
-      // Red car: draw windscreen details
-      if(isRed) {
-        ctx.fillStyle = 'rgba(0,0,0,0.2)';
-        roundRect(ctx, px+pw*0.6, py+ph*0.25, pw*0.28, ph*0.5, R*0.5); ctx.fill();
-        ctx.fillStyle = 'rgba(150,220,255,0.5)';
-        roundRect(ctx, px+pw*0.62, py+ph*0.27, pw*0.24, ph*0.46, R*0.5); ctx.fill();
-        // wheels
-        ctx.fillStyle = '#222';
-        [[0.15,0],[0.15,1],[0.72,0],[0.72,1]].forEach(([fx,fy])=>{
+    // tiles
+    for (let r = 0; r < ROWS; r++) {
+      for (let cc = 0; cc < COLS; cc++) {
+        const ch = tileMap[r][cc];
+        const tx = cc * TILE, ty = r * TILE;
+        if (ch === 'W') {
+          ctx.fillStyle = p ? '#7a6a50' : '#2255aa';
+          ctx.fillRect(tx, ty, TILE, TILE);
+          ctx.fillStyle = p ? '#9a8a6a' : '#3366cc';
+          ctx.fillRect(tx+1, ty+1, TILE-2, TILE-2);
+        } else if (ch === 'T') {
+          // spike tip points UP (floor spike — kills walking on it)
+          ctx.fillStyle = '#e53935';
           ctx.beginPath();
-          ctx.arc(px+pw*fx, py+(fy?ph:0), cs*0.11, 0, Math.PI*2);
-          ctx.fill();
-        });
-      }
-
-      // Drag highlight
-      if(isDragging){
-        ctx.strokeStyle = 'rgba(255,255,255,0.55)';
-        ctx.lineWidth = 2.5;
-        roundRect(ctx, px, py, pw, ph, R*1.2); ctx.stroke();
-      }
-    });
-
-    // Win animation tick
-    if(won) {
-      winAnim = Math.min(1, winAnim + 0.025);
-      if(winAnim > 0.3) {
-        // Overlay
-        ctx.fillStyle = 'rgba(0,0,0,0.45)';
-        ctx.fillRect(0,0,W,H);
-        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-        const t = Math.min(1,(winAnim-0.3)/0.4);
-        ctx.globalAlpha = t;
-        ctx.font = `700 ${cs*1.1|0}px 'IBM Plex Mono',monospace`;
-        ctx.fillStyle = '#ffeb3b';
-        ctx.fillText('Solved! 🎉', W/2, H/2-cs*0.6);
-        ctx.font = `400 ${cs*0.45|0}px 'IBM Plex Mono',monospace`;
-        ctx.fillStyle = '#fff';
-        ctx.fillText(`${moveCount} move${moveCount!==1?'s':''}`, W/2, H/2+cs*0.1);
-        if(levelIdx < LEVELS.length-1){
-          ctx.fillText('tap for next level', W/2, H/2+cs*0.7);
-        } else {
-          ctx.fillText('all levels complete!', W/2, H/2+cs*0.7);
+          ctx.moveTo(tx+2, ty+TILE);
+          ctx.lineTo(tx+TILE/2, ty+3);
+          ctx.lineTo(tx+TILE-2, ty+TILE);
+          ctx.closePath(); ctx.fill();
+        } else if (ch === 'B') {
+          // spike tip points DOWN (ceiling spike — kills when gravity-flipped to ceiling)
+          ctx.fillStyle = '#e53935';
+          ctx.beginPath();
+          ctx.moveTo(tx+2, ty);
+          ctx.lineTo(tx+TILE/2, ty+TILE-3);
+          ctx.lineTo(tx+TILE-2, ty);
+          ctx.closePath(); ctx.fill();
+        } else if (ch === 'E') {
+          const pulse = 0.7 + 0.3 * Math.sin(Date.now() / 200);
+          ctx.fillStyle = p ? `rgba(46,204,113,${pulse})` : `rgba(0,255,136,${pulse})`;
+          ctx.shadowColor = '#00ff88'; ctx.shadowBlur = 10 * scale;
+          ctx.fillRect(tx+3, ty+3, TILE-6, TILE-6);
+          ctx.shadowBlur = 0;
+          ctx.fillStyle = '#fff';
+          ctx.font = `bold ${TILE*0.55}px monospace`;
+          ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+          ctx.fillText('E', tx+TILE/2, ty+TILE/2);
         }
-        ctx.globalAlpha = 1;
       }
     }
+
+    // player
+    if (!dead) {
+      ctx.save();
+      ctx.translate(px + PW/2, py + PH/2);
+      if (gravDir === -1) ctx.scale(1, -1);  // flip sprite when upside-down
+      // body
+      ctx.fillStyle = p ? '#c0392b' : '#ff4455';
+      ctx.fillRect(-PW/2, -PH/2, PW, PH);
+      // face highlight
+      ctx.fillStyle = p ? '#e74c3c' : '#ff6677';
+      ctx.fillRect(-PW/2+2, -PH/2+2, PW-4, 5);
+      // eyes
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(-PW/2+3, -PH/2+3, 4, 4);
+      ctx.fillRect( PW/2-7, -PH/2+3, 4, 4);
+      ctx.fillStyle = '#222';
+      ctx.fillRect(-PW/2+4, -PH/2+4, 2, 2);
+      ctx.fillRect( PW/2-6, -PH/2+4, 2, 2);
+      // legs (point toward current floor)
+      ctx.fillStyle = p ? '#922b21' : '#cc2233';
+      ctx.fillRect(-PW/2+2, PH/2-5, 5, 5);
+      ctx.fillRect( PW/2-7, PH/2-5, 5, 5);
+      ctx.restore();
+    }
+
+    // death flash
+    if (dead && deadTimer < 18) {
+      ctx.fillStyle = `rgba(255,60,60,${0.35*(1-deadTimer/18)})`;
+      ctx.fillRect(0, 0, COLS*TILE, ROWS*TILE);
+    }
+
+    // win overlay
+    if (won && wonTimer > 20) {
+      ctx.fillStyle = 'rgba(0,0,0,0.52)';
+      ctx.fillRect(0, 0, COLS*TILE, ROWS*TILE);
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillStyle = p ? '#f5c842' : '#ffeb3b';
+      ctx.font = `bold ${TILE*1.1}px 'IBM Plex Mono',monospace`;
+      ctx.fillText('CLEARED!', COLS*TILE/2, ROWS*TILE/2 - TILE*0.8);
+      ctx.font = `${TILE*0.55}px 'IBM Plex Mono',monospace`;
+      ctx.fillStyle = '#fff';
+      const msg = levelIdx < LEVELS.length-1 ? 'space / click  →  next' : 'all levels done!';
+      ctx.fillText(msg, COLS*TILE/2, ROWS*TILE/2 + TILE*0.3);
+    }
+
+    ctx.restore();
 
     // HUD
-    ctx.textAlign = 'center'; ctx.textBaseline = 'top';
-    ctx.font = `500 ${Math.max(10,cs*0.35|0)}px 'IBM Plex Mono',monospace`;
-    ctx.fillStyle = paper ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.45)';
-    ctx.fillText(`Level ${levelIdx+1} / ${LEVELS.length}   moves: ${moveCount}`, W/2, 5);
+    ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+    ctx.font = `300 11px 'IBM Plex Mono',monospace`;
+    ctx.fillStyle = p ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.5)';
+    const glyph = gravDir === 1 ? '▼' : '▲';
+    ctx.fillText(`Level ${levelIdx+1}/${LEVELS.length}   Deaths: ${totalDeaths}   gravity ${glyph}`, 8, 6);
   }
 
-  // Colour helpers
-  function lighten(hex, amt) {
-    const n = parseInt(hex.slice(1),16);
-    let r=Math.min(255,((n>>16)&255)+Math.round(amt*255));
-    let g=Math.min(255,((n>>8)&255)+Math.round(amt*255));
-    let b=Math.min(255,(n&255)+Math.round(amt*255));
-    return `rgb(${r},${g},${b})`;
-  }
-  function darken(hex, amt) {
-    const n = parseInt(hex.slice(1),16);
-    let r=Math.max(0,((n>>16)&255)-Math.round(amt*255));
-    let g=Math.max(0,((n>>8)&255)-Math.round(amt*255));
-    let b=Math.max(0,(n&255)-Math.round(amt*255));
-    return `rgb(${r},${g},${b})`;
-  }
-
-  // ── Input ──
-  function getPos(e) {
-    const rect = c.getBoundingClientRect();
-    const src = e.touches ? e.touches[0] : e;
-    return [(src.clientX-rect.left)*(W/rect.width), (src.clientY-rect.top)*(H/rect.height)];
-  }
-
-  function onPointerDown(e) {
+  // click / tap — flip gravity (only when alive) or advance on win screen
+  c.addEventListener('pointerdown', e => {
     e.preventDefault();
-    if(won){
-      if(winAnim >= 0.5){
-        if(levelIdx < LEVELS.length-1) loadLevel(levelIdx+1);
-        else loadLevel(0);
-      }
+    if (won && wonTimer > 20) {
+      if (levelIdx < LEVELS.length - 1) initLevel(levelIdx + 1);
+      else { totalDeaths = 0; initLevel(0); }
       return;
     }
-    const [px,py] = getPos(e);
-    const cs = cellSize();
-    const [ox,oy] = boardOrigin(cs);
-    const idx = hitPiece(px,py,cs,ox,oy);
-    if(idx === -1) return;
-    const p = pieces[idx];
-    drag = {
-      idx,
-      horiz: p.horiz,
-      startPx: px,
-      startPy: py,
-      startC: p.c,
-      startR: p.r,
-      moved: false,
-    };
-  }
+    if (!dead) flipQueued = true;
+  });
 
-  function onPointerMove(e) {
-    e.preventDefault();
-    if(!drag || won) return;
-    const [px,py] = getPos(e);
-    const cs = cellSize();
-    const [ox,oy] = boardOrigin(cs);
-    const p = pieces[drag.idx];
-    const g = getGrid();
-    // temporarily clear this piece from grid
-    for(let k=0;k<p.len;k++){
-      const r=p.horiz?p.r:p.r+k, cc=p.horiz?p.c+k:p.c;
-      if(r>=0&&r<N&&cc>=0&&cc<N) g[r][cc]=-1;
-    }
-    if(drag.horiz){
-      const rawC = drag.startC + (px - drag.startPx)/cs;
-      let nc = Math.round(rawC);
-      nc = Math.max(0, Math.min(N - p.len, nc));
-      // clamp to free space
-      if(nc > drag.startC){
-        for(let cc=drag.startC+p.len; cc<nc+p.len; cc++){
-          if(cc>=N||g[p.r][cc]!==-1){ nc=cc-p.len; break; }
-        }
-      } else {
-        for(let cc=drag.startC-1; cc>=nc; cc--){
-          if(cc<0||g[p.r][cc]!==-1){ nc=cc+1; break; }
-        }
-      }
-      if(nc !== p.c){ drag.moved=true; pieces[drag.idx] = {...p, c:nc}; }
-    } else {
-      const rawR = drag.startR + (py - drag.startPy)/cs;
-      let nr = Math.round(rawR);
-      nr = Math.max(0, Math.min(N - p.len, nr));
-      if(nr > drag.startR){
-        for(let rr=drag.startR+p.len; rr<nr+p.len; rr++){
-          if(rr>=N||g[rr][p.c]!==-1){ nr=rr-p.len; break; }
-        }
-      } else {
-        for(let rr=drag.startR-1; rr>=nr; rr--){
-          if(rr<0||g[rr][p.c]!==-1){ nr=rr+1; break; }
-        }
-      }
-      if(nr !== p.r){ drag.moved=true; pieces[drag.idx] = {...p, r:nr}; }
-    }
-  }
-
-  function onPointerUp(e) {
-    if(!drag) return;
-    const p = pieces[drag.idx];
-    const orig = drag.horiz ? drag.startC : drag.startR;
-    const curr = drag.horiz ? p.c : p.r;
-    if(curr !== orig) moveCount++;
-    drag = null;
-    // Check win: red car right edge reaches column N
-    if(pieces[0].c + pieces[0].len === N){
-      won = true; winAnim = 0;
-    }
-  }
-
-  c.addEventListener('pointerdown', onPointerDown);
-  c.addEventListener('pointermove', onPointerMove);
-  c.addEventListener('pointerup', onPointerUp);
-  c.addEventListener('touchstart', onPointerDown, {passive:false});
-  c.addEventListener('touchmove', onPointerMove, {passive:false});
-  c.addEventListener('touchend', onPointerUp);
-
-  // Controls
+  const btnReset = mkBtn('Restart', ctrl);
   const btnPrev  = mkBtn('◀ Prev',  ctrl);
-  const btnReset = mkBtn('Reset',   ctrl);
   const btnNext  = mkBtn('Next ▶',  ctrl);
-  btnPrev.addEventListener('click',  ()=>loadLevel(Math.max(0, levelIdx-1)));
-  btnReset.addEventListener('click', ()=>loadLevel(levelIdx));
-  btnNext.addEventListener('click',  ()=>loadLevel(Math.min(LEVELS.length-1, levelIdx+1)));
+  const infoEl   = mkInfo(ctrl);
+  btnReset.addEventListener('click', () => { totalDeaths = 0; initLevel(levelIdx); });
+  btnPrev.addEventListener('click',  () => { totalDeaths = 0; initLevel(Math.max(0, levelIdx-1)); });
+  btnNext.addEventListener('click',  () => { totalDeaths = 0; initLevel(Math.min(LEVELS.length-1, levelIdx+1)); });
 
-  loadLevel(0);
-  requestAnimationFrame(draw);
-  return ()=>{ cancelAnimationFrame(raf); ro.disconnect(); };
+  function loop() {
+    update(); draw();
+    infoEl.textContent = 'A/D move · Space/click flip gravity';
+    raf = requestAnimationFrame(loop);
+  }
+  initLevel(0);
+  loop();
+  return () => {
+    cancelAnimationFrame(raf); ro.disconnect();
+    window.removeEventListener('keydown', onKey);
+    window.removeEventListener('keyup',   onKey);
+  };
 }
 
 // ── final init ────────────────────────────────────────────────────────────────
