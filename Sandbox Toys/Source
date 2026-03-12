@@ -15536,94 +15536,794 @@ function initGravityFlip(body, ctrl) {
   let tileMap = [], startCol = 1, startRow = 5;
 
   // grid: W=wall, _=empty, S=start, E=exit, T=spike(floor-facing up), B=spike(ceil-facing down)
+  // Moving obstacles are defined per-level in LEVEL_MOVERS array (same index as LEVELS).
+  // Each mover: { x, y, w, h, dx, dy, minX, maxX, minY, maxY, type }
+  // type: 'spike' (kills on touch), 'wall' (solid, pushes player)
+
   const LEVELS = [
-    // ── Level 1: Tutorial ──
-    // Walk right on the floor. Flip to ceiling to get past the wall. E is on floor.
-    // No spikes. Safe to experiment with flipping.
+    // ── Level 1 ──
     [ 'WWWWWWWWWWWWWWWWWWWW',
       'W__________________W',
       'W__________________W',
+      'W_______W__________W',
+      'W_______W__________W',
+      'W_______W__________W',
+      'W_______W__________W',
+      'W_______W__________W',
+      'W_______W__________W',
+      'W_______W__________W',
+      'W_S_____W______E___W',
+      'WWWWWWWWWWWWWWWWWWWW' ],
+
+    // ── Level 2 ──
+    [ 'WWWWWWWWWWWWWWWWWWWW',
       'W__________________W',
-      'W________WWWWWWWW__W',  // row 4: platform blocking floor path
-      'WS_______W_________W',  // row 5: start, wall at col 9 forces flip
+      'W__________________W',
       'W________W_________W',
-      'W________WWWWWWWW__W',
-      'W__________________W',
-      'W__________________W',
-      'W________________E_W',  // row 10: E on floor, reachable after getting past wall
+      'W________W_________W',
+      'W________W_________W',
+      'W________W_________W',
+      'W________W_________W',
+      'W________W_________W',
+      'W________W_________W',
+      'W_S______W_____E___W',
       'WWWWWWWWWWWWWWWWWWWW' ],
 
-    // ── Level 2: First spikes ──
-    // T spikes on floor cols 3-8. Must flip to ceiling to pass over them.
-    // Ceiling is clear. E is on floor right side, past the spikes.
-    // Row 1 ceiling has no B spikes so landing after flip is safe.
+    // ── Level 3 ──
     [ 'WWWWWWWWWWWWWWWWWWWW',
-      'W__________________W',  // row 1: ceiling — safe to walk upside-down
       'W__________________W',
       'W__________________W',
-      'W__________________W',
-      'WS_________________W',  // row 5: start on floor
-      'W__________________W',
-      'W__________________W',
-      'W__TTTTTTTTTT______W',  // row 8: T spikes on floor, cols 3-12
-      'W__________________W',
-      'W______________E___W',  // row 10: E on floor, past the spikes
+      'W_________W________W',
+      'W_________W________W',
+      'W_________W________W',
+      'W_________W________W',
+      'W_________W________W',
+      'W_________W________W',
+      'W_________W________W',
+      'W_S_______W_____E__W',
       'WWWWWWWWWWWWWWWWWWWW' ],
 
-    // ── Level 3: Ceiling run ──
-    // B spikes on ceiling right side. E is on ceiling left side.
-    // Must flip up, walk left along ceiling past the B-free zone to reach E.
-    // Floor is safe. Ceiling col 1 is safe (E is there). B starts col 6.
+    // ── Level 4 ──
     [ 'WWWWWWWWWWWWWWWWWWWW',
-      'WE____BBBBBBBBBBBBBW',  // row 1: E at col 1; B spikes cols 6-18 on ceiling
       'W__________________W',
       'W__________________W',
       'W__________________W',
-      'W________________S_W',  // row 5: start far right on floor
-      'W__________________W',
-      'W__________________W',
-      'W__________________W',
-      'W__________________W',
-      'W__________________W',  // row 10: floor clear
+      'W______W___________W',
+      'W______W___________W',
+      'W______W___________W',
+      'W______W___________W',
+      'W______W___________W',
+      'W______W___________W',
+      'W_S____W_______E___W',
       'WWWWWWWWWWWWWWWWWWWW' ],
 
-    // ── Level 4: Alternating ──
-    // Must flip between floor and ceiling multiple times to navigate platforms.
-    // T spikes block floor path in middle. B spikes block ceiling path on right.
-    // E is on floor at the far right — reach it by going under the B-spike gap.
-    // Path: start on floor → walk right → spikes force flip up → walk right on ceiling
-    //       → gap in B spikes at cols 14-17 → flip back down → walk to E.
+    // ── Level 5 ──
     [ 'WWWWWWWWWWWWWWWWWWWW',
-      'W________BBBBBB____W',  // row 1: B spikes cols 9-14 on ceiling; cols 1-8 & 15-18 safe
       'W__________________W',
-      'W______WWWW________W',  // row 3: platform
       'W__________________W',
-      'WS_________________W',  // row 5: start
       'W__________________W',
-      'W____WWWW__________W',  // row 7: platform
-      'W__________________W',
-      'W__TTTTTTTTT_______W',  // row 9: T spikes cols 3-11 on floor
-      'W_______________E__W',  // row 10: E at col 15, past the T spikes
+      'W__________W_______W',
+      'W__________W_______W',
+      'W__________W_______W',
+      'W__________W_______W',
+      'W__________W_______W',
+      'W__________W_______W',
+      'W_S________W____E__W',
       'WWWWWWWWWWWWWWWWWWWW' ],
 
-    // ── Level 5: Gauntlet ──
-    // Both ceiling and floor spiked in alternating sections.
-    // Safe corridors are offset so player must flip at the right moment.
-    // Ceiling safe zones: cols 1-5, 12-18. Floor safe zones: cols 1-4, 9-18.
-    // E is on ceiling at col 17 — must be on ceiling to reach it.
+    // ── Level 6 ──
     [ 'WWWWWWWWWWWWWWWWWWWW',
-      'W____BBBBBBB_____E_W',  // row 1: B cols 5-11; E at col 17 on ceiling
-      'W__________________W',
-      'W____WWWW__________W',  // row 3: platform
-      'W__________________W',
-      'WS_________________W',  // row 5: start on floor
-      'W__________________W',
-      'W__________WWWW____W',  // row 7: platform
-      'W__________________W',
-      'W____TTTTT_________W',  // row 9: T spikes cols 4-8 on floor
-      'W__________________W',  // row 10: floor clear (needed to walk and flip)
+      'W____________W_____W',
+      'W____________W_____W',
+      'W______W_____W_____W',
+      'W______W_____W_____W',
+      'W______W_____W_____W',
+      'W______W_____W_____W',
+      'W______W_____W_____W',
+      'W______W_____W_____W',
+      'W______W___________W',
+      'W_S____W________E__W',
       'WWWWWWWWWWWWWWWWWWWW' ],
+
+    // ── Level 7 ──
+    [ 'WWWWWWWWWWWWWWWWWWWW',
+      'W_____________W____W',
+      'W_____________W____W',
+      'W_______W_____W____W',
+      'W_______W_____W____W',
+      'W_______W_____W____W',
+      'W_______W_____W____W',
+      'W_______W_____W____W',
+      'W_______W_____W____W',
+      'W_______W__________W',
+      'W_S_____W________E_W',
+      'WWWWWWWWWWWWWWWWWWWW' ],
+
+    // ── Level 8 ──
+    [ 'WWWWWWWWWWWWWWWWWWWW',
+      'W____________W_____W',
+      'W____________W_____W',
+      'W____________W_____W',
+      'W______W_____W_____W',
+      'W______W_____W_____W',
+      'W______W_____W_____W',
+      'W______W_____W_____W',
+      'W______W___________W',
+      'W______W___________W',
+      'W_S____W________E__W',
+      'WWWWWWWWWWWWWWWWWWWW' ],
+
+    // ── Level 9 ──
+    [ 'WWWWWWWWWWWWWWWWWWWW',
+      'W______________W___W',
+      'W______________W___W',
+      'W________W_____W___W',
+      'W________W_____W___W',
+      'W________W_____W___W',
+      'W________W_____W___W',
+      'W________W_____W___W',
+      'W________W_____W___W',
+      'W________W_________W',
+      'W_S______W_______E_W',
+      'WWWWWWWWWWWWWWWWWWWW' ],
+
+    // ── Level 10 ──
+    [ 'WWWWWWWWWWWWWWWWWWWW',
+      'W_____________W____W',
+      'W_____________W____W',
+      'W_______W_____W____W',
+      'W_______W_____W____W',
+      'W_______W_____W____W',
+      'W_______W_____W____W',
+      'W_______W_____W____W',
+      'W_______W__________W',
+      'W_______W__________W',
+      'W_S_____W________E_W',
+      'WWWWWWWWWWWWWWWWWWWW' ],
+
+    // ── Level 11 ──
+    [ 'WWWWWWWWWWWWWWWWWWWW',
+      'W__________________W',
+      'W__________________W',
+      'W_______W__________W',
+      'W_______W__________W',
+      'W_______W__________W',
+      'W_______W__________W',
+      'W_______W__________W',
+      'W_______W__________W',
+      'W_______W__________W',
+      'W_S_____W_TTTTTT_E_W',
+      'WWWWWWWWWWWWWWWWWWWW' ],
+
+    // ── Level 12 ──
+    [ 'WWWWWWWWWWWWWWWWWWWW',
+      'W__________BBBBB___W',
+      'W__________________W',
+      'W_______W__________W',
+      'W_______W__________W',
+      'W_______W__________W',
+      'W_______W__________W',
+      'W_______W__________W',
+      'W_______W__________W',
+      'W_______W__________W',
+      'W_S_____W________E_W',
+      'WWWWWWWWWWWWWWWWWWWW' ],
+
+    // ── Level 13 ──
+    [ 'WWWWWWWWWWWWWWWWWWWW',
+      'W____________W_____W',
+      'W____________W_____W',
+      'W______W_____W_____W',
+      'W______W_____W_____W',
+      'W______W_____W_____W',
+      'W______W_____W_____W',
+      'W______W_____W_____W',
+      'W______W_____W_____W',
+      'W______W___________W',
+      'W_S____W________E__W',
+      'WWWWWWWWWWWWWWWWWWWW' ],
+
+    // ── Level 14 ──
+    [ 'WWWWWWWWWWWWWWWWWWWW',
+      'W__________BBBBBB__W',
+      'W__________________W',
+      'W________W_________W',
+      'W________W_________W',
+      'W________W_________W',
+      'W________W_________W',
+      'W________W_________W',
+      'W________W_________W',
+      'W________W_________W',
+      'W_S______W_______E_W',
+      'WWWWWWWWWWWWWWWWWWWW' ],
+
+    // ── Level 15 ──
+    [ 'WWWWWWWWWWWWWWWWWWWW',
+      'W________BBBBW_____W',
+      'W____________W_____W',
+      'W______W_____W_____W',
+      'W______W_____W_____W',
+      'W______W_____W_____W',
+      'W______W_____W_____W',
+      'W______W_____W_____W',
+      'W______W_____W_____W',
+      'W______W___________W',
+      'W_S____W________E__W',
+      'WWWWWWWWWWWWWWWWWWWW' ],
+
+    // ── Level 16 ──
+    [ 'WWWWWWWWWWWWWWWWWWWW',
+      'W_________W________W',
+      'W_________W________W',
+      'W_____W___W____W___W',
+      'W_____W___W____W___W',
+      'W_____W___W____W___W',
+      'W_____W___W____W___W',
+      'W_____W___W____W___W',
+      'W_____W___W____W___W',
+      'W_____W________W___W',
+      'W_S___W________W_E_W',
+      'WWWWWWWWWWWWWWWWWWWW' ],
+
+    // ── Level 17 ──
+    [ 'WWWWWWWWWWWWWWWWWWWW',
+      'W__________W_______W',
+      'W__________W_______W',
+      'W______W___W___W___W',
+      'W______W___W___W___W',
+      'W______W___W___W___W',
+      'W______W___W___W___W',
+      'W______W___W___W___W',
+      'W______W___W___W___W',
+      'W______W_______W___W',
+      'W_S____W_______W_E_W',
+      'WWWWWWWWWWWWWWWWWWWW' ],
+
+    // ── Level 18 ──
+    [ 'WWWWWWWWWWWWWWWWWWWW',
+      'W__________W_______W',
+      'W__________W_______W',
+      'W__________W_______W',
+      'W_____W____W___W___W',
+      'W_____W____W___W___W',
+      'W_____W____W___W___W',
+      'W_____W____W___W___W',
+      'W_____W________W___W',
+      'W_____W________W___W',
+      'W_S___W________W_E_W',
+      'WWWWWWWWWWWWWWWWWWWW' ],
+
+    // ── Level 19 ──
+    [ 'WWWWWWWWWWWWWWWWWWWW',
+      'W___________W______W',
+      'W___________W______W',
+      'W______W____W___W__W',
+      'W______W____W___W__W',
+      'W______W____W___W__W',
+      'W______W____W___W__W',
+      'W______W____W___W__W',
+      'W______W____W___W__W',
+      'W______W________W__W',
+      'W_S____W________WE_W',
+      'WWWWWWWWWWWWWWWWWWWW' ],
+
+    // ── Level 20 ──
+    [ 'WWWWWWWWWWWWWWWWWWWW',
+      'W_________W________W',
+      'W_________W________W',
+      'W_____W___W___W____W',
+      'W_____W___W___W____W',
+      'W_____W___W___W____W',
+      'W_____W___W___W____W',
+      'W_____W___W___W____W',
+      'W_____W___W___W____W',
+      'W_____W_______W____W',
+      'W_S___W_______W__E_W',
+      'WWWWWWWWWWWWWWWWWWWW' ],
+
+    // ── Level 21 ──
+    [ 'WWWWWWWWWWWWWWWWWWWW',
+      'W_____________W____W',
+      'W_____________W____W',
+      'W______W______W____W',
+      'W______W______W____W',
+      'W______W______W____W',
+      'W______W______W____W',
+      'W______W______W____W',
+      'W______W______W____W',
+      'W______W___________W',
+      'W_STTTTW_________E_W',
+      'WWWWWWWWWWWWWWWWWWWW' ],
+
+    // ── Level 22 ──
+    [ 'WWWWWWWWWWWWWWWWWWWW',
+      'W________W_______WEW',
+      'W________W_______W_W',
+      'W____W___W___W___W_W',
+      'W____W___W___W___W_W',
+      'W____W___W___W___W_W',
+      'W____W___W___W___W_W',
+      'W____W___W___W___W_W',
+      'W____W___W___W___W_W',
+      'W____W_______W_____W',
+      'W_S__W_______W_____W',
+      'WWWWWWWWWWWWWWWWWWWW' ],
+
+    // ── Level 23 ──
+    [ 'WWWWWWWWWWWWWWWWWWWW',
+      'W________BBBBW_____W',
+      'W____________W_____W',
+      'W______W_____W_____W',
+      'W______W_____W_____W',
+      'W______W_____W_____W',
+      'W______W_____W_____W',
+      'W______W_____W_____W',
+      'W______W_____W_____W',
+      'W______W___________W',
+      'W_S____W________E__W',
+      'WWWWWWWWWWWWWWWWWWWW' ],
+
+    // ── Level 24 ──
+    [ 'WWWWWWWWWWWWWWWWWWWW',
+      'W_________W________W',
+      'W_________W________W',
+      'W_____W___W____W___W',
+      'W_____W___W____W___W',
+      'W_____W___W____W___W',
+      'W_____W___W____W___W',
+      'W_____W___W____W___W',
+      'W_____W___W____W___W',
+      'W_____W________W___W',
+      'W_STTTW________W_E_W',
+      'WWWWWWWWWWWWWWWWWWWW' ],
+
+    // ── Level 25 ──
+    [ 'WWWWWWWWWWWWWWWWWWWW',
+      'W_____________WW___W',
+      'W_____________WW___W',
+      'W_______WW____WW___W',
+      'W_______WW____WW___W',
+      'W_______WW____WW___W',
+      'W_______WW____WW___W',
+      'W_______WW____WW___W',
+      'W_______WW____WW___W',
+      'W_______WW_________W',
+      'W_S_____WW_______E_W',
+      'WWWWWWWWWWWWWWWWWWWW' ],
+
+    // ── Level 26 ──
+    [ 'WWWWWWWWWWWWWWWWWWWW',
+      'W________W_______WEW',
+      'W________W_______W_W',
+      'W____W___W___W___W_W',
+      'W____W___W___W___W_W',
+      'W____W___W___W___W_W',
+      'W____W___W___W___W_W',
+      'W____W___W___W___W_W',
+      'W____W___W___W___W_W',
+      'W____W_______W_____W',
+      'W_S__W_______W_____W',
+      'WWWWWWWWWWWWWWWWWWWW' ],
+
+    // ── Level 27 ──
+    [ 'WWWWWWWWWWWWWWWWWWWW',
+      'W_________W_______EW',
+      'W_________W_______WW',
+      'W_____W___W___W___WW',
+      'W_____W___W___W___WW',
+      'W_____W___W___W___WW',
+      'W_____W___W___W___WW',
+      'W_____W___W___W___WW',
+      'W_____W___W___W___WW',
+      'W_____W_______W____W',
+      'W_S___W_______W____W',
+      'WWWWWWWWWWWWWWWWWWWW' ],
+
+    // ── Level 28 ──
+    [ 'WWWWWWWWWWWWWWWWWWWW',
+      'W________W_______WEW',
+      'W________W_______W_W',
+      'W________W_______W_W',
+      'W____W___W___W___W_W',
+      'W____W___W___W___W_W',
+      'W____W___W___W___W_W',
+      'W____W___W___W___W_W',
+      'W____W_______W_____W',
+      'W____W_______W_____W',
+      'W_S__W_______W_____W',
+      'WWWWWWWWWWWWWWWWWWWW' ],
+
+    // ── Level 29 ──
+    [ 'WWWWWWWWWWWWWWWWWWWW',
+      'W_________W_______EW',
+      'W_________W_______WW',
+      'W_____W___W___W___WW',
+      'W_____W___W___W___WW',
+      'W_____W___W___W___WW',
+      'W_____W___W___W___WW',
+      'W_____W___W___W___WW',
+      'W_____W___W___W___WW',
+      'W_____W_______W____W',
+      'W_STTTW_______W____W',
+      'WWWWWWWWWWWWWWWWWWWW' ],
+
+    // ── Level 30 ──
+    [ 'WWWWWWWWWWWWWWWWWWWW',
+      'W________W_______WEW',
+      'W________W_______W_W',
+      'W____W___W___W___W_W',
+      'W____W___W___W___W_W',
+      'W____W___W___W___W_W',
+      'W____W___W___W___W_W',
+      'W____W___W___W___W_W',
+      'W____W___W___W___W_W',
+      'W____W_______W_____W',
+      'W_STTW_______W_____W',
+      'WWWWWWWWWWWWWWWWWWWW' ],
+
+    // ── Level 31 ──
+    [ 'WWWWWWWWWWWWWWWWWWWW',
+      'W________BBBW______W',
+      'W___________W______W',
+      'W______W____W______W',
+      'W______W____W______W',
+      'W______W____W______W',
+      'W______W____W______W',
+      'W______W____W______W',
+      'W______W____W______W',
+      'W______W___________W',
+      'W_STTTTW_____TTTE__W',
+      'WWWWWWWWWWWWWWWWWWWW' ],
+
+    // ── Level 32 ──
+    [ 'WWWWWWWWWWWWWWWWWWWW',
+      'W________W_________W',
+      'W________W_________W',
+      'W____W___W____W____W',
+      'W____W___W____W____W',
+      'W____W___W____W____W',
+      'W____W___W____W____W',
+      'W____W___W____W____W',
+      'W____W___W____W____W',
+      'W____W________W____W',
+      'W_S__W________W__E_W',
+      'WWWWWWWWWWWWWWWWWWWW' ],
+
+    // ── Level 33 ──
+    [ 'WWWWWWWWWWWWWWWWWWWW',
+      'W________W_______WEW',
+      'W________W_______W_W',
+      'W____W___W___W___W_W',
+      'W____W___W___W___W_W',
+      'W____W___W___W___W_W',
+      'W____W___W___W___W_W',
+      'W____W___W___W___W_W',
+      'W____W___W___W___W_W',
+      'W____W_______W_____W',
+      'W_STTW_______W_____W',
+      'WWWWWWWWWWWWWWWWWWWW' ],
+
+    // ── Level 34 ──
+    [ 'WWWWWWWWWWWWWWWWWWWW',
+      'W____________WW____W',
+      'W____________WW____W',
+      'W_____WW_____WW____W',
+      'W_____WW_____WW____W',
+      'W_____WW_____WW____W',
+      'W_____WW_____WW____W',
+      'W_____WW_____WW____W',
+      'W_____WW_____WW____W',
+      'W_____WW___________W',
+      'W_S___WW_________E_W',
+      'WWWWWWWWWWWWWWWWWWWW' ],
+
+    // ── Level 35 ──
+    [ 'WWWWWWWWWWWWWWWWWWWW',
+      'W__________W_______W',
+      'W__________W_______W',
+      'W_____W____W___W___W',
+      'W_____W____W___W___W',
+      'W_____W____W___W___W',
+      'W_____W____W___W___W',
+      'W_____W____W___W___W',
+      'W_____W____W___W___W',
+      'W_____W________W___W',
+      'W_STTTW________W_E_W',
+      'WWWWWWWWWWWWWWWWWWWW' ],
+
+    // ── Level 36 ──
+    [ 'WWWWWWWWWWWWWWWWWWWW',
+      'W______W______W____W',
+      'W______W______W____W',
+      'W______W______W____W',
+      'W___W__W__W___W__W_W',
+      'W___W__W__W___W__W_W',
+      'W___W__W__W___W__W_W',
+      'W___W__W__W___W__W_W',
+      'W___W_____W______W_W',
+      'W___W_____W______W_W',
+      'W_S_W_____W______WEW',
+      'WWWWWWWWWWWWWWWWWWWW' ],
+
+    // ── Level 37 ──
+    [ 'WWWWWWWWWWWWWWWWWWWW',
+      'W______W______W____W',
+      'W______W______W____W',
+      'W___W__W___W__W__W_W',
+      'W___W__W___W__W__W_W',
+      'W___W__W___W__W__W_W',
+      'W___W__W___W__W__W_W',
+      'W___W__W___W__W__W_W',
+      'W___W__W___W__W__W_W',
+      'W___W______W_____W_W',
+      'W_S_W______W_____WEW',
+      'WWWWWWWWWWWWWWWWWWWW' ],
+
+    // ── Level 38 ──
+    [ 'WWWWWWWWWWWWWWWWWWWW',
+      'W_______W______W___W',
+      'W_______W______W___W',
+      'W_______W______W___W',
+      'W____W__W___W__W__WW',
+      'W____W__W___W__W__WW',
+      'W____W__W___W__W__WW',
+      'W____W__W___W__W__WW',
+      'W____W______W_____WW',
+      'W____W______W_____WW',
+      'W_S__W______W_____EW',
+      'WWWWWWWWWWWWWWWWWWWW' ],
+
+    // ── Level 39 ──
+    [ 'WWWWWWWWWWWWWWWWWWWW',
+      'W_______W______W___W',
+      'W_______W______W___W',
+      'W___W___W__W___W__WW',
+      'W___W___W__W___W__WW',
+      'W___W___W__W___W__WW',
+      'W___W___W__W___W__WW',
+      'W___W___W__W___W__WW',
+      'W___W___W__W___W__WW',
+      'W___W______W______WW',
+      'W_S_W______W______EW',
+      'WWWWWWWWWWWWWWWWWWWW' ],
+
+    // ── Level 40 ──
+    [ 'WWWWWWWWWWWWWWWWWWWW',
+      'W______W______W____W',
+      'W______W______W____W',
+      'W______W______W____W',
+      'W___W__W___W__W__W_W',
+      'W___W__W___W__W__W_W',
+      'W___W__W___W__W__W_W',
+      'W___W__W___W__W__W_W',
+      'W___W______W_____W_W',
+      'W___W______W_____W_W',
+      'W_STW______W_____WEW',
+      'WWWWWWWWWWWWWWWWWWWW' ],
+
+    // ── Level 41 ──
+    [ 'WWWWWWWWWWWWWWWWWWWW',
+      'W_______W____BBBW__W',
+      'W_______W_______W__W',
+      'W___W___W___W___W__W',
+      'W___W___W___W___W__W',
+      'W___W___W___W___W__W',
+      'W___W___W___W___W__W',
+      'W___W___W___W___W__W',
+      'W___W___W___W___W__W',
+      'W___W_______W______W',
+      'W_STW_______W____E_W',
+      'WWWWWWWWWWWWWWWWWWWW' ],
+
+    // ── Level 42 ──
+    [ 'WWWWWWWWWWWWWWWWWWWW',
+      'W________W_______WEW',
+      'W________W_______W_W',
+      'W____W___W___W___W_W',
+      'W____W___W___W___W_W',
+      'W____W___W___W___W_W',
+      'W____W___W___W___W_W',
+      'W____W___W___W___W_W',
+      'W____W___W___W___W_W',
+      'W____W_______W_____W',
+      'W_STTW_______W_____W',
+      'WWWWWWWWWWWWWWWWWWWW' ],
+
+    // ── Level 43 ──
+    [ 'WWWWWWWWWWWWWWWWWWWW',
+      'W_______W______W___W',
+      'W_______W______W___W',
+      'W_______W______W___W',
+      'W___W___W__W___W__WW',
+      'W___W___W__W___W__WW',
+      'W___W___W__W___W__WW',
+      'W___W___W__W___W__WW',
+      'W___W______W______WW',
+      'W___W______W______WW',
+      'W_STW______W______EW',
+      'WWWWWWWWWWWWWWWWWWWW' ],
+
+    // ── Level 44 ──
+    [ 'WWWWWWWWWWWWWWWWWWWW',
+      'W______W_____W____EW',
+      'W______W_____W____WW',
+      'W___W__W__W__W__W_WW',
+      'W___W__W__W__W__W_WW',
+      'W___W__W__W__W__W_WW',
+      'W___W__W__W__W__W_WW',
+      'W___W__W__W__W__W_WW',
+      'W___W__W__W__W__W_WW',
+      'W___W_____W_____W__W',
+      'W_S_W_____W_____W__W',
+      'WWWWWWWWWWWWWWWWWWWW' ],
+
+    // ── Level 45 ──
+    [ 'WWWWWWWWWWWWWWWWWWWW',
+      'W_______W______W___W',
+      'W_______W______W___W',
+      'W_______W______W___W',
+      'W____W__W__W___W___W',
+      'W____W__W__W___W___W',
+      'W____W__W__W___W___W',
+      'W____W__W__W___W___W',
+      'W____W_____W_______W',
+      'W____W_____W_______W',
+      'W_STTW___TTW_____E_W',
+      'WWWWWWWWWWWWWWWWWWWW' ],
+
+    // ── Level 46 ──
+    [ 'WWWWWWWWWWWWWWWWWWWW',
+      'W______W_____W____EW',
+      'W______W_____W____WW',
+      'W______W_____W____WW',
+      'W___W__W__W__W__W_WW',
+      'W___W__W__W__W__W_WW',
+      'W___W__W__W__W__W_WW',
+      'W___W__W__W__W__W_WW',
+      'W___W_____W_____W__W',
+      'W___W_____W_____W__W',
+      'W_S_W_____W_____W__W',
+      'WWWWWWWWWWWWWWWWWWWW' ],
+
+    // ── Level 47 ──
+    [ 'WWWWWWWWWWWWWWWWWWWW',
+      'W______W_____W____EW',
+      'W______W_____W____WW',
+      'W___W__W__W__W__W_WW',
+      'W___W__W__W__W__W_WW',
+      'W___W__W__W__W__W_WW',
+      'W___W__W__W__W__W_WW',
+      'W___W__W__W__W__W_WW',
+      'W___W__W__W__W__W_WW',
+      'W___W_____W_____W__W',
+      'W_STW_____W_____W__W',
+      'WWWWWWWWWWWWWWWWWWWW' ],
+
+    // ── Level 48 ──
+    [ 'WWWWWWWWWWWWWWWWWWWW',
+      'W______W_____W____EW',
+      'W______W_____W____WW',
+      'W______W_____W____WW',
+      'W___W__W__W__W__W_WW',
+      'W___W__W__W__W__W_WW',
+      'W___W__W__W__W__W_WW',
+      'W___W__W__W__W__W_WW',
+      'W___W_____W_____W__W',
+      'W___W_____W_____W__W',
+      'W_S_W_____W_____W__W',
+      'WWWWWWWWWWWWWWWWWWWW' ],
+
+    // ── Level 49 ──
+    [ 'WWWWWWWWWWWWWWWWWWWW',
+      'W______W_____W___WEW',
+      'W______W_____W___W_W',
+      'W______W_____W___W_W',
+      'W______W_____W___W_W',
+      'W___W__W__W__W_W_W_W',
+      'W___W__W__W__W_W_W_W',
+      'W___W_____W____W___W',
+      'W___W_____W____W___W',
+      'W___W_____W____W___W',
+      'W_S_W_____W____W___W',
+      'WWWWWWWWWWWWWWWWWWWW' ],
+
+    // ── Level 50 ──
+    [ 'WWWWWWWWWWWWWWWWWWWW',
+      'W_____W_____W____WEW',
+      'W_____W_____W____W_W',
+      'W_____W_____W____W_W',
+      'W_____W_____W____W_W',
+      'W__W__W__W__W__W_W_W',
+      'W__W__W__W__W__W_W_W',
+      'W__W_____W_____W___W',
+      'W__W_____W_____W___W',
+      'W__W_____W_____W___W',
+      'W_SW_____W_____W___W',
+      'WWWWWWWWWWWWWWWWWWWW' ],
+
   ];
+
+  const LEVEL_MOVERS = [
+    [], // 1
+    [], // 2
+    [], // 3
+    [], // 4
+    [], // 5
+    [], // 6
+    [], // 7
+    [], // 8
+    [], // 9
+    [], // 10
+    // 11 — mover patrols ceiling row 1 (only route)
+    [{ x:3*TILE, y:1*TILE+2, w:TILE-4, h:TILE-4, dx:1.5, dy:0, minX:2*TILE, maxX:16*TILE, type:'spike' }],
+    [], // 12
+    [], // 13
+    // 14 — mover patrols ceiling
+    [{ x:4*TILE, y:1*TILE+2, w:TILE-4, h:TILE-4, dx:1.7, dy:0, minX:2*TILE, maxX:14*TILE, type:'spike' }],
+    // 15 — mover patrols ceiling
+    [{ x:4*TILE, y:1*TILE+2, w:TILE-4, h:TILE-4, dx:1.7, dy:0, minX:2*TILE, maxX:14*TILE, type:'spike' }],
+    [], // 16
+    [], // 17
+    [], // 18
+    [], // 19
+    [], // 20
+    // 21 — mover on ceiling
+    [{ x:3*TILE, y:1*TILE+2, w:TILE-4, h:TILE-4, dx:1.8, dy:0, minX:2*TILE, maxX:16*TILE, type:'spike' }],
+    [], // 22
+    [], // 23
+    // 24 — two movers
+    [
+      { x:2*TILE, y:1*TILE+2, w:TILE-4, h:TILE-4, dx:1.7, dy:0, minX:2*TILE, maxX:9*TILE, type:'spike' },
+      { x:14*TILE, y:1*TILE+2, w:TILE-4, h:TILE-4, dx:-1.7, dy:0, minX:9*TILE, maxX:16*TILE, type:'spike' },
+    ],
+    [], // 25
+    [], // 26
+    [], // 27
+    [], // 28
+    [], // 29
+    // 30 — three movers
+    [
+      { x:2*TILE, y:1*TILE+2, w:TILE-4, h:TILE-4, dx:2.0, dy:0, minX:2*TILE, maxX:7*TILE, type:'spike' },
+      { x:10*TILE, y:1*TILE+2, w:TILE-4, h:TILE-4, dx:2.0, dy:0, minX:9*TILE, maxX:16*TILE, type:'spike' },
+    ],
+    [], // 31
+    [], // 32
+    [], // 33
+    [], // 34
+    [], // 35
+    [], // 36
+    [], // 37
+    [], // 38
+    [], // 39
+    // 40 — fast mover
+    [{ x:3*TILE, y:1*TILE+2, w:TILE-4, h:TILE-4, dx:1.8, dy:0, minX:2*TILE, maxX:16*TILE, type:'spike' }],
+    // 41 — fast mover
+    [{ x:3*TILE, y:1*TILE+2, w:TILE-4, h:TILE-4, dx:1.9, dy:0, minX:2*TILE, maxX:16*TILE, type:'spike' }],
+    // 42 — fast mover
+    [{ x:3*TILE, y:1*TILE+2, w:TILE-4, h:TILE-4, dx:2.0, dy:0, minX:2*TILE, maxX:16*TILE, type:'spike' }],
+    // 43 — fast mover
+    [{ x:3*TILE, y:1*TILE+2, w:TILE-4, h:TILE-4, dx:2.1, dy:0, minX:2*TILE, maxX:16*TILE, type:'spike' }],
+    // 44 — fast mover
+    [{ x:3*TILE, y:1*TILE+2, w:TILE-4, h:TILE-4, dx:2.2, dy:0, minX:2*TILE, maxX:16*TILE, type:'spike' }],
+    // 45 — fast mover
+    [{ x:3*TILE, y:1*TILE+2, w:TILE-4, h:TILE-4, dx:2.3, dy:0, minX:2*TILE, maxX:16*TILE, type:'spike' }],
+    // 46 — fast mover
+    [{ x:3*TILE, y:1*TILE+2, w:TILE-4, h:TILE-4, dx:2.4, dy:0, minX:2*TILE, maxX:16*TILE, type:'spike' }],
+    // 47 — fast mover
+    [{ x:3*TILE, y:1*TILE+2, w:TILE-4, h:TILE-4, dx:2.5, dy:0, minX:2*TILE, maxX:16*TILE, type:'spike' }],
+    // 48 — fast mover
+    [{ x:3*TILE, y:1*TILE+2, w:TILE-4, h:TILE-4, dx:2.6, dy:0, minX:2*TILE, maxX:16*TILE, type:'spike' }],
+    // 49 — fast mover
+    [{ x:3*TILE, y:1*TILE+2, w:TILE-4, h:TILE-4, dx:2.7, dy:0, minX:2*TILE, maxX:16*TILE, type:'spike' }],
+    // 50 — fast mover
+    [{ x:3*TILE, y:1*TILE+2, w:TILE-4, h:TILE-4, dx:2.8, dy:0, minX:2*TILE, maxX:16*TILE, type:'spike' }],
+  ];
+
+
+
+
+  // Live mover state (position only; speed/bounds copied from LEVEL_MOVERS)
+  let movers = [];
 
   function parseLevel(idx) {
     const grid = LEVELS[idx];
@@ -15636,16 +16336,54 @@ function initGravityFlip(body, ctrl) {
         if (ch === 'S') { startCol = cc; startRow = r; }
       }
     }
+    // Init movers from template
+    const template = LEVEL_MOVERS[idx] || [];
+    movers = template.map(m => ({ ...m }));
   }
 
   function initLevel(idx) {
     levelIdx = idx;
     parseLevel(idx);
-    // Place player centred in its start tile
     px = startCol * TILE + (TILE - PW) / 2;
     py = startRow * TILE + (TILE - PH) / 2;
     pvx = 0; pvy = 0; gravDir = 1; onGround = false;
     dead = false; deadTimer = 0; won = false; wonTimer = 0;
+  }
+
+  function updateMovers() {
+    for (const m of movers) {
+      m.x += m.dx;
+      m.y += m.dy;
+      if (m.dx !== 0) {
+        if (m.x <= m.minX) { m.x = m.minX; m.dx = Math.abs(m.dx); }
+        if (m.x + m.w >= m.maxX + m.w) { m.x = m.maxX; m.dx = -Math.abs(m.dx); }
+      }
+      if (m.dy !== 0) {
+        if (m.y <= m.minY) { m.y = m.minY; m.dy = Math.abs(m.dy); }
+        if (m.y + m.h >= m.maxY + m.h) { m.y = m.maxY; m.dy = -Math.abs(m.dy); }
+      }
+    }
+  }
+
+  function checkMoverCollisions() {
+    for (const m of movers) {
+      // AABB overlap
+      if (px < m.x + m.w && px + PW > m.x && py < m.y + m.h && py + PH > m.y) {
+        if (m.type === 'spike') { dead = true; return; }
+        if (m.type === 'wall') {
+          // Push player out — find least-overlap axis
+          const overlapL = (px + PW) - m.x;
+          const overlapR = (m.x + m.w) - px;
+          const overlapT = (py + PH) - m.y;
+          const overlapB = (m.y + m.h) - py;
+          const minOv = Math.min(overlapL, overlapR, overlapT, overlapB);
+          if (minOv === overlapL) px = m.x - PW;
+          else if (minOv === overlapR) px = m.x + m.w;
+          else if (minOv === overlapT) { py = m.y - PH; if (gravDir > 0) onGround = true; pvy = 0; }
+          else { py = m.y + m.h; if (gravDir < 0) onGround = true; pvy = 0; }
+        }
+      }
+    }
   }
 
   function tileAt(tc, tr) {
@@ -15696,6 +16434,9 @@ function initGravityFlip(body, ctrl) {
       flipQueued = false;
     }
 
+    // ── moving obstacles ──
+    updateMovers();
+
     // ── gravity ──
     pvy += GRAV * gravDir;
     pvy = Math.max(-MAX_VY, Math.min(MAX_VY, pvy));
@@ -15742,6 +16483,9 @@ function initGravityFlip(body, ctrl) {
         if (ch === 'E') { won = true; wonTimer = 0; return; }
       }
     }
+
+    // ── check moving obstacle collisions ──
+    if (!dead && !won) checkMoverCollisions();
   }
 
   function draw() {
@@ -15797,6 +16541,28 @@ function initGravityFlip(body, ctrl) {
           ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
           ctx.fillText('E', tx+TILE/2, ty+TILE/2);
         }
+      }
+    }
+
+    // moving obstacles
+    for (const m of movers) {
+      if (m.type === 'spike') {
+        // Draw as a glowing orange diamond spike
+        const cx2 = m.x + m.w / 2, cy2 = m.y + m.h / 2, r2 = m.w / 2 - 1;
+        ctx.fillStyle = p ? '#e67e22' : '#ff8800';
+        ctx.shadowColor = p ? '#e67e22' : '#ff6600'; ctx.shadowBlur = 6 * scale;
+        ctx.beginPath();
+        ctx.moveTo(cx2, cy2 - r2);
+        ctx.lineTo(cx2 + r2, cy2);
+        ctx.lineTo(cx2, cy2 + r2);
+        ctx.lineTo(cx2 - r2, cy2);
+        ctx.closePath(); ctx.fill();
+        ctx.shadowBlur = 0;
+      } else if (m.type === 'wall') {
+        ctx.fillStyle = p ? '#5a7a3a' : '#33aa55';
+        ctx.fillRect(m.x, m.y, m.w, m.h);
+        ctx.fillStyle = p ? '#7a9a5a' : '#55cc77';
+        ctx.fillRect(m.x+1, m.y+1, m.w-2, m.h-2);
       }
     }
 
