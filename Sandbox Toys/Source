@@ -105,34 +105,69 @@ function hsSave(data) {
 function hsGet(gameName) {
   return hsLoad()[gameName] ?? null;
 }
+// Single-metric set: score is a plain number
 function hsSet(gameName, score) {
   const data = hsLoad();
-  const prev = data[gameName] ?? null;
-  if (prev === null || score > prev) {
+  const prev = data[gameName];
+  // handle legacy plain number or first save
+  const prevVal = (prev !== null && prev !== undefined && typeof prev === 'object') ? null : (prev ?? null);
+  if (prevVal === null || score > prevVal) {
     data[gameName] = score;
     hsSave(data);
-    return true; // new best
+    return true;
   }
   return false;
 }
-// Returns an element to put in the win bar to show highscore
+// Multi-metric set: metrics is {key: value, ...}, higherIsBetter assumed for all
+// primaryKey is the key used to decide "new best overall" (first key if omitted)
+function hsSetMulti(gameName, metrics, primaryKey) {
+  const data = hsLoad();
+  const prev = data[gameName];
+  const pk = primaryKey || Object.keys(metrics)[0];
+  const prevObj = (prev && typeof prev === 'object') ? prev : {};
+  const prevPrimary = prevObj[pk] ?? null;
+  const newPrimary = metrics[pk];
+  let anyNew = false;
+  const merged = Object.assign({}, prevObj);
+  for (const [k, v] of Object.entries(metrics)) {
+    if ((merged[k] ?? null) === null || v > merged[k]) {
+      merged[k] = v;
+      anyNew = true;
+    }
+  }
+  if (anyNew) { data[gameName] = merged; hsSave(data); }
+  return (prevPrimary === null || newPrimary > prevPrimary); // true if primary is new best
+}
+// Returns an element to put in the win bar to show highscore(s)
 function mkHsDisplay(gameName) {
   const el = document.createElement('span');
   el.className = 'sb-hs-display';
   el.style.cssText = 'font-size:9px;font-weight:300;letter-spacing:.08em;white-space:nowrap;margin-left:auto;margin-right:10px;opacity:0.7;transition:color 0.18s;';
   function refresh() {
     const v = hsGet(gameName);
-    el.textContent = v !== null ? `best: ${v}` : '';
+    if (v === null) { el.textContent = ''; return; }
+    if (typeof v === 'object') {
+      el.textContent = Object.entries(v).map(([k,val]) => `${k}: ${val}`).join(' · ');
+    } else {
+      el.textContent = `best: ${v}`;
+    }
   }
   el._refresh = refresh;
   el._gameName = gameName;
   refresh();
   return el;
 }
-// Called by game code to report a new score
+// Called by game code to report a single score
 function updateHs(gameName, score) {
   const isNew = hsSet(gameName, score);
-  // Refresh the display if the game window is open
+  if (activeWin && activeWin._hsDom && activeWin._hsDom._gameName === gameName) {
+    activeWin._hsDom._refresh();
+  }
+  return isNew;
+}
+// Called by game code to report multiple metrics at once
+function updateHsMulti(gameName, metrics, primaryKey) {
+  const isNew = hsSetMulti(gameName, metrics, primaryKey);
   if (activeWin && activeWin._hsDom && activeWin._hsDom._gameName === gameName) {
     activeWin._hsDom._refresh();
   }
@@ -677,6 +712,20 @@ function openDataWin() {
   const importRow = document.createElement('div'); importRow.className='sb-data-row';
   const importTa = document.createElement('textarea'); importTa.className='sb-data-textarea'; importTa.style.flex='1';
   importTa.placeholder='Paste your data string here…';
+  // "Only import best scores" checkbox — only visible when filter is All Games
+  const onlyBestRow = document.createElement('div');
+  onlyBestRow.style.cssText='display:flex;align-items:center;gap:6px;margin-top:2px;';
+  const onlyBestChk = document.createElement('input'); onlyBestChk.type='checkbox'; onlyBestChk.id='__SB_ONLYBEST__';
+  onlyBestChk.style.cssText='cursor:pointer;width:12px;height:12px;flex-shrink:0;accent-color:var(--sb-accent,#888);';
+  const onlyBestLbl2 = document.createElement('label'); onlyBestLbl2.htmlFor='__SB_ONLYBEST__';
+  onlyBestLbl2.style.cssText='font-size:9px;letter-spacing:.08em;opacity:0.65;cursor:pointer;user-select:none;';
+  onlyBestLbl2.textContent='Only import best scores (keep whichever is higher)';
+  onlyBestRow.appendChild(onlyBestChk); onlyBestRow.appendChild(onlyBestLbl2);
+  function syncOnlyBestVisibility() {
+    onlyBestRow.style.display = filterSel.value === '' ? '' : 'none';
+  }
+  filterSel.addEventListener('change', syncOnlyBestVisibility);
+  syncOnlyBestVisibility();
   const importBtn = document.createElement('button'); importBtn.className='sb-btn'; importBtn.textContent='Import';
   importBtn.addEventListener('click', ()=>{
     try {
@@ -684,17 +733,36 @@ function openDataWin() {
       const incoming = JSON.parse(atob(str));
       if (typeof incoming !== 'object' || incoming === null) throw new Error('bad');
       const filter = filterSel.value;
+      const onlyBest = onlyBestChk.checked && filter === '';
       const current = hsLoad();
       let updated = 0;
       for (const [k, v2] of Object.entries(incoming)) {
-        if (filter && k !== filter) continue; // only import the selected game
-        if (_lockedGames.has(k)) continue;    // skip locked games
-        if (typeof v2 === 'number') {
+        if (filter && k !== filter) continue;
+        if (_lockedGames.has(k)) continue;
+        if (v2 === null || v2 === undefined) continue;
+        if (onlyBest) {
+          const prev = current[k];
+          if (typeof v2 === 'object') {
+            // multi-metric: merge keeping best of each key
+            const prevObj = (prev && typeof prev === 'object') ? prev : {};
+            let anyBetter = false;
+            const merged = Object.assign({}, prevObj);
+            for (const [mk, mv] of Object.entries(v2)) {
+              if ((merged[mk] ?? null) === null || mv > merged[mk]) {
+                merged[mk] = mv; anyBetter = true;
+              }
+            }
+            if (anyBetter) { current[k] = merged; updated++; }
+          } else {
+            // single number: only import if it beats current
+            const prevNum = (prev !== null && prev !== undefined && typeof prev !== 'object') ? prev : null;
+            if (prevNum === null || v2 > prevNum) { current[k] = v2; updated++; }
+          }
+        } else {
           current[k] = v2; updated++;
         }
       }
       hsSave(current);
-      // Refresh all open hs displays
       ROOT.querySelectorAll('.sb-hs-display').forEach(el => { if (el._refresh) el._refresh(); });
       importBtn.textContent = `Done (${updated})`;
       setTimeout(()=>{ importBtn.textContent='Import'; styleBtn(importBtn); }, 2000);
@@ -709,7 +777,7 @@ function openDataWin() {
   const importCol = document.createElement('div'); importCol.style.cssText='display:flex;flex-direction:column;gap:4px;flex-shrink:0;';
   importCol.appendChild(importBtn);
   importRow.appendChild(importCol);
-  importSection.appendChild(importLbl); importSection.appendChild(importRow);
+  importSection.appendChild(importLbl); importSection.appendChild(importRow); importSection.appendChild(onlyBestRow);
 
   // ── LOCK ──
   const lockSection = document.createElement('div'); lockSection.className='sb-data-section';
@@ -5560,7 +5628,7 @@ function initRhythmTap(body, ctrl) {
       else{                                  label='OK';        pts=50;  col='#aaaaaa';}
       score+=pts*(1+Math.floor(combo/10));
       combo++; if(combo>maxCombo)maxCombo=combo;
-      updateHs('Rhythm Tap', score);
+      updateHsMulti('Rhythm Tap', {score, combo: maxCombo});
       addPopup(lx,hitY-20,label,col);
     } else {
       combo=0;
@@ -12207,7 +12275,7 @@ function initJetpack(body, ctrl) {
 
   // ── Step ──────────────────────────────────────────────────────────────────
   function step() {
-    frame++; dist++; score=dist+coinCount*50; updateHs('Jetpack Joyride',score);
+    frame++; dist++; score=dist+coinCount*50; updateHsMulti('Jetpack Joyride',{score, coins: coinCount});
     speed = 4 + dist*0.0006;
     scrollX += speed;
 
@@ -14303,7 +14371,7 @@ function initTypingSpeed(body,ctrl){
         typed+=e.key;
         if(typed.length===passage.length){
           finished=true; endTime=Date.now(); calcStats();
-          updateHs('Typing Speed', wpm);
+          updateHsMulti('Typing Speed', {wpm, accuracy});
         }
       }
     } else if(e.key==='Backspace'){
