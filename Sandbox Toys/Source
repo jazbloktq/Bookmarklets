@@ -48,8 +48,9 @@ STYLE.textContent = `
 }
 #__SB_TITLE__ { font-size: 9px; font-weight: 300; letter-spacing: .24em; text-transform: uppercase; transition: color 0.18s; }
 #__SB_COLLAPSE__ { background: none; border: none; cursor: pointer; font-size: 14px; line-height: 1; padding: 2px 0 2px 8px; transition: color .15s; }
-#__SB_LIST__ { flex: 1; overflow-y: auto; padding: 8px 0; scrollbar-width: none; }
+#__SB_LIST__ { flex: 1; overflow-y: auto; padding: 8px 0; scrollbar-width: none; min-height: 0; }
 #__SB_LIST__::-webkit-scrollbar { display: none; }
+#__SB_SETTINGS__ { flex-shrink: 0; padding: 6px 14px 10px; border-top: 1px solid transparent; transition: border-color 0.18s; }
 .sb-item { display: flex; align-items: center; padding: 8px 14px; cursor: pointer; gap: 9px; border: none; background: none; width: 100%; text-align: left; transition: background 0.1s; }
 .sb-item-dot { width: 4px; height: 4px; border-radius: 50%; flex-shrink: 0; transition: background 0.18s; }
 .sb-item-name { font-size: 10px; font-weight: 300; letter-spacing: .05em; white-space: nowrap; transition: color 0.18s; }
@@ -81,8 +82,62 @@ STYLE.textContent = `
 .sb-slider { -webkit-appearance: none; appearance: none; height: 2px; outline: none; cursor: pointer; width: 60px; flex-shrink: 0; border-radius: 1px; }
 .sb-slider::-webkit-slider-thumb { -webkit-appearance: none; width: 10px; height: 10px; border-radius: 50%; cursor: pointer; }
 .sb-slider::-moz-range-thumb { width: 10px; height: 10px; border-radius: 50%; border: none; cursor: pointer; }
+.sb-data-box { display: flex; flex-direction: column; gap: 6px; padding: 12px; flex: 1; overflow-y: auto; }
+.sb-data-section { display: flex; flex-direction: column; gap: 6px; }
+.sb-data-label { font-size: 9px; letter-spacing: .1em; text-transform: uppercase; opacity: 0.5; }
+.sb-data-textarea { font-family: 'IBM Plex Mono', monospace; font-size: 9px; letter-spacing: .04em; resize: none; height: 72px; padding: 6px 8px; outline: none; border-radius: 3px; transition: border-color 0.15s, background 0.15s, color 0.15s; }
+.sb-data-row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.sb-data-select { font-family: 'IBM Plex Mono', monospace; font-size: 9px; padding: 3px 6px; outline: none; cursor: pointer; flex: 1; min-width: 0; }
+.sb-lock-list { display: flex; flex-direction: column; gap: 3px; max-height: 100px; overflow-y: auto; padding: 4px 0; scrollbar-width: thin; }
+.sb-lock-row { display: flex; align-items: center; gap: 6px; font-size: 9px; letter-spacing:.04em; cursor: pointer; padding: 1px 0; }
+.sb-lock-row input[type=checkbox] { cursor: pointer; margin: 0; width: 11px; height: 11px; }
 `;
 document.head.appendChild(STYLE);
+
+// ── highscore system ──────────────────────────────────────────────────────────
+const HS_KEY = '__SB_HIGHSCORES__';
+function hsLoad() {
+  try { return JSON.parse(localStorage.getItem(HS_KEY) || '{}'); } catch { return {}; }
+}
+function hsSave(data) {
+  try { localStorage.setItem(HS_KEY, JSON.stringify(data)); } catch {}
+}
+function hsGet(gameName) {
+  return hsLoad()[gameName] ?? null;
+}
+function hsSet(gameName, score) {
+  const data = hsLoad();
+  const prev = data[gameName] ?? null;
+  if (prev === null || score > prev) {
+    data[gameName] = score;
+    hsSave(data);
+    return true; // new best
+  }
+  return false;
+}
+// Returns an element to put in the win bar to show highscore
+function mkHsDisplay(gameName) {
+  const el = document.createElement('span');
+  el.className = 'sb-hs-display';
+  el.style.cssText = 'font-size:9px;font-weight:300;letter-spacing:.08em;white-space:nowrap;margin-left:auto;margin-right:10px;opacity:0.7;transition:color 0.18s;';
+  function refresh() {
+    const v = hsGet(gameName);
+    el.textContent = v !== null ? `best: ${v}` : '';
+  }
+  el._refresh = refresh;
+  el._gameName = gameName;
+  refresh();
+  return el;
+}
+// Called by game code to report a new score
+function updateHs(gameName, score) {
+  const isNew = hsSet(gameName, score);
+  // Refresh the display if the game window is open
+  if (activeWin && activeWin._hsDom && activeWin._hsDom._gameName === gameName) {
+    activeWin._hsDom._refresh();
+  }
+  return isNew;
+}
 
 // ── root + panel ──────────────────────────────────────────────────────────────
 const ROOT = document.createElement('div');
@@ -91,7 +146,7 @@ document.body.appendChild(ROOT);
 
 const PANEL = document.createElement('div');
 PANEL.id = '__SB_PANEL__';
-PANEL.innerHTML = `<div id="__SB_PANEL_HEAD__"><span id="__SB_TITLE__">Sandbox</span><button id="__SB_COLLAPSE__" title="Minimise">‹</button></div><div id="__SB_LIST__"></div>`;
+PANEL.innerHTML = `<div id="__SB_PANEL_HEAD__"><span id="__SB_TITLE__">Sandbox</span><button id="__SB_COLLAPSE__" title="Minimise">‹</button></div><div id="__SB_LIST__"></div><div id="__SB_SETTINGS__"></div>`;
 ROOT.appendChild(PANEL);
 
 const TAB = document.createElement('button');
@@ -159,15 +214,27 @@ function applyTheme() {
   colBtn.style.color = v.collapse;
   colBtn.onmouseenter = () => colBtn.style.color = v.collapseHov;
   colBtn.onmouseleave = () => colBtn.style.color = v.collapse;
+  const settingsEl = document.getElementById('__SB_SETTINGS__');
+  if (settingsEl) settingsEl.style.borderTopColor = v.headBorder;
   LIST.querySelectorAll('.sb-item').forEach(item => refreshItem(item));
   LIST.querySelectorAll('.sb-divider').forEach(d => d.style.background = v.divider);
   TAB.style.cssText = `background:${v.tabBg};border:1px solid ${v.tabBorder};border-left:none;color:${v.tabText};`;
   TAB.onmouseenter = () => TAB.style.color = v.tabTextHov;
   TAB.onmouseleave = () => TAB.style.color = v.tabText;
   ROOT.querySelectorAll('.sb-win').forEach(w => styleWin(w));
+  ROOT.querySelectorAll('.sb-hs-display').forEach(el => el.style.color = v.winName);
+  ROOT.querySelectorAll('.sb-data-textarea').forEach(ta => {
+    ta.style.background = v.panelBg; ta.style.color = v.itemTextAct; ta.style.border = `1px solid ${v.panelBorder}`;
+  });
+  ROOT.querySelectorAll('.sb-data-select').forEach(sel => {
+    sel.style.background = v.panelBg; sel.style.color = v.itemTextAct; sel.style.border = `1px solid ${v.panelBorder}`;
+  });
+  ROOT.querySelectorAll('.sb-data-label').forEach(el => el.style.color = v.infoText);
+  ROOT.querySelectorAll('.sb-lock-row').forEach(el => el.style.color = v.itemText);
   if (themeBtnEl) { themeBtnEl.textContent = v.themeBtnLabel; styleBtn(themeBtnEl); }
   if (typeof tpBtnEl !== 'undefined')     styleBtn(tpBtnEl);
   if (typeof gamesBtnEl !== 'undefined')  styleBtn(gamesBtnEl);
+  if (typeof dataLoadBtnEl !== 'undefined') styleBtn(dataLoadBtnEl);
 }
 
 function refreshItem(item) {
@@ -297,7 +364,14 @@ function openWin(i, toy) {
   const bar  = document.createElement('div'); bar.className='sb-win-bar';
   const nm   = document.createElement('span'); nm.className='sb-win-name'; nm.textContent=toy.name;
   const cl   = document.createElement('button'); cl.className='sb-win-close'; cl.textContent='—'; cl.title='Close';
-  bar.appendChild(nm); bar.appendChild(cl);
+  // highscore display — only for games
+  let hsDom = null;
+  if (toy.game) {
+    hsDom = mkHsDisplay(toy.name);
+    bar.appendChild(nm); bar.appendChild(hsDom); bar.appendChild(cl);
+  } else {
+    bar.appendChild(nm); bar.appendChild(cl);
+  }
 
   let body, ctrl, destroy, dc;
   if (cached) {
@@ -321,6 +395,7 @@ function openWin(i, toy) {
     });
   }
   activeWin = win; items[i].classList.add('active'); refreshItem(items[i]);
+  win._hsDom = hsDom;
   cl.addEventListener('click', ()=>closeWin(win));
   cl.setAttribute('tabindex','-1');
   dc = makeDraggable(win, bar);
@@ -491,28 +566,27 @@ const wigItem=document.createElement('button'); wigItem.className='sb-item';
 wigItem.innerHTML=`<span class="sb-item-dot"></span><span class="sb-item-name">Everything Wiggles</span>`;
 wigItem.addEventListener('click',()=>toggleWiggle(wigItem)); LIST.appendChild(wigItem);
 
-const div2=document.createElement('div'); div2.className='sb-divider'; LIST.appendChild(div2);
-const themeRow=document.createElement('div'); themeRow.style.padding='4px 14px 8px'; LIST.appendChild(themeRow);
-const themeBtnEl=document.createElement('button'); themeBtnEl.className='sb-btn';
-themeBtnEl.style.cssText='width:100%;text-align:center;display:block;';
-themeBtnEl.addEventListener('click',()=>{ theme=theme==='dark'?'paper':'dark'; applyTheme(); });
-themeRow.appendChild(themeBtnEl);
+// ── SETTINGS (fixed at bottom of panel, not in scroll) ────────────────────────
+const SETTINGS = document.getElementById('__SB_SETTINGS__');
 
-const tpRow=document.createElement('div'); tpRow.style.padding='0 14px 8px'; LIST.appendChild(tpRow);
+const themeBtnEl=document.createElement('button'); themeBtnEl.className='sb-btn';
+themeBtnEl.style.cssText='width:100%;text-align:center;display:block;margin-bottom:5px;';
+themeBtnEl.addEventListener('click',()=>{ theme=theme==='dark'?'paper':'dark'; applyTheme(); });
+SETTINGS.appendChild(themeBtnEl);
+
 const tpBtnEl=document.createElement('button'); tpBtnEl.className='sb-btn';
-tpBtnEl.style.cssText='width:100%;text-align:center;display:block;'; tpBtnEl.textContent='2 Player ○';
+tpBtnEl.style.cssText='width:100%;text-align:center;display:block;margin-bottom:5px;'; tpBtnEl.textContent='2 Player ○';
 tpBtnEl.addEventListener('click',()=>{
   twoPlayer=!twoPlayer;
   tpBtnEl.textContent=twoPlayer?'2 Player ●':'2 Player ○';
   setLit(tpBtnEl, twoPlayer);
   if(activeWin) closeWin(activeWin);
 });
-tpRow.appendChild(tpBtnEl);
+SETTINGS.appendChild(tpBtnEl);
 
 let gamesOnly=false;
-const goRow=document.createElement('div'); goRow.style.padding='0 14px 10px'; LIST.appendChild(goRow);
 const gamesBtnEl=document.createElement('button'); gamesBtnEl.className='sb-btn';
-gamesBtnEl.style.cssText='width:100%;text-align:center;display:block;'; gamesBtnEl.textContent='Games Only ○';
+gamesBtnEl.style.cssText='width:100%;text-align:center;display:block;margin-bottom:5px;'; gamesBtnEl.textContent='Games Only ○';
 gamesBtnEl.addEventListener('click',()=>{
   gamesOnly=!gamesOnly;
   gamesBtnEl.textContent=gamesOnly?'Games Only ●':'Games Only ○';
@@ -524,7 +598,177 @@ gamesBtnEl.addEventListener('click',()=>{
   div1.style.display=gamesOnly?'none':'';
   wigItem.style.display=gamesOnly?'none':'flex';
 });
-goRow.appendChild(gamesBtnEl);
+SETTINGS.appendChild(gamesBtnEl);
+
+const dataLoadBtnEl=document.createElement('button'); dataLoadBtnEl.className='sb-btn';
+dataLoadBtnEl.style.cssText='width:100%;text-align:center;display:block;'; dataLoadBtnEl.textContent='Load Data';
+dataLoadBtnEl.addEventListener('click', openDataWin);
+SETTINGS.appendChild(dataLoadBtnEl);
+
+// ── DATA LOAD / EXPORT WINDOW ─────────────────────────────────────────────────
+let _dataWin = null;
+const _lockedGames = new Set();
+
+function openDataWin() {
+  if (_dataWin) { _dataWin.remove(); _dataWin = null; return; }
+  const v = tv();
+  const radius = theme==='paper' ? '12px' : '2px';
+  const gameNames = TOYS.filter(t=>t.game).map(t=>t.name);
+
+  const win = document.createElement('div'); win.className='sb-win';
+  win.style.cssText = `left:216px;top:60px;width:380px;height:520px;z-index:2147483645;`;
+  _dataWin = win;
+
+  const bar = document.createElement('div'); bar.className='sb-win-bar';
+  const nm = document.createElement('span'); nm.className='sb-win-name'; nm.textContent='Load Data';
+  const cl = document.createElement('button'); cl.className='sb-win-close'; cl.textContent='—'; cl.title='Close';
+  cl.addEventListener('click', ()=>{ win.remove(); _dataWin=null; });
+  bar.appendChild(nm); bar.appendChild(cl);
+
+  const body = document.createElement('div'); body.className='sb-win-body';
+  body.style.cssText = 'overflow-y:auto;display:flex;flex-direction:column;';
+
+  const box = document.createElement('div'); box.className='sb-data-box';
+
+  // ── GAME FILTER ──
+  const filterSection = document.createElement('div'); filterSection.className='sb-data-section';
+  const filterLbl = document.createElement('div'); filterLbl.className='sb-data-label'; filterLbl.textContent='Game filter (leave as "All Games" to apply to everything)';
+  const filterRow = document.createElement('div'); filterRow.className='sb-data-row';
+  const filterSel = document.createElement('select'); filterSel.className='sb-data-select';
+  const allOpt = document.createElement('option'); allOpt.value=''; allOpt.textContent='All Games';
+  filterSel.appendChild(allOpt);
+  gameNames.forEach(n => { const o=document.createElement('option'); o.value=n; o.textContent=n; filterSel.appendChild(o); });
+  filterRow.appendChild(filterSel);
+  filterSection.appendChild(filterLbl); filterSection.appendChild(filterRow);
+
+  // ── EXPORT ──
+  const exportSection = document.createElement('div'); exportSection.className='sb-data-section';
+  const exportLbl = document.createElement('div'); exportLbl.className='sb-data-label'; exportLbl.textContent='Export — copy your data';
+  const exportRow = document.createElement('div'); exportRow.className='sb-data-row';
+  const exportTa = document.createElement('textarea'); exportTa.className='sb-data-textarea'; exportTa.readOnly=true; exportTa.style.flex='1';
+  exportTa.placeholder='Click "Copy" to generate…';
+  const copyBtn = document.createElement('button'); copyBtn.className='sb-btn'; copyBtn.textContent='Copy';
+  copyBtn.addEventListener('click', ()=>{
+    const filter = filterSel.value;
+    const data = hsLoad();
+    let out;
+    if (filter) {
+      out = {};
+      if (data[filter] !== undefined) out[filter] = data[filter];
+    } else {
+      out = data;
+    }
+    const str = btoa(JSON.stringify(out));
+    exportTa.value = str;
+    navigator.clipboard?.writeText(str).catch(()=>{});
+    copyBtn.textContent = 'Copied!';
+    setTimeout(()=>{ copyBtn.textContent='Copy'; }, 1500);
+    styleBtn(copyBtn);
+  });
+  exportRow.appendChild(exportTa);
+  const copyCol = document.createElement('div'); copyCol.style.cssText='display:flex;flex-direction:column;gap:4px;flex-shrink:0;';
+  copyCol.appendChild(copyBtn);
+  exportRow.appendChild(copyCol);
+  exportSection.appendChild(exportLbl); exportSection.appendChild(exportRow);
+
+  // ── IMPORT ──
+  const importSection = document.createElement('div'); importSection.className='sb-data-section';
+  const importLbl = document.createElement('div'); importLbl.className='sb-data-label'; importLbl.textContent='Import — paste data string';
+  const importRow = document.createElement('div'); importRow.className='sb-data-row';
+  const importTa = document.createElement('textarea'); importTa.className='sb-data-textarea'; importTa.style.flex='1';
+  importTa.placeholder='Paste your data string here…';
+  const importBtn = document.createElement('button'); importBtn.className='sb-btn'; importBtn.textContent='Import';
+  importBtn.addEventListener('click', ()=>{
+    try {
+      const str = importTa.value.trim();
+      const incoming = JSON.parse(atob(str));
+      if (typeof incoming !== 'object' || incoming === null) throw new Error('bad');
+      const filter = filterSel.value;
+      const current = hsLoad();
+      let updated = 0;
+      for (const [k, v2] of Object.entries(incoming)) {
+        if (filter && k !== filter) continue; // only import the selected game
+        if (_lockedGames.has(k)) continue;    // skip locked games
+        if (typeof v2 === 'number') {
+          current[k] = v2; updated++;
+        }
+      }
+      hsSave(current);
+      // Refresh all open hs displays
+      ROOT.querySelectorAll('.sb-hs-display').forEach(el => { if (el._refresh) el._refresh(); });
+      importBtn.textContent = `Done (${updated})`;
+      setTimeout(()=>{ importBtn.textContent='Import'; styleBtn(importBtn); }, 2000);
+      styleBtn(importBtn);
+    } catch {
+      importBtn.textContent = 'Error!';
+      setTimeout(()=>{ importBtn.textContent='Import'; styleBtn(importBtn); }, 2000);
+      styleBtn(importBtn);
+    }
+  });
+  importRow.appendChild(importTa);
+  const importCol = document.createElement('div'); importCol.style.cssText='display:flex;flex-direction:column;gap:4px;flex-shrink:0;';
+  importCol.appendChild(importBtn);
+  importRow.appendChild(importCol);
+  importSection.appendChild(importLbl); importSection.appendChild(importRow);
+
+  // ── LOCK ──
+  const lockSection = document.createElement('div'); lockSection.className='sb-data-section';
+  const lockLbl = document.createElement('div'); lockLbl.className='sb-data-label'; lockLbl.textContent='Lock games (prevent highscore overwrite on import)';
+  const lockList = document.createElement('div'); lockList.className='sb-lock-list';
+  gameNames.forEach(n => {
+    const row = document.createElement('label'); row.className='sb-lock-row';
+    const cb = document.createElement('input'); cb.type='checkbox'; cb.checked=_lockedGames.has(n);
+    cb.addEventListener('change', ()=>{ if (cb.checked) _lockedGames.add(n); else _lockedGames.delete(n); });
+    const lbl = document.createElement('span'); lbl.textContent=n;
+    row.appendChild(cb); row.appendChild(lbl);
+    lockList.appendChild(row);
+  });
+  lockSection.appendChild(lockLbl); lockSection.appendChild(lockList);
+
+  // ── RESET ──
+  const resetSection = document.createElement('div'); resetSection.className='sb-data-section';
+  const resetLbl = document.createElement('div'); resetLbl.className='sb-data-label'; resetLbl.textContent='Reset highscores';
+  const resetRow = document.createElement('div'); resetRow.className='sb-data-row';
+  const resetSelEl = document.createElement('select'); resetSelEl.className='sb-data-select';
+  const rAllOpt = document.createElement('option'); rAllOpt.value=''; rAllOpt.textContent='All Games';
+  resetSelEl.appendChild(rAllOpt);
+  gameNames.forEach(n => { const o=document.createElement('option'); o.value=n; o.textContent=n; resetSelEl.appendChild(o); });
+  const resetBtn = document.createElement('button'); resetBtn.className='sb-btn'; resetBtn.textContent='Reset';
+  resetBtn.addEventListener('click', ()=>{
+    const filter = resetSelEl.value;
+    const data = hsLoad();
+    if (filter) {
+      delete data[filter];
+    } else {
+      for (const k of Object.keys(data)) delete data[k];
+    }
+    hsSave(data);
+    ROOT.querySelectorAll('.sb-hs-display').forEach(el => { if (el._refresh) el._refresh(); });
+    resetBtn.textContent='Done!';
+    setTimeout(()=>{ resetBtn.textContent='Reset'; styleBtn(resetBtn); }, 1500);
+    styleBtn(resetBtn);
+  });
+  resetRow.appendChild(resetSelEl); resetRow.appendChild(resetBtn);
+  resetSection.appendChild(resetLbl); resetSection.appendChild(resetRow);
+
+  box.appendChild(filterSection);
+  const sep1=document.createElement('div'); sep1.style.cssText='height:1px;background:currentColor;opacity:0.1;margin:2px 0;'; box.appendChild(sep1);
+  box.appendChild(exportSection);
+  const sep2=document.createElement('div'); sep2.style.cssText='height:1px;background:currentColor;opacity:0.1;margin:2px 0;'; box.appendChild(sep2);
+  box.appendChild(importSection);
+  const sep3=document.createElement('div'); sep3.style.cssText='height:1px;background:currentColor;opacity:0.1;margin:2px 0;'; box.appendChild(sep3);
+  box.appendChild(lockSection);
+  const sep4=document.createElement('div'); sep4.style.cssText='height:1px;background:currentColor;opacity:0.1;margin:2px 0;'; box.appendChild(sep4);
+  box.appendChild(resetSection);
+
+  body.appendChild(box);
+  win.appendChild(bar); win.appendChild(body);
+  ROOT.appendChild(win);
+  styleWin(win);
+  // Also style dynamic form elements
+  applyTheme();
+  makeDraggable(win, bar);
+}
 
 // ════════════════════════════════════════════════════════════════════════════
 // TOY 1 — PARTICLE FIELD  (logic verbatim from reference)
@@ -617,7 +861,7 @@ function initSnake(body, ctrl) {
     dir=nextDir;
     const head={x:(snake[0].x+dir.x+COLS)%COLS, y:(snake[0].y+dir.y+ROWS)%ROWS};
     if(snake.some(s=>s.x===head.x&&s.y===head.y)) {
-      running=false; draw();
+      running=false; updateHs('Snake', score); draw();
       ctx.globalAlpha=0.55; ctx.fillStyle=bgClr(); ctx.fillRect(0,0,W,H); ctx.globalAlpha=1;
       ctx.fillStyle=fgClr(); ctx.font="400 13px 'IBM Plex Mono',monospace";
       ctx.textAlign='center'; ctx.fillText('game over · press r to restart',W/2,H/2); ctx.textAlign='left';
@@ -894,7 +1138,7 @@ function initBreakout(body, ctrl) {
           balls.splice(bi,1);
           if(balls.length===0){
             lives--;updateHUD();
-            if(lives<=0){running=false;msg('💀 GAME OVER');return;}
+            if(lives<=0){running=false;updateHs('Breakout',score);msg('💀 GAME OVER');return;}
             balls=[mkBall(W/2,H-50,rndf(-1.5,1.5),-DIFF.ballSpeed[difficulty])];
             launched=false;
           }
@@ -1560,7 +1804,7 @@ function initTetris(body, ctrl) {
   let board,piece,px,py,score,lines,level,raf,speed,timer,gameOver,paused;
   function newBoard(){board=Array.from({length:ROWS},()=>Array(COLS).fill(0));}
   function randPiece(){const i=Math.floor(Math.random()*PIECES.length);return{...PIECES[i],colorIdx:i,shape:PIECES[i].shape.map(r=>[...r])};}
-  function spawnPiece(){piece=randPiece();px=Math.floor((COLS-piece.shape[0].length)/2);py=0;if(!valid(piece.shape,px,py)){gameOver=true;}}
+  function spawnPiece(){piece=randPiece();px=Math.floor((COLS-piece.shape[0].length)/2);py=0;if(!valid(piece.shape,px,py)){gameOver=true;updateHs('Tetris',score);}}
   function valid(shape,tx,ty){for(let r=0;r<shape.length;r++)for(let c2=0;c2<shape[r].length;c2++){if(!shape[r][c2])continue;const nx=tx+c2,ny=ty+r;if(nx<0||nx>=COLS||ny>=ROWS)return false;if(ny>=0&&board[ny][nx])return false;}return true;}
   function place(){for(let r=0;r<piece.shape.length;r++)for(let c2=0;c2<piece.shape[r].length;c2++){if(piece.shape[r][c2]&&py+r>=0)board[py+r][px+c2]=piece.colorIdx+1;}let cleared=0;for(let r=ROWS-1;r>=0;){if(board[r].every(v=>v)){board.splice(r,1);board.unshift(Array(COLS).fill(0));cleared++;}else r--;}if(cleared){lines+=cleared;score+=([0,100,300,500,800][cleared]||800)*(level+1);level=Math.floor(lines/10);speed=Math.max(80,500-level*40);}spawnPiece();}
   function rotate(shape){return shape[0].map((_,i)=>shape.map(r=>r[i]).reverse());}
@@ -1735,7 +1979,7 @@ function initAsteroids(body, ctrl) {
       asteroids=nextAsteroids;
       if(asteroids.length===0){level++;spawnAsteroids();}
       // ship-asteroid collision
-      if(invincible===0){for(const a of asteroids){const dx=ship.x-a.x,dy=ship.y-a.y;if(Math.sqrt(dx*dx+dy*dy)<a.r+8){lives--;invincible=150;ship.vx=0;ship.vy=0;if(lives<=0){gameOver=true;}break;}}}
+      if(invincible===0){for(const a of asteroids){const dx=ship.x-a.x,dy=ship.y-a.y;if(Math.sqrt(dx*dx+dy*dy)<a.r+8){lives--;invincible=150;ship.vx=0;ship.vy=0;if(lives<=0){gameOver=true;updateHs('Asteroids',score);}break;}}}
       scoreEl.textContent=`score ${score}  lives ${lives}`;
     }
     // draw asteroids
@@ -2816,9 +3060,9 @@ function initFlappy(body, ctrl) {
       // collision
       for(const p of pipes){
         const inX=bird.x+bird.r>p.x&&bird.x-bird.r<p.x+PW;
-        if(inX&&(bird.y-bird.r<p.top||bird.y+bird.r>p.top+GAP))gameOver=true;
+        if(inX&&(bird.y-bird.r<p.top||bird.y+bird.r>p.top+GAP)){if(!gameOver)updateHs('Flappy Bird',score);gameOver=true;}
       }
-      if(bird.y+bird.r>H||bird.y-bird.r<0)gameOver=true;
+      if(bird.y+bird.r>H||bird.y-bird.r<0){if(!gameOver)updateHs('Flappy Bird',score);gameOver=true;}
     }
     // draw bg
     ctx.fillStyle=paper?'#d4eaf7':'#0a1628';ctx.fillRect(0,0,W,H);
@@ -3604,7 +3848,7 @@ function initPacman(body, ctrl) {
       if(pac.dyingT>=1){
         pac.dying=false;
         if(lives>0){ spawnActors(); gameState='ready'; readyTimer=90; }
-        else { gameState='gameover'; }
+        else { gameState='gameover'; updateHs('Pac-Man',score); }
         return;
       }
       // Classic dying: mouth opens from full circle, collapses to nothing
@@ -3882,7 +4126,7 @@ function init2048(body, ctrl) {
     grid=g;addRandom(grid);
     if(grid.flat().includes(2048))won=true;
     const hasMove=grid.flat().includes(0)||grid.some((r,ri)=>r.some((v,ci)=>(ci<3&&v===grid[ri][ci+1])||(ri<3&&v===grid[ri+1][ci])));
-    if(!hasMove)gameOver=true;
+    if(!hasMove){gameOver=true;updateHs('2048',score);}
     scoreEl.textContent='score '+score;
     anims=allMoves;animT=0;animating=true;
   }
@@ -4283,7 +4527,7 @@ function initSpaceInvaders(body, ctrl) {
       }
     }
     // invader reaches player line
-    for(const inv of invaders)if(inv.alive&&inv.y>H-60){gameOver=true;}
+    for(const inv of invaders)if(inv.alive&&inv.y>H-60){if(!gameOver)updateHs('Space Invaders',score);gameOver=true;}
     // cleanup
     bullets=bullets.filter(b=>!b.dead&&b.y>0);
     bombs=bombs.filter(b=>!b.dead&&b.y<H);
@@ -4414,7 +4658,7 @@ function initWhackMole(body, ctrl) {
     const dt=(ts-lastTime)/1000;lastTime=ts;
     if(gameOver)return;
     tick++;
-    timeLeft-=dt;if(timeLeft<=0){timeLeft=0;gameOver=true;return;}
+    timeLeft-=dt;if(timeLeft<=0){timeLeft=0;gameOver=true;updateHs('Whack-a-Mole',score);return;}
     const speed=1+score*0.01;
     for(const m of moles){
       m.t+=dt*1000;
@@ -5316,6 +5560,7 @@ function initRhythmTap(body, ctrl) {
       else{                                  label='OK';        pts=50;  col='#aaaaaa';}
       score+=pts*(1+Math.floor(combo/10));
       combo++; if(combo>maxCombo)maxCombo=combo;
+      updateHs('Rhythm Tap', score);
       addPopup(lx,hitY-20,label,col);
     } else {
       combo=0;
@@ -6523,7 +6768,7 @@ function initGalaga(body, ctrl) {
           b.dead=true; lives--;
           spawnParticle3(player.x,player.y,'#44aaff',12);
           player.invincible=120;
-          if(lives<=0){gameOver=true;}
+          if(lives<=0){gameOver=true;updateHs('Galaga',score);}
         }
       }
       // Direct dive collision
@@ -6533,7 +6778,7 @@ function initGalaga(body, ctrl) {
           e.alive=false; lives--;
           spawnParticle3(player.x,player.y,'#44aaff',12);
           player.invincible=120;
-          if(lives<=0)gameOver=true;
+          if(lives<=0){gameOver=true;updateHs('Galaga',score);}
         }
       }
     }
@@ -6984,7 +7229,7 @@ function initMissileCommand(body, ctrl) {
     }
 
     // Game over
-    if(cities.every(c2=>!c2.alive)) gameOver=true;
+    if(cities.every(c2=>!c2.alive)){if(!gameOver)updateHs('Missile Command',score);gameOver=true;}
   }
 
   // ── draw ────────────────────────────────────────────────────────────────
@@ -7235,7 +7480,7 @@ function initHangman(body, ctrl) {
     if(word.includes(letter)){
       // check win
       if([...word].every(l=>guessed.has(l))){
-        gameState='win'; score+=100*(difficulty+1)*(streak+1); streak++;
+        gameState='win'; score+=100*(difficulty+1)*(streak+1); streak++; updateHs('Hangman', score);
       }
     } else {
       wrong++;
@@ -7517,6 +7762,7 @@ function initSpeedSpelling(body, ctrl) {
       gameState='correct';
       streak++;
       correctPauseStart=Date.now();
+      updateHs('Speed Spelling', score);
     } else {
       const dist=levenshtein(attempt,word);
       wrongLetters.push(typed);
@@ -11961,7 +12207,7 @@ function initJetpack(body, ctrl) {
 
   // ── Step ──────────────────────────────────────────────────────────────────
   function step() {
-    frame++; dist++; score=dist+coinCount*50;
+    frame++; dist++; score=dist+coinCount*50; updateHs('Jetpack Joyride',score);
     speed = 4 + dist*0.0006;
     scrollX += speed;
 
@@ -12573,6 +12819,7 @@ function initMemoryPattern(body, ctrl) {
       resultMsg='wrong';
       resultTimer=2000;
       streak=0;
+      updateHs('Memory Pattern', score);
     } else if(playerSeq.length===sequence.length){
       inputEnabled=false;
       score+=sequence.length*10*(difficulty+1);
@@ -14056,6 +14303,7 @@ function initTypingSpeed(body,ctrl){
         typed+=e.key;
         if(typed.length===passage.length){
           finished=true; endTime=Date.now(); calcStats();
+          updateHs('Typing Speed', wpm);
         }
       }
     } else if(e.key==='Backspace'){
