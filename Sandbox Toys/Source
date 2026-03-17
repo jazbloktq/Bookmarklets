@@ -587,6 +587,8 @@ const TOYS = [
   {name:'Battleships',          init:initBattleships,    game:true},
   {name:'Reversi',              init:initReversi,        game:true},
   {name:'Gravity Flip',         init:initGravityFlip,    game:true},
+  {name:'Bubble Shooter',       init:initBubbleShooter,  game:true},
+  {name:'Math Trivia',          init:initMathTrivia,     game:true},
 ];
 const LIST  = document.getElementById('__SB_LIST__');
 const items = [];
@@ -16967,6 +16969,773 @@ function initGravityFlip(body, ctrl) {
     cancelAnimationFrame(raf); ro.disconnect();
     window.removeEventListener('keydown', onKey);
     window.removeEventListener('keyup',   onKey);
+  };
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// TOY — BUBBLE SHOOTER
+// ════════════════════════════════════════════════════════════════════════════
+function initBubbleShooter(body, ctrl) {
+  const {c, ctx, ro} = mkCanvas(body);
+  let W = c.width, H = c.height;
+
+  const COLS = 11;
+  const COLORS      = ['#e05252','#e08840','#d4c040','#52b06a','#4484e0','#9952e0','#e05aaa'];
+  const COLORS_PAP  = ['#c83030','#c86820','#a89010','#287840','#2060c0','#7030b0','#c03080'];
+  const clrs = () => isPaper() ? COLORS_PAP : COLORS;
+
+  let grid, queue, shooter, score, lives, shotCount, waveRows;
+  let gameOver, won, animBubble, popList, fallList;
+  let raf;
+  const scoreEl = mkInfo(ctrl);
+
+  // ── layout helpers ────────────────────────────────────────────────────────
+  const R         = () => Math.max(14, Math.floor(Math.min(W * 0.88 / (COLS * 2 + 1), (H * 0.72) / 16)));
+  const ROW_H     = () => R() * Math.sqrt(3);
+  const GRID_X    = () => Math.floor((W - COLS * R() * 2) / 2) + R();
+  const GRID_Y    = () => R() * 2 + 12;
+  const SHOOT_Y   = () => H - R() * 2 - 20;
+  const SHOOT_X   = () => W / 2;
+  const LEFT_WALL = () => GRID_X() - R();
+  const RIGHT_WALL= () => GRID_X() + (COLS - 1) * R() * 2 + R();
+
+  function cellPos(row, col) {
+    const r = R(), ox = GRID_X() + (row % 2 === 1 ? r : 0);
+    return { x: ox + col * r * 2, y: GRID_Y() + row * ROW_H() };
+  }
+
+  function colsInRow(row) { return row % 2 === 0 ? COLS : COLS - 1; }
+
+  function randClr() {
+    const alive = new Set();
+    for (const row of grid) for (const b of row) if (b) alive.add(b.c);
+    const pool = alive.size > 1 ? [...alive] : clrs();
+    return pool[Math.floor(Math.random() * pool.length)];
+  }
+
+  // ── init ──────────────────────────────────────────────────────────────────
+  function initGame() {
+    W = c.width = body.clientWidth; H = c.height = body.clientHeight;
+    score = 0; lives = 3; shotCount = 0; waveRows = 4;
+    gameOver = false; won = false;
+    animBubble = null; popList = []; fallList = [];
+    buildGrid(waveRows);
+    refillQueue();
+    scoreEl.textContent = 'score: 0  ♥♥♥';
+  }
+
+  function buildGrid(numFilledRows) {
+    grid = [];
+    const TOTAL_ROWS = 18;
+    for (let r = 0; r < TOTAL_ROWS; r++) {
+      const cols = colsInRow(r);
+      if (r < numFilledRows) {
+        grid.push(Array.from({length: cols}, () => ({c: clrs()[Math.floor(Math.random() * clrs().length)]})));
+      } else {
+        grid.push(Array(cols).fill(null));
+      }
+    }
+  }
+
+  function refillQueue() {
+    queue = [];
+    for (let i = 0; i < 3; i++) queue.push(randClr());
+    shooter = { angle: -Math.PI / 2, moving: false };
+  }
+
+  function nextShooterColor() {
+    shooter.color = queue.shift();
+    queue.push(randClr());
+  }
+
+  // ── grid logic ────────────────────────────────────────────────────────────
+  function snapToGrid(bx, by) {
+    let best = null, bestDist = Infinity;
+    const r = R();
+    for (let row = 0; row < grid.length; row++) {
+      for (let col = 0; col < colsInRow(row); col++) {
+        if (grid[row][col]) continue;
+        const p = cellPos(row, col);
+        const d = Math.hypot(bx - p.x, by - p.y);
+        if (d < bestDist) { bestDist = d; best = {row, col}; }
+      }
+    }
+    return bestDist < r * 2.4 ? best : null;
+  }
+
+  function getNeighbors(row, col) {
+    const out = [];
+    const even = row % 2 === 0;
+    const deltas = even
+      ? [[-1,-1],[-1,0],[0,-1],[0,1],[1,-1],[1,0]]
+      : [[-1,0],[-1,1],[0,-1],[0,1],[1,0],[1,1]];
+    for (const [dr,dc] of deltas) {
+      const nr = row+dr, nc = col+dc;
+      if (nr >= 0 && nr < grid.length && nc >= 0 && nc < colsInRow(nr))
+        out.push({row:nr, col:nc});
+    }
+    return out;
+  }
+
+  function floodColor(row, col, color, vis) {
+    const k = `${row},${col}`;
+    if (vis.has(k)) return [];
+    if (!grid[row]?.[col] || grid[row][col].c !== color) return [];
+    vis.add(k);
+    const res = [{row,col}];
+    for (const n of getNeighbors(row,col)) res.push(...floodColor(n.row,n.col,color,vis));
+    return res;
+  }
+
+  function findFloating() {
+    const conn = new Set();
+    const q2 = [];
+    for (let col = 0; col < colsInRow(0); col++) {
+      if (grid[0]?.[col]) { q2.push({row:0,col}); conn.add(`0,${col}`); }
+    }
+    while (q2.length) {
+      const {row,col} = q2.shift();
+      for (const n of getNeighbors(row,col)) {
+        const k = `${n.row},${n.col}`;
+        if (!conn.has(k) && grid[n.row]?.[n.col]) { conn.add(k); q2.push(n); }
+      }
+    }
+    const fl = [];
+    for (let r = 0; r < grid.length; r++)
+      for (let col = 0; col < colsInRow(r); col++)
+        if (grid[r][col] && !conn.has(`${r},${col}`)) fl.push({row:r,col});
+    return fl;
+  }
+
+  function placeBubble(row, col, color) {
+    if (!grid[row]) return;
+    grid[row][col] = {c: color};
+
+    const cluster = floodColor(row, col, color, new Set());
+    if (cluster.length >= 3) {
+      for (const {row:r,col:cc} of cluster) {
+        const p = cellPos(r,cc);
+        popList.push({x:p.x, y:p.y, c:grid[r][cc].c, t:1.0, vx:(Math.random()-0.5)*4, vy:-Math.random()*5-2});
+        grid[r][cc] = null;
+        score += 10;
+      }
+      const floating = findFloating();
+      for (const {row:r,col:cc} of floating) {
+        const p = cellPos(r,cc);
+        fallList.push({x:p.x, y:p.y, c:grid[r][cc].c, vy:-1, t:1.0});
+        grid[r][cc] = null;
+        score += 5;
+      }
+      if (floating.length > 0) score += floating.length * 3; // bonus
+    } else {
+      // missed match — costs a life every 5 wasted shots
+      shotCount++;
+      if (shotCount % 8 === 0) {
+        lives--;
+        if (lives <= 0) { gameOver = true; }
+        else { addRow(); } // pressure: add a new row when life lost
+      }
+    }
+
+    scoreEl.textContent = `score: ${score}  ${'♥'.repeat(lives)}${'♡'.repeat(Math.max(0,3-lives))}`;
+    updateHs('Bubble Shooter', score);
+
+    // win check
+    let anyLeft = false;
+    for (const row2 of grid) for (const b of row2) if (b) { anyLeft=true; break; }
+    if (!anyLeft) { won = true; return; }
+
+    // lose check — any bubble too low
+    for (let rr = 0; rr < grid.length; rr++) {
+      for (let cc = 0; cc < colsInRow(rr); cc++) {
+        if (grid[rr][cc] && cellPos(rr,cc).y + R() > SHOOT_Y() - R() * 2) {
+          gameOver = true; return;
+        }
+      }
+    }
+  }
+
+  function addRow() {
+    // shift all rows down by inserting a new row at top
+    const newRow = Array.from({length: colsInRow(0)}, () =>
+      ({c: clrs()[Math.floor(Math.random() * clrs().length)]}));
+    // shift parity: what was even becomes odd, reassign
+    const newGrid = [newRow];
+    for (let r = 0; r < grid.length - 1; r++) {
+      const newCols = colsInRow(r + 1);
+      const oldRow = grid[r];
+      // re-pad/trim to new parity col count
+      const row = Array.from({length: newCols}, (_,i) => oldRow[i] ?? null);
+      newGrid.push(row);
+    }
+    grid = newGrid;
+  }
+
+  // ── shooting ──────────────────────────────────────────────────────────────
+  function shoot() {
+    if (shooter.moving || gameOver || won) return;
+    const spd = Math.max(14, R() * 0.95);
+    animBubble = {
+      x: SHOOT_X(), y: SHOOT_Y(),
+      vx: Math.cos(shooter.angle) * spd,
+      vy: Math.sin(shooter.angle) * spd,
+      c: shooter.color
+    };
+    shooter.moving = true;
+    nextShooterColor();
+  }
+
+  function updateAnim() {
+    if (!animBubble) return;
+    const r = R();
+    const steps = 3; // sub-steps for accuracy
+    for (let s = 0; s < steps; s++) {
+      animBubble.x += animBubble.vx / steps;
+      animBubble.y += animBubble.vy / steps;
+      // wall bounce
+      if (animBubble.x - r < LEFT_WALL()) { animBubble.x = LEFT_WALL() + r; animBubble.vx = Math.abs(animBubble.vx); }
+      if (animBubble.x + r > RIGHT_WALL()){ animBubble.x = RIGHT_WALL() - r; animBubble.vx = -Math.abs(animBubble.vx); }
+      // ceiling
+      if (animBubble.y - r <= GRID_Y()) {
+        const snap = snapToGrid(animBubble.x, GRID_Y() + r);
+        if (snap) placeBubble(snap.row, snap.col, animBubble.c);
+        else placeBubble(0, Math.floor(colsInRow(0)/2), animBubble.c);
+        animBubble = null; shooter.moving = false; return;
+      }
+      // hit grid bubble
+      for (let row = 0; row < grid.length; row++) {
+        for (let col = 0; col < colsInRow(row); col++) {
+          if (!grid[row][col]) continue;
+          const p = cellPos(row, col);
+          if (Math.hypot(animBubble.x - p.x, animBubble.y - p.y) < r * 1.95) {
+            const snap = snapToGrid(animBubble.x, animBubble.y);
+            if (snap) placeBubble(snap.row, snap.col, animBubble.c);
+            else {
+              // try adjacent empty cells
+              for (const n of getNeighbors(row,col)) {
+                if (!grid[n.row][n.col]) { placeBubble(n.row, n.col, animBubble.c); break; }
+              }
+            }
+            animBubble = null; shooter.moving = false; return;
+          }
+        }
+      }
+    }
+  }
+
+  // ── aim line with wall-bounce preview ────────────────────────────────────
+  function drawAimLine() {
+    const r = R();
+    let x = SHOOT_X(), y = SHOOT_Y();
+    let vx = Math.cos(shooter.angle), vy = Math.sin(shooter.angle);
+    const len = Math.hypot(W, H) * 1.5;
+    let traveled = 0;
+    const pts = [{x,y}];
+    while (traveled < len) {
+      const step = r * 0.8;
+      x += vx * step; y += vy * step; traveled += step;
+      if (x - r < LEFT_WALL())  { x = LEFT_WALL() + r;  vx = Math.abs(vx); }
+      if (x + r > RIGHT_WALL()) { x = RIGHT_WALL() - r; vx = -Math.abs(vx); }
+      pts.push({x,y});
+      // stop if would hit a bubble or ceiling
+      if (y - r <= GRID_Y()) { pts.push({x,y:GRID_Y()+r}); break; }
+      let hit = false;
+      for (let row = 0; row < grid.length && !hit; row++)
+        for (let col = 0; col < colsInRow(row) && !hit; col++)
+          if (grid[row][col] && Math.hypot(x-cellPos(row,col).x, y-cellPos(row,col).y) < r*2) hit=true;
+      if (hit) break;
+    }
+    ctx.save();
+    ctx.setLineDash([5,9]);
+    ctx.strokeStyle = isPaper() ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.22)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(pts[0].x, pts[0].y);
+    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+    ctx.stroke(); ctx.restore();
+  }
+
+  // ── drawing ───────────────────────────────────────────────────────────────
+  function drawBubble(x, y, color, r, alpha) {
+    if (r <= 0) return;
+    ctx.globalAlpha = Math.max(0, Math.min(1, alpha ?? 1));
+    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fillStyle = color; ctx.fill();
+    // outline
+    ctx.strokeStyle = 'rgba(0,0,0,0.15)'; ctx.lineWidth = 1; ctx.stroke();
+    // shine
+    ctx.beginPath(); ctx.arc(x - r*0.3, y - r*0.3, r*0.35, 0, Math.PI*2);
+    ctx.fillStyle = 'rgba(255,255,255,0.4)'; ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+
+  function draw() {
+    W = c.width = body.clientWidth; H = c.height = body.clientHeight;
+    ctx.fillStyle = bgClr(); ctx.fillRect(0,0,W,H);
+    const r = R();
+
+    // danger zone line
+    const dangerY = SHOOT_Y() - R() * 2;
+    ctx.strokeStyle = isPaper() ? 'rgba(200,80,80,0.2)' : 'rgba(255,80,80,0.15)';
+    ctx.lineWidth = 1; ctx.setLineDash([4,6]);
+    ctx.beginPath(); ctx.moveTo(LEFT_WALL(), dangerY); ctx.lineTo(RIGHT_WALL(), dangerY);
+    ctx.stroke(); ctx.setLineDash([]);
+
+    // grid bubbles
+    for (let row = 0; row < grid.length; row++)
+      for (let col = 0; col < colsInRow(row); col++) {
+        const b = grid[row][col]; if (!b) continue;
+        const p = cellPos(row,col);
+        drawBubble(p.x, p.y, b.c, r, 1);
+      }
+
+    // pop particles (exploding rings + flying pieces)
+    for (let i = popList.length-1; i >= 0; i--) {
+      const p = popList[i];
+      p.x += p.vx; p.y += p.vy; p.vy += 0.3; p.t -= 0.045;
+      drawBubble(p.x, p.y, p.c, r * p.t * 0.9, p.t);
+      if (p.t <= 0) popList.splice(i,1);
+    }
+
+    // falling bubbles
+    for (let i = fallList.length-1; i >= 0; i--) {
+      const f = fallList[i];
+      f.vy += 0.6; f.y += f.vy; f.t -= 0.025;
+      drawBubble(f.x, f.y, f.c, r * 0.9, f.t);
+      if (f.t <= 0 || f.y > H+r*2) fallList.splice(i,1);
+    }
+
+    // aim line
+    if (!gameOver && !won && !shooter.moving) drawAimLine();
+
+    // flying bubble
+    if (animBubble) drawBubble(animBubble.x, animBubble.y, animBubble.c, r, 1);
+
+    // shooter cannon
+    if (!gameOver && !won) {
+      const sx = SHOOT_X(), sy = SHOOT_Y();
+      // cannon barrel
+      ctx.save();
+      ctx.translate(sx, sy);
+      ctx.rotate(shooter.angle + Math.PI/2);
+      ctx.fillStyle = isPaper() ? '#8a8070' : '#555555';
+      ctx.fillRect(-r*0.35, -r*1.3, r*0.7, r*1.3);
+      ctx.restore();
+      // current bubble sitting in cannon
+      if (!shooter.moving) drawBubble(sx, sy, shooter.color, r, 1);
+      // queue preview
+      for (let qi = 0; qi < Math.min(2, queue.length); qi++) {
+        const px2 = sx + (qi+1.8) * r * 2.2;
+        drawBubble(px2, sy, queue[qi], r * (0.65 - qi*0.1), 0.75 - qi*0.1);
+      }
+      ctx.font = `300 9px 'IBM Plex Mono',monospace`;
+      ctx.fillStyle = isPaper() ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)';
+      ctx.textAlign = 'center';
+      ctx.fillText('next', SHOOT_X() + r * 2.2 * 1.8, sy - r - 4);
+      ctx.textAlign = 'left';
+    }
+
+    // end overlays
+    if (gameOver || won) {
+      ctx.fillStyle = bgFade(0.65); ctx.fillRect(0,0,W,H);
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillStyle = fgClr();
+      ctx.font = `bold ${Math.max(16,r*1.4)}px 'IBM Plex Mono',monospace`;
+      ctx.fillText(won ? '✦ CLEARED! ✦' : 'GAME OVER', W/2, H/2 - r*1.2);
+      ctx.font = `300 ${Math.max(10,r*0.7)}px 'IBM Plex Mono',monospace`;
+      ctx.fillStyle = isPaper() ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.5)';
+      ctx.fillText(`score: ${score}  ·  click or R to restart`, W/2, H/2 + r*0.5);
+      ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+    }
+  }
+
+  // ── input ─────────────────────────────────────────────────────────────────
+  const onMouseMove = e => {
+    const rect = c.getBoundingClientRect();
+    const dx = (e.clientX - rect.left) - SHOOT_X();
+    const dy = (e.clientY - rect.top)  - SHOOT_Y();
+    let a = Math.atan2(dy, dx);
+    shooter.angle = Math.max(-Math.PI + 0.12, Math.min(-0.12, a));
+  };
+  const onClick = e => {
+    if (gameOver || won) { initGame(); return; }
+    shoot();
+  };
+  const onKey = e => {
+    if (e.key==='r'||e.key==='R') { initGame(); return; }
+    if (e.key===' '||e.key==='ArrowUp') { shoot(); e.preventDefault(); return; }
+    if (e.key==='ArrowLeft')  { shooter.angle = Math.max(-Math.PI+0.12, shooter.angle-0.07); e.preventDefault(); }
+    if (e.key==='ArrowRight') { shooter.angle = Math.min(-0.12, shooter.angle+0.07); e.preventDefault(); }
+  };
+
+  c.addEventListener('mousemove', onMouseMove);
+  c.addEventListener('click', onClick);
+  window.addEventListener('keydown', onKey);
+
+  function loop() { updateAnim(); draw(); raf = requestAnimationFrame(loop); }
+
+  mkBtn('Restart', ctrl).addEventListener('click', () => initGame());
+  initGame();
+  loop();
+  return () => {
+    cancelAnimationFrame(raf); ro.disconnect();
+    c.removeEventListener('mousemove', onMouseMove);
+    c.removeEventListener('click', onClick);
+    window.removeEventListener('keydown', onKey);
+  };
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// TOY — MATH TRIVIA  (timed questions + full scientific calculator)
+// ════════════════════════════════════════════════════════════════════════════
+function initMathTrivia(body, ctrl) {
+  let difficulty = 1; // 0=easy 1=medium 2=hard
+  let score = 0, streak = 0, timeLeft = 0, timerInterval = null;
+  let currentQ = null, answered = false, gameActive = false;
+  const TIMES = [20, 15, 10]; // seconds per question by difficulty
+  const DIFF_LABELS = ['Easy', 'Medium', 'Hard'];
+
+  // ── DOM STRUCTURE ─────────────────────────────────────────────────────────
+  body.style.cssText = 'display:flex;flex-direction:row;overflow:hidden;';
+
+  // LEFT — trivia panel
+  const leftPanel = document.createElement('div');
+  leftPanel.style.cssText = 'flex:1;display:flex;flex-direction:column;padding:16px;gap:10px;overflow-y:auto;min-width:0;';
+
+  // RIGHT — calculator panel
+  const rightPanel = document.createElement('div');
+  rightPanel.style.cssText = `flex-shrink:0;width:200px;display:flex;flex-direction:column;padding:10px;gap:6px;border-left:1px solid;`;
+
+  body.appendChild(leftPanel); body.appendChild(rightPanel);
+
+  function recolor() {
+    const v = tv();
+    rightPanel.style.borderLeftColor = v.panelBorder;
+    rightPanel.style.background = v.panelBg;
+    scoreRow.style.color = v.winName;
+    timerBar.style.background = v.panelBorder;
+    qBox.style.color = v.itemTextAct;
+    calcDisplay.style.color = v.itemTextAct;
+    calcDisplay.style.background = v.winBg;
+    calcDisplay.style.borderColor = v.panelBorder;
+    ansInput.style.color = v.itemTextAct;
+    ansInput.style.background = v.winBg;
+    ansInput.style.borderColor = v.panelBorder;
+    feedbackEl.style.color = v.winName;
+  }
+
+  // ── TRIVIA UI ─────────────────────────────────────────────────────────────
+  const scoreRow = document.createElement('div');
+  scoreRow.style.cssText = 'font-size:10px;letter-spacing:.1em;display:flex;gap:12px;font-family:IBM Plex Mono,monospace;flex-wrap:wrap;';
+  const scoreLabel = document.createElement('span'); scoreLabel.textContent = 'score: 0';
+  const streakLabel = document.createElement('span'); streakLabel.textContent = 'streak: 0';
+  const diffLabel = document.createElement('span');
+  diffLabel.style.cssText = 'margin-left:auto;cursor:pointer;text-decoration:underline;';
+  diffLabel.textContent = 'medium';
+  diffLabel.title = 'Click to change difficulty';
+  diffLabel.addEventListener('click', () => {
+    difficulty = (difficulty + 1) % 3;
+    diffLabel.textContent = DIFF_LABELS[difficulty].toLowerCase();
+    if (gameActive) nextQuestion();
+  });
+  scoreRow.appendChild(scoreLabel); scoreRow.appendChild(streakLabel); scoreRow.appendChild(diffLabel);
+
+  const timerWrap = document.createElement('div');
+  timerWrap.style.cssText = 'height:4px;border-radius:2px;overflow:hidden;';
+  timerWrap.style.background = 'rgba(128,128,128,0.15)';
+  const timerBar = document.createElement('div');
+  timerBar.style.cssText = 'height:100%;width:100%;border-radius:2px;transition:width 0.2s linear,background 0.3s;';
+  timerBar.style.background = '#52b06a';
+  timerWrap.appendChild(timerBar);
+
+  const qBox = document.createElement('div');
+  qBox.style.cssText = 'font-size:22px;font-weight:400;letter-spacing:.04em;font-family:IBM Plex Mono,monospace;min-height:60px;display:flex;align-items:center;justify-content:center;text-align:center;padding:8px;';
+  qBox.textContent = 'Press Start';
+
+  const ansInput = document.createElement('input');
+  ansInput.type = 'text'; ansInput.placeholder = 'your answer…';
+  ansInput.style.cssText = 'font-family:IBM Plex Mono,monospace;font-size:15px;padding:8px 10px;outline:none;border-radius:4px;border:1px solid;width:100%;';
+  ansInput.addEventListener('keydown', e => {
+    if (e.key === 'Enter') {
+      if (!answered) checkAnswer();
+      else if (gameActive) {
+        if (!gameActive) { gameActive = true; score = 0; streak = 0; updateScoreUI(); }
+        nextQuestion();
+      }
+    }
+  });
+
+  const feedbackEl = document.createElement('div');
+  feedbackEl.style.cssText = 'font-size:11px;letter-spacing:.06em;font-family:IBM Plex Mono,monospace;min-height:18px;text-align:center;transition:opacity .3s;';
+
+  const nextBtn = document.createElement('button');
+  nextBtn.className = 'sb-btn'; nextBtn.textContent = 'START';
+  nextBtn.style.cssText = 'align-self:center;padding:6px 24px;font-size:11px;';
+  nextBtn.addEventListener('click', () => {
+    if (!gameActive) { gameActive = true; score = 0; streak = 0; updateScoreUI(); }
+    nextQuestion();
+  });
+  styleBtn(nextBtn);
+
+  leftPanel.appendChild(scoreRow);
+  leftPanel.appendChild(timerWrap);
+  leftPanel.appendChild(qBox);
+  leftPanel.appendChild(ansInput);
+  leftPanel.appendChild(feedbackEl);
+  leftPanel.appendChild(nextBtn);
+
+  // ── CALCULATOR UI ─────────────────────────────────────────────────────────
+  const calcTitle = document.createElement('div');
+  calcTitle.style.cssText = 'font-size:8px;letter-spacing:.18em;text-transform:uppercase;opacity:.5;font-family:IBM Plex Mono,monospace;padding-bottom:2px;';
+  calcTitle.textContent = 'Calculator';
+
+  const calcDisplay = document.createElement('input');
+  calcDisplay.type = 'text';
+  calcDisplay.style.cssText = 'font-family:IBM Plex Mono,monospace;font-size:12px;padding:5px 7px;outline:none;border-radius:3px;border:1px solid;width:100%;text-align:right;';
+  calcDisplay.placeholder = '0';
+
+  // Intercept keyboard on calc display — do NOT trigger ansInput
+  calcDisplay.addEventListener('keydown', e => {
+    e.stopPropagation();
+    if (e.key === 'Enter') { evalCalc(); e.preventDefault(); return; }
+    // Remap x/X and * to × (times), / to ÷
+    if (e.key === 'x' || e.key === 'X' || e.key === '*') {
+      e.preventDefault();
+      const pos = calcDisplay.selectionStart;
+      const v = calcDisplay.value;
+      calcDisplay.value = v.slice(0, pos) + '×' + v.slice(calcDisplay.selectionEnd);
+      calcDisplay.selectionStart = calcDisplay.selectionEnd = pos + 1;
+      return;
+    }
+    if (e.key === '/') {
+      e.preventDefault();
+      const pos = calcDisplay.selectionStart;
+      const v = calcDisplay.value;
+      calcDisplay.value = v.slice(0, pos) + '÷' + v.slice(calcDisplay.selectionEnd);
+      calcDisplay.selectionStart = calcDisplay.selectionEnd = pos + 1;
+      return;
+    }
+  });
+
+  const calcResultEl = document.createElement('div');
+  calcResultEl.style.cssText = 'font-size:10px;font-family:IBM Plex Mono,monospace;text-align:right;opacity:0.6;min-height:14px;padding-right:2px;';
+
+  // Button layout
+  const btnDefs = [
+    ['sin','cos','tan','√','π'],
+    ['7','8','9','÷','C'],
+    ['4','5','6','×','⌫'],
+    ['1','2','3','-','('],
+    ['0','.','xʸ','+',')'],
+    ['='],
+  ];
+
+  const calcGrid = document.createElement('div');
+  calcGrid.style.cssText = 'display:grid;grid-template-columns:repeat(5,1fr);gap:4px;';
+
+  function evalCalc() {
+    let expr = calcDisplay.value.trim();
+    if (!expr) return;
+    try {
+      // Replace display symbols with JS-parseable equivalents
+      expr = expr
+        .replace(/÷/g, '/')
+        .replace(/×/g, '*')
+        .replace(/π/g, '(' + Math.PI + ')')
+        .replace(/sin\s*\(/g, 'Math.sin(')
+        .replace(/cos\s*\(/g, 'Math.cos(')
+        .replace(/tan\s*\(/g, 'Math.tan(')
+        .replace(/√\s*\(/g, 'Math.sqrt(')
+        .replace(/√(\d+(\.\d+)?)/g, 'Math.sqrt($1)')
+        .replace(/\^/g, '**');
+      // eslint-disable-next-line no-new-func
+      const result = Function('"use strict"; return (' + expr + ')')();
+      const rounded = Number.isInteger(result) ? result : parseFloat(result.toFixed(8));
+      calcResultEl.textContent = '= ' + rounded;
+    } catch {
+      calcResultEl.textContent = 'error';
+    }
+  }
+
+  btnDefs.forEach(row => {
+    row.forEach(lbl => {
+      const b = document.createElement('button');
+      b.className = 'sb-btn'; b.textContent = lbl;
+      b.style.cssText = 'font-size:10px;padding:5px 2px;text-align:center;';
+      if (lbl === '=') {
+        b.style.gridColumn = '1 / -1';
+        b.style.padding = '5px';
+      }
+      b.addEventListener('mousedown', e => { e.preventDefault(); }); // don't blur calcDisplay
+      b.addEventListener('click', () => {
+        calcDisplay.focus();
+        const v = calcDisplay.value;
+        if (lbl === 'C')   { calcDisplay.value = ''; calcResultEl.textContent = ''; return; }
+        if (lbl === '⌫')  { calcDisplay.value = v.slice(0, -1); return; }
+        if (lbl === '=')   { evalCalc(); return; }
+        if (lbl === '√')   { calcDisplay.value = v + '√('; return; }
+        if (lbl === 'sin') { calcDisplay.value = v + 'sin('; return; }
+        if (lbl === 'cos') { calcDisplay.value = v + 'cos('; return; }
+        if (lbl === 'tan') { calcDisplay.value = v + 'tan('; return; }
+        if (lbl === 'π')   { calcDisplay.value = v + 'π'; return; }
+        if (lbl === 'xʸ')  { calcDisplay.value = v + '^'; return; }
+        calcDisplay.value = v + lbl;
+      });
+      styleBtn(b);
+      calcGrid.appendChild(b);
+    });
+  });
+
+  rightPanel.appendChild(calcTitle);
+  rightPanel.appendChild(calcDisplay);
+  rightPanel.appendChild(calcResultEl);
+  rightPanel.appendChild(calcGrid);
+
+  // ── QUESTION GENERATOR ────────────────────────────────────────────────────
+  function generateQuestion() {
+    const d = difficulty;
+    const types = d === 0
+      ? ['add','sub','mul','div_easy']
+      : d === 1
+      ? ['mul','div','square','perc','mixed2']
+      : ['square','cube','perc_hard','mixed3','frac','power'];
+
+    const type = types[Math.floor(Math.random() * types.length)];
+    let q = '', ans = 0;
+
+    const ri = (a, b) => Math.floor(Math.random() * (b - a + 1)) + a;
+
+    if (type === 'add') {
+      const a = ri(1,50), b = ri(1,50); q = `${a} + ${b} = ?`; ans = a + b;
+    } else if (type === 'sub') {
+      const a = ri(10,99), b = ri(1, a); q = `${a} − ${b} = ?`; ans = a - b;
+    } else if (type === 'mul') {
+      const a = ri(2, d===0?9:15), b = ri(2, d===0?9:15); q = `${a} × ${b} = ?`; ans = a * b;
+    } else if (type === 'div_easy') {
+      const b = ri(2,9), ans2 = ri(2,9); const a = b * ans2;
+      q = `${a} ÷ ${b} = ?`; ans = ans2;
+    } else if (type === 'div') {
+      const b = ri(2,12), ans2 = ri(2,20); const a = b * ans2;
+      q = `${a} ÷ ${b} = ?`; ans = ans2;
+    } else if (type === 'square') {
+      const a = ri(2, d===1?15:25); q = `${a}² = ?`; ans = a * a;
+    } else if (type === 'cube') {
+      const a = ri(2,10); q = `${a}³ = ?`; ans = a ** 3;
+    } else if (type === 'perc') {
+      const pcts = [10,20,25,50,75]; const pct = pcts[ri(0,pcts.length-1)];
+      const base = ri(2,20)*10; q = `${pct}% of ${base} = ?`; ans = base * pct / 100;
+    } else if (type === 'perc_hard') {
+      const pct = ri(1,9)*5; const base = ri(4,40)*5;
+      q = `${pct}% of ${base} = ?`; ans = parseFloat((base * pct / 100).toFixed(2));
+    } else if (type === 'mixed2') {
+      const a = ri(2,12), b = ri(2,12), c = ri(1,10);
+      q = `${a} × ${b} + ${c} = ?`; ans = a * b + c;
+    } else if (type === 'mixed3') {
+      const a = ri(3,15), b = ri(3,15), c = ri(2,9);
+      q = `(${a} + ${b}) × ${c} = ?`; ans = (a + b) * c;
+    } else if (type === 'frac') {
+      const den = ri(2,9), num1 = ri(1,den-1), num2 = ri(1,den-1);
+      // simplify
+      const sum = num1 + num2;
+      const g = (a,b) => b === 0 ? a : g(b, a%b);
+      const gc = g(sum, den);
+      if (sum % den === 0) {
+        q = `${num1}/${den} + ${num2}/${den} = ?`; ans = sum / den;
+      } else {
+        const ns = sum/gc, ds = den/gc;
+        q = `${num1}/${den} + ${num2}/${den} = ? (simplify)`; ans = parseFloat((num1/den + num2/den).toFixed(4));
+      }
+    } else if (type === 'power') {
+      const base = ri(2,6), exp = ri(2,4); q = `${base}^${exp} = ?`; ans = base ** exp;
+    }
+
+    return {q, ans};
+  }
+
+  // ── TIMER ─────────────────────────────────────────────────────────────────
+  function startTimer() {
+    clearInterval(timerInterval);
+    timeLeft = TIMES[difficulty];
+    updateTimerBar();
+    timerInterval = setInterval(() => {
+      timeLeft -= 0.2;
+      updateTimerBar();
+      if (timeLeft <= 0) {
+        clearInterval(timerInterval);
+        if (!answered) {
+          answered = true;
+          streak = 0;
+          updateScoreUI();
+          feedbackEl.style.opacity = '1';
+          feedbackEl.textContent = `✗  answer was ${currentQ.ans}`;
+          feedbackEl.style.color = '#e05252';
+          nextBtn.textContent = 'NEXT';
+          styleBtn(nextBtn);
+        }
+      }
+    }, 200);
+  }
+
+  function updateTimerBar() {
+    const pct = Math.max(0, timeLeft / TIMES[difficulty]) * 100;
+    timerBar.style.width = pct + '%';
+    timerBar.style.background = pct > 50 ? '#52b06a' : pct > 25 ? '#e08840' : '#e05252';
+  }
+
+  function nextQuestion() {
+    clearInterval(timerInterval);
+    answered = false;
+    currentQ = generateQuestion();
+    qBox.textContent = currentQ.q;
+    ansInput.value = '';
+    feedbackEl.textContent = '';
+    nextBtn.textContent = 'SKIP';
+    styleBtn(nextBtn);
+    startTimer();
+    ansInput.focus();
+  }
+
+  function checkAnswer() {
+    if (!currentQ || answered) return;
+    const raw = ansInput.value.trim().replace(',','.');
+    const userVal = parseFloat(raw);
+    if (isNaN(userVal)) { feedbackEl.textContent = 'enter a number'; return; }
+    answered = true;
+    clearInterval(timerInterval);
+    const correct = Math.abs(userVal - currentQ.ans) < 0.01;
+    if (correct) {
+      const pts = Math.ceil(timeLeft / TIMES[difficulty] * 100) + streak * 10;
+      score += pts; streak++;
+      feedbackEl.style.color = '#52b06a';
+      feedbackEl.textContent = `✓  +${pts} pts`;
+    } else {
+      streak = 0;
+      feedbackEl.style.color = '#e05252';
+      feedbackEl.textContent = `✗  answer was ${currentQ.ans}`;
+    }
+    feedbackEl.style.opacity = '1';
+    updateScoreUI();
+    updateHs('Math Trivia', score);
+    nextBtn.textContent = 'NEXT';
+    styleBtn(nextBtn);
+  }
+
+  function updateScoreUI() {
+    scoreLabel.textContent = 'score: ' + score;
+    streakLabel.textContent = 'streak: ' + streak;
+  }
+
+  // ctrl bar buttons
+  const checkBtn = mkBtn('Check', ctrl);
+  checkBtn.addEventListener('click', checkAnswer);
+  const infoEl = mkInfo(ctrl);
+  infoEl.textContent = 'Enter · type answer · use calculator →';
+
+  recolor();
+  // watch theme changes
+  const _origApply = applyTheme;
+
+  return () => {
+    clearInterval(timerInterval);
   };
 }
 
