@@ -589,6 +589,11 @@ const TOYS = [
   {name:'Gravity Flip',         init:initGravityFlip,    game:true},
   {name:'Bubble Shooter',       init:initBubbleShooter,  game:true},
   {name:'Math Trivia',          init:initMathTrivia,     game:true},
+  {name:'Pipe Connect',         init:initPipeConnect,    game:true},
+  {name:'Tron Light Cycles',    init:initTron,           game:true},
+  {name:'Turbo Racer',          init:initTurboRacer,     game:true},
+  {name:'Dots & Boxes',         init:initDotsBoxes,      game:true},
+  {name:'Ludo',                 init:initLudo,           game:true},
 ];
 const LIST  = document.getElementById('__SB_LIST__');
 const items = [];
@@ -17737,6 +17742,1645 @@ function initMathTrivia(body, ctrl) {
   return () => {
     clearInterval(timerInterval);
   };
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// TOY — PIPE CONNECT
+// ════════════════════════════════════════════════════════════════════════════
+function initPipeConnect(body, ctrl) {
+  const {c, ctx, ro} = mkCanvas(body);
+  let W = c.width, H = c.height;
+  const PIPE_COLORS = ['#e05252','#4484e0','#52b06a','#e08840','#9952e0','#e05aaa','#52c8c8','#d4c040'];
+  const PIPE_COLORS_P = ['#c83030','#2060c0','#287840','#c86820','#7030b0','#c03080','#208888','#a89010'];
+  let grid, COLS, ROWS, paths, active, solved, moves, best, raf;
+  const infoEl = mkInfo(ctrl);
+
+  function clr(i) { return (isPaper() ? PIPE_COLORS_P : PIPE_COLORS)[i]; }
+
+  // ── puzzle generator ──────────────────────────────────────────────────────
+  // Fill the entire grid with non-crossing color paths via round-robin random
+  // walks, then expose only path endpoints as the puzzle dots.
+  // Guarantees: whole grid is coverable and a solution always exists.
+  function generatePuzzle(cols, rows, numColors) {
+    const DIRS = [{dr:-1,dc:0},{dr:1,dc:0},{dr:0,dc:-1},{dr:0,dc:1}];
+    function valid(r,c){ return r>=0&&r<rows&&c>=0&&c<cols; }
+    function shuffle(a){ for(let i=a.length-1;i>0;i--){
+      const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } return a; }
+
+    for(let attempt=0; attempt<300; attempt++){
+      const g = Array.from({length:rows}, ()=>Array(cols).fill(-1));
+      const heads = []; // current growing tip per color
+      const pathCells = []; // ordered cell list per color
+      let ok = true;
+
+      // Pick distinct random starting cells
+      const allCells = shuffle(
+        Array.from({length:rows*cols}, (_,i)=>({r:Math.floor(i/cols),c:i%cols}))
+      );
+      for(let ci=0; ci<numColors; ci++){
+        const {r,c} = allCells[ci];
+        g[r][c] = ci;
+        heads.push({r,c});
+        pathCells.push([{r,c}]);
+      }
+
+      // Grow all paths round-robin until board full or stuck
+      let anyGrew = true;
+      while(anyGrew){
+        anyGrew = false;
+        for(const ci of shuffle([...Array(numColors).keys()])){
+          const h = heads[ci];
+          const nb = shuffle(DIRS
+            .map(d=>({r:h.r+d.dr, c:h.c+d.dc}))
+            .filter(p=>valid(p.r,p.c) && g[p.r][p.c]===-1));
+          if(nb.length){
+            const nx = nb[0];
+            g[nx.r][nx.c] = ci;
+            heads[ci] = nx;
+            pathCells[ci].push(nx);
+            anyGrew = true;
+          }
+        }
+      }
+
+      // Require full coverage
+      let full = true;
+      outer: for(let r=0;r<rows;r++) for(let c=0;c<cols;c++)
+        if(g[r][c]===-1){ full=false; break outer; }
+      if(!full) continue;
+
+      // Require each path has >= 2 cells (start != end)
+      if(pathCells.some(p=>p.length<2)) continue;
+
+      // Endpoints are first and last cell of each path
+      const endpoints = pathCells.map(p=>[p[0], p[p.length-1]]);
+
+      // All endpoint positions must be distinct
+      const seen = new Set();
+      for(const [a,b] of endpoints){
+        seen.add(`${a.r},${a.c}`); seen.add(`${b.r},${b.c}`);
+      }
+      if(seen.size < numColors*2) continue;
+
+      return endpoints; // success
+    }
+    return []; // fallback (very rare)
+  }
+
+  function initGame(cols, rows) {
+    W = c.width = body.clientWidth; H = c.height = body.clientHeight;
+    COLS = cols; ROWS = rows;
+    const numC = Math.min(PIPE_COLORS.length, Math.floor(cols*rows*0.35));
+    const eps = generatePuzzle(cols, rows, numC);
+    // build grid: each cell has {colorIdx or -1, isEndpoint}
+    grid = Array.from({length:rows}, ()=>Array(cols).fill(null).map(()=>({ci:-1,ep:false})));
+    for(let ci=0;ci<eps.length;ci++){
+      const [a,b]=eps[ci];
+      grid[a.r][a.c]={ci,ep:true};
+      grid[b.r][b.c]={ci,ep:true};
+    }
+    // paths[ci] = array of {r,c} cells currently drawn for color ci
+    paths = eps.map(([a])=>[]);
+    active = null; solved = false; moves = 0;
+    infoEl.textContent = 'drag from a dot to connect · fill all cells';
+  }
+
+  function cellSize() {
+    return Math.floor(Math.min((W-16)/COLS, (H-48)/ROWS));
+  }
+  function gridOffX() { return Math.floor((W - COLS*cellSize())/2); }
+  function gridOffY() { return Math.floor((H - ROWS*cellSize())/2); }
+  function cellAt(px,py) {
+    const cs=cellSize(), ox=gridOffX(), oy=gridOffY();
+    const c2=Math.floor((px-ox)/cs), r=Math.floor((py-oy)/cs);
+    if(r<0||r>=ROWS||c2<0||c2>=COLS) return null;
+    return {r,c:c2};
+  }
+  function cellCenter(r,c2) {
+    const cs=cellSize(), ox=gridOffX(), oy=gridOffY();
+    return {x:ox+c2*cs+cs/2, y:oy+r*cs+cs/2};
+  }
+
+  // which color index owns cell (r,c) in paths?
+  function pathOwner(r,c2) {
+    for(let ci=0;ci<paths.length;ci++)
+      for(const p of paths[ci]) if(p.r===r&&p.c===c2) return ci;
+    return -1;
+  }
+  function isEndpoint(r,c2) { return grid[r]?.[c2]?.ep; }
+  function endpointColor(r,c2) {
+    const cell=grid[r]?.[c2];
+    return (cell&&cell.ep) ? cell.ci : -1;
+  }
+
+  function checkSolved() {
+    // Each path must start at one endpoint and end at the other
+    for(let ci=0;ci<paths.length;ci++){
+      const path=paths[ci];
+      if(path.length<2) return false;
+      // collect the two endpoints for this color
+      const eps2=[];
+      for(let r=0;r<ROWS;r++) for(let c2=0;c2<COLS;c2++)
+        if(grid[r][c2].ep&&grid[r][c2].ci===ci) eps2.push({r,c:c2});
+      if(eps2.length!==2) return false;
+      const head=path[0], tail=path[path.length-1];
+      // path must start and end at the two endpoints (in either order)
+      const okA=(head.r===eps2[0].r&&head.c===eps2[0].c&&tail.r===eps2[1].r&&tail.c===eps2[1].c);
+      const okB=(head.r===eps2[1].r&&head.c===eps2[1].c&&tail.r===eps2[0].r&&tail.c===eps2[0].c);
+      if(!okA&&!okB) return false;
+    }
+    // Every cell must be covered by exactly one path
+    const covered=new Set();
+    for(const path of paths) for(const p of path) covered.add(`${p.r},${p.c}`);
+    return covered.size===COLS*ROWS;
+  }
+
+  function draw() {
+    W=c.width=body.clientWidth; H=c.height=body.clientHeight;
+    ctx.fillStyle=bgClr(); ctx.fillRect(0,0,W,H);
+    const cs=cellSize(), ox=gridOffX(), oy=gridOffY();
+    const p=isPaper();
+
+    // grid lines
+    ctx.strokeStyle=p?'rgba(0,0,0,0.08)':'rgba(255,255,255,0.06)';
+    ctx.lineWidth=1;
+    for(let r=0;r<=ROWS;r++){
+      ctx.beginPath(); ctx.moveTo(ox,oy+r*cs); ctx.lineTo(ox+COLS*cs,oy+r*cs); ctx.stroke();
+    }
+    for(let c2=0;c2<=COLS;c2++){
+      ctx.beginPath(); ctx.moveTo(ox+c2*cs,oy); ctx.lineTo(ox+c2*cs,oy+ROWS*cs); ctx.stroke();
+    }
+
+    // draw paths
+    const pw = Math.max(4, cs*0.38);
+    for(let ci=0;ci<paths.length;ci++){
+      const path=paths[ci];
+      if(path.length<2) continue;
+      ctx.strokeStyle=clr(ci); ctx.lineWidth=pw; ctx.lineCap='round'; ctx.lineJoin='round';
+      ctx.beginPath();
+      const s=cellCenter(path[0].r,path[0].c); ctx.moveTo(s.x,s.y);
+      for(let i=1;i<path.length;i++){
+        const pt=cellCenter(path[i].r,path[i].c); ctx.lineTo(pt.x,pt.y);
+      }
+      ctx.stroke();
+    }
+
+    // draw endpoints (dots)
+    for(let r=0;r<ROWS;r++) for(let c2=0;c2<COLS;c2++){
+      const cell=grid[r][c2];
+      if(!cell.ep) continue;
+      const {x,y}=cellCenter(r,c2);
+      const dr=cs*0.34;
+      ctx.fillStyle=clr(cell.ci);
+      ctx.beginPath(); ctx.arc(x,y,dr,0,Math.PI*2); ctx.fill();
+      ctx.strokeStyle=p?'rgba(0,0,0,0.3)':'rgba(255,255,255,0.3)';
+      ctx.lineWidth=2; ctx.stroke();
+    }
+
+    // HUD
+    ctx.font=`300 11px 'IBM Plex Mono',monospace`;
+    ctx.fillStyle=p?'rgba(0,0,0,0.4)':'rgba(255,255,255,0.35)';
+    ctx.textAlign='right';
+    ctx.fillText(`moves: ${moves}`, ox+COLS*cs, oy-6);
+    ctx.textAlign='left';
+
+    if(solved){
+      ctx.fillStyle=bgFade(0.55); ctx.fillRect(0,0,W,H);
+      ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillStyle=fgClr();
+      ctx.font=`bold 20px 'IBM Plex Mono',monospace`;
+      ctx.fillText('SOLVED! ✦', W/2, H/2-14);
+      ctx.font=`300 11px 'IBM Plex Mono',monospace`;
+      ctx.fillStyle=p?'rgba(0,0,0,0.5)':'rgba(255,255,255,0.5)';
+      ctx.fillText(`moves: ${moves}  ·  click to play again`, W/2, H/2+10);
+      ctx.textAlign='left'; ctx.textBaseline='alphabetic';
+    }
+  }
+
+  // ── input ─────────────────────────────────────────────────────────────────
+  let dragging=false, dragCi=-1, lastCell=null;
+
+  function startDrag(px,py){
+    const cell=cellAt(px,py); if(!cell) return;
+    const {r,c:c2}=cell;
+    // can only start drag from an endpoint or existing path cell
+    let ci=endpointColor(r,c2);
+    if(ci===-1) ci=pathOwner(r,c2);
+    if(ci===-1) return;
+    // clear this color's path and restart from clicked cell
+    paths[ci]=[];
+    // seed path with the starting cell (which may be an endpoint)
+    paths[ci].push({r,c:c2});
+    dragging=true; dragCi=ci; lastCell={r,c:c2};
+    moves++;
+  }
+
+  function moveDrag(px,py){
+    if(!dragging||dragCi===-1) return;
+    const cell=cellAt(px,py); if(!cell) return;
+    const {r,c:c2}=cell;
+    if(lastCell&&r===lastCell.r&&c2===lastCell.c) return;
+    // must be orthogonally adjacent to last cell
+    if(!lastCell||Math.abs(r-lastCell.r)+Math.abs(c2-lastCell.c)!==1) return;
+    // can't enter another color's endpoint
+    const ec=endpointColor(r,c2);
+    if(ec!==-1&&ec!==dragCi) return;
+    // can't enter another color's path
+    const po=pathOwner(r,c2);
+    if(po!==-1&&po!==dragCi) return;
+    // backtrack if revisiting our own path
+    const existIdx=paths[dragCi].findIndex(p=>p.r===r&&p.c===c2);
+    if(existIdx!==-1){
+      paths[dragCi]=paths[dragCi].slice(0,existIdx+1);
+    } else {
+      paths[dragCi].push({r,c:c2});
+    }
+    lastCell={r,c:c2};
+    if(!solved) solved=checkSolved();
+    if(solved) updateHs('Pipe Connect', Math.max(1,1000-moves*5));
+  }
+
+  function endDrag(){ dragging=false; dragCi=-1; lastCell=null; }
+
+  const onDown=e=>{ if(solved){initGame(COLS,ROWS);return;} const rect=c.getBoundingClientRect(); startDrag(e.clientX-rect.left,e.clientY-rect.top); };
+  const onMove=e=>{ const rect=c.getBoundingClientRect(); moveDrag(e.clientX-rect.left,e.clientY-rect.top); };
+  const onUp=()=>endDrag();
+
+  c.addEventListener('mousedown',onDown);
+  c.addEventListener('mousemove',onMove);
+  c.addEventListener('mouseup',onUp);
+  // touch
+  const onTD=e=>{ e.preventDefault(); const t=e.touches[0],rect=c.getBoundingClientRect(); if(solved){initGame(COLS,ROWS);return;} startDrag(t.clientX-rect.left,t.clientY-rect.top); };
+  const onTM=e=>{ e.preventDefault(); const t=e.touches[0],rect=c.getBoundingClientRect(); moveDrag(t.clientX-rect.left,t.clientY-rect.top); };
+  c.addEventListener('touchstart',onTD,{passive:false});
+  c.addEventListener('touchmove',onTM,{passive:false});
+  c.addEventListener('touchend',onUp);
+
+  let sz=7;
+  const szSl=document.createElement('input'); szSl.type='range'; szSl.min=5; szSl.max=10; szSl.value=sz; szSl.className='sb-slider'; szSl.style.width='60px';
+  styleSlider(szSl); ctrl.appendChild(szSl);
+  const szLbl=mkInfo(ctrl); szLbl.textContent='7×7';
+  szSl.addEventListener('input',()=>{ sz=+szSl.value; szLbl.textContent=`${sz}×${sz}`; styleSlider(szSl); initGame(sz,sz); });
+
+  mkBtn('New',ctrl).addEventListener('click',()=>initGame(sz,sz));
+
+  function loop(){ draw(); raf=requestAnimationFrame(loop); }
+  initGame(sz,sz); loop();
+  return ()=>{ cancelAnimationFrame(raf); ro.disconnect();
+    c.removeEventListener('mousedown',onDown); c.removeEventListener('mousemove',onMove); c.removeEventListener('mouseup',onUp);
+    c.removeEventListener('touchstart',onTD); c.removeEventListener('touchmove',onTM); c.removeEventListener('touchend',onUp);
+  };
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// TOY — TRON LIGHT CYCLES
+// ════════════════════════════════════════════════════════════════════════════
+function initTron(body, ctrl) {
+  const {c, ctx, ro} = mkCanvas(body);
+  let W = c.width, H = c.height;
+  const CELL = 10;
+  let p1, p2, trails1, trails2, running, winner, raf;
+  const infoEl = mkInfo(ctrl);
+
+  const P1_CLR  = () => isPaper() ? '#c83030' : '#ff4455';
+  const P2_CLR  = () => isPaper() ? '#2060c0' : '#44aaff';
+  const P1_FADE = () => isPaper() ? 'rgba(200,48,48,0.18)' : 'rgba(255,68,85,0.15)';
+  const P2_FADE = () => isPaper() ? 'rgba(32,96,192,0.18)' : 'rgba(68,170,255,0.15)';
+
+  function cols(){ return Math.floor(W/CELL); }
+  function rows(){ return Math.floor(H/CELL); }
+
+  function initGame(){
+    W=c.width=body.clientWidth; H=c.height=body.clientHeight;
+    const C=cols(), R=rows();
+    p1={x:Math.floor(C*0.25), y:Math.floor(R/2), dx:1, dy:0, alive:true};
+    p2={x:Math.floor(C*0.75), y:Math.floor(R/2), dx:-1, dy:0, alive:true};
+    trails1=new Set(); trails2=new Set();
+    running=true; winner=null;
+    infoEl.textContent = !twoPlayer ? 'P1: WASD · vs AI' : 'P1: WASD  P2: Arrows';
+  }
+
+  function trailKey(x,y){ return `${x},${y}`; }
+
+  // simple AI: prefer going straight, avoid walls and trails, pick best open dir
+  function aiTurn(){
+    const C=cols(), R=rows();
+    const dirs=[{dx:p2.dx,dy:p2.dy},{dx:-p2.dy,dy:p2.dx},{dx:p2.dy,dy:-p2.dx}];
+    // score each option by how many steps ahead it can see
+    function lookahead(dx,dy,depth=8){
+      let x=p2.x, y=p2.y, score=0;
+      for(let i=0;i<depth;i++){
+        x+=dx; y+=dy;
+        if(x<0||x>=C||y<0||y>=R) break;
+        if(trails1.has(trailKey(x,y))||trails2.has(trailKey(x,y))) break;
+        score++;
+      }
+      return score;
+    }
+    let best=null, bestScore=-1;
+    for(const d of dirs){
+      // don't reverse
+      if(d.dx===-p2.dx&&d.dy===-p2.dy) continue;
+      const s=lookahead(d.dx,d.dy);
+      if(s>bestScore){ bestScore=s; best=d; }
+    }
+    if(best){ p2.dx=best.dx; p2.dy=best.dy; }
+  }
+
+  let lastTick=0;
+  const SPEED=80; // ms per step
+
+  function step(ts){
+    if(!running) return;
+    if(ts-lastTick < SPEED) return;
+    lastTick=ts;
+    const C=cols(), R=rows();
+
+    if(!twoPlayer) aiTurn();
+
+    // move players
+    function move(p, trails, other, otherTrails){
+      if(!p.alive) return;
+      trails.add(trailKey(p.x,p.y));
+      p.x+=p.dx; p.y+=p.dy;
+      // wall check
+      if(p.x<0||p.x>=C||p.y<0||p.y>=R){ p.alive=false; return; }
+      // trail check
+      if(trails.has(trailKey(p.x,p.y))||otherTrails.has(trailKey(p.x,p.y))){ p.alive=false; }
+    }
+    move(p1,trails1,p2,trails2);
+    move(p2,trails2,p1,trails1);
+
+    if(!p1.alive||!p2.alive){
+      running=false;
+      winner = (!p1.alive&&!p2.alive) ? 0 : p1.alive ? 1 : 2;
+      if(winner===1){ const prev=hsGet('Tron Light Cycles')||0; updateHs('Tron Light Cycles', (typeof prev==='number'?prev:0)+1); }
+    }
+  }
+
+  function draw(){
+    W=c.width=body.clientWidth; H=c.height=body.clientHeight;
+    ctx.fillStyle=bgClr(); ctx.fillRect(0,0,W,H);
+
+    // grid dots
+    ctx.fillStyle=isPaper()?'rgba(0,0,0,0.05)':'rgba(255,255,255,0.04)';
+    for(let x=0;x<cols();x++) for(let y=0;y<rows();y++){
+      ctx.fillRect(x*CELL+CELL/2-0.5,y*CELL+CELL/2-0.5,1,1);
+    }
+
+    // trails
+    ctx.fillStyle=P1_FADE();
+    for(const k of trails1){ const [x,y]=k.split(',').map(Number); ctx.fillRect(x*CELL+1,y*CELL+1,CELL-2,CELL-2); }
+    ctx.fillStyle=P2_FADE();
+    for(const k of trails2){ const [x,y]=k.split(',').map(Number); ctx.fillRect(x*CELL+1,y*CELL+1,CELL-2,CELL-2); }
+
+    // bright trail edges
+    ctx.fillStyle=P1_CLR();
+    for(const k of trails1){ const [x,y]=k.split(',').map(Number); ctx.fillRect(x*CELL+3,y*CELL+3,CELL-6,CELL-6); }
+    ctx.fillStyle=P2_CLR();
+    for(const k of trails2){ const [x,y]=k.split(',').map(Number); ctx.fillRect(x*CELL+3,y*CELL+3,CELL-6,CELL-6); }
+
+    // heads
+    if(p1.alive){
+      ctx.fillStyle=P1_CLR();
+      ctx.shadowColor=P1_CLR(); ctx.shadowBlur=8;
+      ctx.fillRect(p1.x*CELL,p1.y*CELL,CELL,CELL);
+      ctx.shadowBlur=0;
+    }
+    if(p2.alive){
+      ctx.fillStyle=P2_CLR();
+      ctx.shadowColor=P2_CLR(); ctx.shadowBlur=8;
+      ctx.fillRect(p2.x*CELL,p2.y*CELL,CELL,CELL);
+      ctx.shadowBlur=0;
+    }
+
+    // labels
+    ctx.font=`300 9px 'IBM Plex Mono',monospace`;
+    ctx.fillStyle=P1_CLR(); ctx.textAlign='left';  ctx.fillText('P1',4,14);
+    ctx.fillStyle=P2_CLR(); ctx.textAlign='right'; ctx.fillText(!twoPlayer?'AI':'P2',W-4,14);
+    ctx.textAlign='left';
+
+    if(!running){
+      ctx.fillStyle=bgFade(0.6); ctx.fillRect(0,0,W,H);
+      ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillStyle=fgClr();
+      ctx.font=`bold 20px 'IBM Plex Mono',monospace`;
+      const msg=winner===0?'DRAW':(winner===1?'P1 WINS!':'P2 WINS!');
+      ctx.fillText(msg,W/2,H/2-12);
+      ctx.font=`300 10px 'IBM Plex Mono',monospace`;
+      ctx.fillStyle=isPaper()?'rgba(0,0,0,0.5)':'rgba(255,255,255,0.45)';
+      ctx.fillText('press R or click to restart',W/2,H/2+10);
+      ctx.textAlign='left'; ctx.textBaseline='alphabetic';
+    }
+  }
+
+  const onKey=e=>{
+    const map1={w:{dx:0,dy:-1},s:{dx:0,dy:1},a:{dx:-1,dy:0},d:{dx:1,dy:0}};
+    const map2={ArrowUp:{dx:0,dy:-1},ArrowDown:{dx:0,dy:1},ArrowLeft:{dx:-1,dy:0},ArrowRight:{dx:1,dy:0}};
+    const k=e.key.toLowerCase();
+    if(k==='r'){ initGame(); return; }
+    if(!running){ initGame(); return; }
+    if(map1[k]&&p1.alive){ const d=map1[k]; if(d.dx!==-p1.dx||d.dy!==-p1.dy){ p1.dx=d.dx; p1.dy=d.dy; } e.preventDefault(); }
+    if(twoPlayer&&map2[e.key]&&p2.alive){ const d=map2[e.key]; if(d.dx!==-p2.dx||d.dy!==-p2.dy){ p2.dx=d.dx; p2.dy=d.dy; } e.preventDefault(); }
+  };
+  c.addEventListener('click',()=>{ if(!running) initGame(); });
+  window.addEventListener('keydown',onKey);
+
+  // Reads the global twoPlayer sidebar toggle — no in-game button needed
+  mkBtn('Restart',ctrl).addEventListener('click',()=>initGame());
+
+  function loop(ts){
+    step(ts); draw();
+    raf=requestAnimationFrame(loop);
+  }
+  initGame();
+  raf=requestAnimationFrame(loop);
+  return ()=>{ cancelAnimationFrame(raf); ro.disconnect(); window.removeEventListener('keydown',onKey); };
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// TOY — TURBO RACER  (accelerate/brake · nitro · coins · near-miss bonus)
+// ════════════════════════════════════════════════════════════════════════════
+function initTurboRacer(body, ctrl) {
+  const {c, ctx, ro} = mkCanvas(body);
+  let W = c.width, H = c.height;
+
+  // ── constants ──────────────────────────────────────────────────────────────
+  const BASE_SPEED   = 4;
+  const MAX_SPEED    = 22;
+  const MIN_SPEED    = 1;
+  const ACCEL        = 0.12;
+  const BRAKE        = 0.22;
+  const COAST_DRAG   = 0.03;   // passive slow-down when neither pressed
+  const NITRO_SPEED  = 26;
+  const NITRO_DUR    = 90;     // frames
+  const NITRO_COOL   = 300;    // frames cooldown
+
+  const ROAD_W  = () => Math.min(W * 0.64, 360);
+  const LANE_W  = () => ROAD_W() / 3;
+  const ROAD_L  = () => (W - ROAD_W()) / 2;
+  const ROAD_R  = () => ROAD_L() + ROAD_W();
+  const PLAYER_Y = () => H - 90;
+
+  // ── state ──────────────────────────────────────────────────────────────────
+  let playerX, playerSpd, tilt;
+  let dist, score, lives, gameOver;
+  let nitroLeft, nitroCool, nitroActive;
+  let cars, coins, skids, particles, sideObjects;
+  let nearMissActive, nearMissTimer, nearMissStreak;
+  let keys = {}, raf;
+  const scoreEl = mkInfo(ctrl);
+
+  // car palette
+  const CAR_C  = ['#e05252','#4484e0','#52b06a','#e08840','#9952e0','#e05aaa','#52c8c8','#d4c040'];
+  const CAR_CP = ['#c83030','#2060c0','#287840','#c86820','#7030b0','#c03080','#208888','#a89010'];
+  const carClrs = () => isPaper() ? CAR_CP : CAR_C;
+
+  // ── init ───────────────────────────────────────────────────────────────────
+  function initGame() {
+    W = c.width = body.clientWidth; H = c.height = body.clientHeight;
+    playerX   = W / 2;
+    playerSpd = BASE_SPEED;
+    tilt      = 0;
+    dist      = 0; score = 0; lives = 3; gameOver = false;
+    nitroLeft = 0; nitroCool = 0; nitroActive = false;
+    cars=[]; coins=[]; skids=[]; particles=[]; sideObjects=[];
+    nearMissActive=false; nearMissTimer=0; nearMissStreak=0;
+    // seed side objects
+    for(let i=0;i<10;i++) sideObjects.push(mkSideObj(Math.random()*H));
+    spawnCar(); spawnCar(); spawnCar();
+    spawnCoin();
+    updateHUD();
+  }
+
+  function updateHUD(){
+    scoreEl.textContent = `score: ${score}  ${'♥'.repeat(lives)}${'♡'.repeat(Math.max(0,3-lives))}`;
+  }
+
+  // ── spawners ───────────────────────────────────────────────────────────────
+  function spawnCar(){
+    const lane = Math.floor(Math.random()*3);
+    const cols = carClrs();
+    cars.push({
+      x: ROAD_L() + lane*LANE_W() + LANE_W()/2,
+      y: -100 - Math.random()*200,
+      w: LANE_W()*0.66, h: LANE_W()*1.1,
+      color: cols[Math.floor(Math.random()*cols.length)],
+      ownSpd: (Math.random()*2 - 1) * 2,  // relative to player: faster or slower
+      lane, passed: false, nearMissed: false
+    });
+  }
+
+  function spawnCoin(){
+    const lane = Math.floor(Math.random()*3);
+    coins.push({
+      x: ROAD_L() + lane*LANE_W() + LANE_W()/2,
+      y: -60,
+      r: Math.max(8, LANE_W()*0.13),
+      collected: false
+    });
+  }
+
+  function mkSideObj(y){
+    const side = Math.random()<0.5 ? 0 : 1; // 0=left, 1=right
+    return { x: side===0 ? ROAD_L()-20-Math.random()*60 : ROAD_R()+20+Math.random()*60,
+             y, type: Math.floor(Math.random()*3) }; // 0=tree 1=post 2=billboard
+  }
+
+  // ── update ─────────────────────────────────────────────────────────────────
+  function update(){
+    if(gameOver) return;
+
+    // ── player speed / nitro ─────────────────────────────────────────────────
+    const accelKey = keys['ArrowUp']   || keys['w'] || keys['W'];
+    const brakeKey = keys['ArrowDown'] || keys['s'] || keys['S'];
+    const nitroKey = keys['n'] || keys['N'];
+
+    if(nitroCool > 0) nitroCool--;
+    if(nitroLeft > 0){ nitroLeft--; nitroActive=true; }
+    else nitroActive=false;
+
+    if(nitroKey && nitroCool===0 && !nitroActive){
+      nitroLeft = NITRO_DUR; nitroCool = NITRO_COOL;
+    }
+
+    const targetSpd = nitroActive ? NITRO_SPEED
+                    : accelKey    ? Math.min(MAX_SPEED, playerSpd + ACCEL*60)
+                    : brakeKey    ? Math.max(MIN_SPEED, playerSpd - BRAKE*60)
+                    : playerSpd;
+
+    if(nitroActive)        playerSpd = NITRO_SPEED;
+    else if(accelKey)      playerSpd = Math.min(MAX_SPEED, playerSpd + ACCEL);
+    else if(brakeKey)      playerSpd = Math.max(MIN_SPEED, playerSpd - BRAKE);
+    else                   playerSpd = Math.max(BASE_SPEED, playerSpd - COAST_DRAG);
+
+    // ── steering ──────────────────────────────────────────────────────────────
+    const leftKey  = keys['ArrowLeft']  || keys['a'] || keys['A'];
+    const rightKey = keys['ArrowRight'] || keys['d'] || keys['D'];
+    const steerSpd = playerSpd * 1.4;
+    const pl = ROAD_L()+18, pr = ROAD_R()-18;
+    if(leftKey  && playerX > pl){ playerX -= steerSpd; tilt = Math.max(-1, tilt-0.12); }
+    if(rightKey && playerX < pr){ playerX += steerSpd; tilt = Math.min( 1, tilt+0.12); }
+    if(!leftKey && !rightKey) tilt *= 0.82;
+    playerX = Math.max(pl, Math.min(pr, playerX));
+
+    // skids when braking hard at speed
+    if(brakeKey && playerSpd > 8){
+      skids.push({x:playerX-6, y:PLAYER_Y(), life:1});
+      skids.push({x:playerX+6, y:PLAYER_Y(), life:1});
+    }
+    for(const s of skids) s.life -= 0.012;
+    skids = skids.filter(s=>s.life>0);
+
+    // ── world scroll ──────────────────────────────────────────────────────────
+    dist += playerSpd;
+    score = Math.floor(dist / 8);
+
+    // side objects scroll
+    for(const o of sideObjects) o.y += playerSpd;
+    sideObjects = sideObjects.filter(o=>o.y<H+60);
+    while(sideObjects.length < 12) sideObjects.push(mkSideObj(-80-Math.random()*200));
+
+    // ── traffic cars ──────────────────────────────────────────────────────────
+    for(const car of cars){
+      car.y += playerSpd + car.ownSpd;
+    }
+    // spawn when gap opens
+    if(!cars.length || cars.filter(cc=>cc.y<0).length < 2) spawnCar();
+    cars = cars.filter(cc=>cc.y < H+150);
+
+    // ── coins ─────────────────────────────────────────────────────────────────
+    for(const coin of coins) coin.y += playerSpd;
+    // collect
+    const pw = LANE_W()*0.5, ph = LANE_W()*0.85, py = PLAYER_Y();
+    for(const coin of coins){
+      if(!coin.collected && Math.hypot(playerX-coin.x, py-coin.y) < coin.r+pw*0.4){
+        coin.collected=true;
+        const bonus=50+nearMissStreak*25;
+        score+=bonus;
+        for(let i=0;i<12;i++){
+          const a=Math.random()*Math.PI*2;
+          particles.push({x:coin.x,y:coin.y,vx:Math.cos(a)*3,vy:Math.sin(a)*3-2,t:1,c:'#d4c040',txt:null});
+        }
+        particles.push({x:coin.x,y:coin.y-10,vx:0,vy:-1.5,t:1.5,c:null,txt:`+${bonus}`});
+      }
+    }
+    coins = coins.filter(cn=>!cn.collected && cn.y<H+60);
+    if(coins.length===0) spawnCoin();
+
+    // ── collisions & near-miss ────────────────────────────────────────────────
+    nearMissActive = false;
+    for(const car of cars){
+      const dx=Math.abs(playerX-car.x), dy=Math.abs(py-car.y);
+      const hitW=(pw+car.w)*0.44, hitH=(ph+car.h)*0.44;
+      if(dx < hitW && dy < hitH){
+        // CRASH
+        for(let i=0;i<24;i++){
+          const a=Math.random()*Math.PI*2, spd=2+Math.random()*6;
+          particles.push({x:playerX,y:py,vx:Math.cos(a)*spd,vy:Math.sin(a)*spd-1,t:1,c:car.color,txt:null});
+        }
+        car.y += 200; lives--;
+        playerSpd = BASE_SPEED;
+        nearMissStreak = 0;
+        updateHUD();
+        if(lives<=0){ gameOver=true; updateHs('Turbo Racer',score); }
+        break;
+      }
+      // near-miss: within 1.8x hit box but not touching
+      if(dx < hitW*1.8 && dy < hitH*1.5 && !car.nearMissed && car.y > 0 && car.y < H){
+        nearMissActive = true;
+      }
+      // passed: car scrolled below player without crash
+      if(!car.passed && car.y > py + ph){
+        car.passed = true;
+        // check if it was a close pass (near miss window)
+        if(Math.abs(playerX-car.x) < car.w*1.4){
+          car.nearMissed = true;
+          nearMissStreak++;
+          const bonus = nearMissStreak * 30;
+          score += bonus;
+          particles.push({x:car.x,y:py,vx:0,vy:-2,t:1.4,c:null,txt:`NEAR MISS +${bonus}`});
+          updateHUD();
+        } else {
+          nearMissStreak = 0;
+        }
+      }
+    }
+    if(nearMissActive){ nearMissTimer=8; }
+    else if(nearMissTimer>0) nearMissTimer--;
+
+    // ── particles ─────────────────────────────────────────────────────────────
+    for(const p of particles){
+      if(p.txt===null){ p.x+=p.vx; p.y+=p.vy; p.vy+=0.18; }
+      else { p.y+=p.vy; }
+      p.t-=0.025;
+    }
+    particles = particles.filter(p=>p.t>0);
+  }
+
+  // ── drawing ────────────────────────────────────────────────────────────────
+  function drawCar(x,y,w,h,color,isPlayer,tiltAmt){
+    const p2=isPaper();
+    ctx.save();
+    ctx.translate(x,y);
+    if(tiltAmt) ctx.rotate(tiltAmt * 0.18);
+
+    // body
+    ctx.fillStyle=color;
+    roundRect(ctx,-w/2,-h/2,w,h,4); ctx.fill();
+    // roof shine
+    ctx.fillStyle=isPlayer?(p2?'rgba(0,0,0,0.25)':'rgba(255,255,255,0.22)'):(p2?'rgba(0,0,0,0.2)':'rgba(255,255,255,0.18)');
+    roundRect(ctx,-w*0.32,-h*0.28,w*0.64,h*0.32,2); ctx.fill();
+    // windshield
+    ctx.fillStyle=isPlayer?(p2?'rgba(0,0,0,0.4)':'rgba(160,220,255,0.45)'):(p2?'rgba(0,0,0,0.35)':'rgba(160,220,255,0.35)');
+    const ww=w*0.6, wh=h*0.2;
+    roundRect(ctx,-ww/2, isPlayer?-h/2+h*0.06:-h/2+h*0.28, ww,wh,2); ctx.fill();
+    // wheels
+    ctx.fillStyle=p2?'#333':'#111';
+    const wy=h*0.3;
+    ctx.fillRect(-w/2-4,-wy-5,7,11); ctx.fillRect(w/2-3,-wy-5,7,11);
+    ctx.fillRect(-w/2-4, wy-5,7,11); ctx.fillRect(w/2-3, wy-5,7,11);
+    // headlights / tail lights
+    if(isPlayer){
+      ctx.fillStyle=p2?'#e08840':'#ffcc44';
+      ctx.fillRect(-w/2+2,-h/2+2,w*0.25,5); ctx.fillRect(w/2-w*0.25-2,-h/2+2,w*0.25,5);
+    }
+    ctx.restore();
+  }
+
+  function drawNitroFlame(x,y,w){
+    // exhaust flame behind player car when nitro active
+    const len = 20 + Math.random()*30;
+    ctx.save();
+    const grad=ctx.createLinearGradient(x,y+10,x,y+10+len);
+    grad.addColorStop(0,'rgba(255,200,0,0.9)');
+    grad.addColorStop(0.5,'rgba(255,80,0,0.7)');
+    grad.addColorStop(1,'rgba(255,0,0,0)');
+    ctx.fillStyle=grad;
+    ctx.beginPath();
+    ctx.ellipse(x-w*0.2, y+8, w*0.1, len*0.5, 0, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(x+w*0.2, y+8, w*0.1, len*0.5, 0, 0, Math.PI*2); ctx.fill();
+    ctx.restore();
+  }
+
+  function drawSideObj(o){
+    const p2=isPaper();
+    const {x,y,type}=o;
+    if(type===0){ // tree
+      ctx.fillStyle=p2?'#5a7a3a':'#1a4a1a';
+      ctx.beginPath(); ctx.arc(x,y-12,14,0,Math.PI*2); ctx.fill();
+      ctx.fillStyle=p2?'#8a6040':'#4a3020';
+      ctx.fillRect(x-3,y-2,6,16);
+    } else if(type===1){ // post
+      ctx.fillStyle=p2?'#888':'#555';
+      ctx.fillRect(x-2,y-20,4,22);
+      ctx.fillStyle=p2?'#e08840':'#ffaa00';
+      ctx.beginPath(); ctx.arc(x,y-22,5,0,Math.PI*2); ctx.fill();
+    } else { // billboard
+      ctx.fillStyle=p2?'#9a8070':'#444';
+      ctx.fillRect(x-18,y-36,36,24);
+      ctx.fillStyle=p2?'#e05252':'#ff4455';
+      ctx.fillRect(x-16,y-34,32,20);
+      ctx.fillStyle=p2?'#222':'#fff';
+      ctx.font=`bold 7px 'IBM Plex Mono',monospace`;
+      ctx.textAlign='center'; ctx.fillText('TURBO',x,y-22); ctx.textAlign='left';
+      ctx.fillStyle=p2?'#9a8070':'#444';
+      ctx.fillRect(x-2,y-12,4,14);
+    }
+  }
+
+  function draw(){
+    W=c.width=body.clientWidth; H=c.height=body.clientHeight;
+    ctx.fillStyle=bgClr(); ctx.fillRect(0,0,W,H);
+    const p2=isPaper();
+    const rl=ROAD_L(), rr=ROAD_R(), rw=ROAD_W(), lw=LANE_W();
+    const py=PLAYER_Y();
+
+    // grass with subtle pattern
+    ctx.fillStyle=p2?'#bdd0a0':'#162212'; ctx.fillRect(0,0,rl,H); ctx.fillRect(rr,0,W-rr,H);
+    // grass stripes for speed illusion
+    const stripeH=80, stripeOff=(dist*0.5)%stripeH;
+    ctx.fillStyle=p2?'rgba(0,0,0,0.04)':'rgba(255,255,255,0.03)';
+    for(let sy=-stripeOff;sy<H;sy+=stripeH){
+      ctx.fillRect(0,sy,rl,stripeH/2);
+      ctx.fillRect(rr,sy,W-rr,stripeH/2);
+    }
+
+    // side objects (behind road elements)
+    for(const o of sideObjects) drawSideObj(o);
+
+    // road
+    ctx.fillStyle=p2?'#aaa090':'#282828'; ctx.fillRect(rl,0,rw,H);
+
+    // animated kerbs
+    const ks=44, ko=(dist*0.8)%ks;
+    for(let y=-ko;y<H+ks;y+=ks){
+      ctx.fillStyle=p2?'#d04040':'#bb1111'; ctx.fillRect(rl,y,13,ks/2);
+      ctx.fillStyle=p2?'#f0ecdc':'#dddddd'; ctx.fillRect(rl,y+ks/2,13,ks/2);
+      ctx.fillStyle=p2?'#d04040':'#bb1111'; ctx.fillRect(rr-13,y,13,ks/2);
+      ctx.fillStyle=p2?'#f0ecdc':'#dddddd'; ctx.fillRect(rr-13,y+ks/2,13,ks/2);
+    }
+
+    // animated lane dashes
+    const dashH=32, dashGap=24, dashOff=(dist*0.8)%(dashH+dashGap);
+    ctx.strokeStyle=p2?'rgba(0,0,0,0.18)':'rgba(255,255,255,0.18)';
+    ctx.lineWidth=3; ctx.setLineDash([dashH,dashGap]); ctx.lineDashOffset=-dashOff;
+    for(let lane=1;lane<3;lane++){
+      ctx.beginPath(); ctx.moveTo(rl+lane*lw,0); ctx.lineTo(rl+lane*lw,H); ctx.stroke();
+    }
+    ctx.setLineDash([]); ctx.lineDashOffset=0;
+
+    // skid marks
+    for(const s of skids){
+      ctx.fillStyle=p2?`rgba(0,0,0,${s.life*0.25})`:`rgba(0,0,0,${s.life*0.4})`;
+      ctx.fillRect(s.x-1,s.y,2,6);
+    }
+
+    // coins
+    for(const coin of coins){
+      ctx.save();
+      ctx.shadowColor='#d4c040'; ctx.shadowBlur=8;
+      const pulse=0.85+0.15*Math.sin(Date.now()/200);
+      ctx.fillStyle=p2?'#a89010':'#d4c040';
+      ctx.beginPath(); ctx.arc(coin.x,coin.y,coin.r*pulse,0,Math.PI*2); ctx.fill();
+      ctx.fillStyle=p2?'rgba(0,0,0,0.4)':'rgba(255,255,255,0.5)';
+      ctx.font=`bold ${coin.r*1.1}px 'IBM Plex Mono',monospace`;
+      ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillText('$',coin.x,coin.y);
+      ctx.textAlign='left'; ctx.textBaseline='alphabetic';
+      ctx.shadowBlur=0; ctx.restore();
+    }
+
+    // traffic cars
+    for(const car of cars) drawCar(car.x,car.y,car.w,car.h,car.color,false,0);
+
+    // nitro flame before player car
+    const pw=lw*0.55, ph=lw*0.88;
+    if(nitroActive) drawNitroFlame(playerX,py,pw);
+
+    // player car
+    const playerColor=p2?'#c83030':'#ff4455';
+    drawCar(playerX,py,pw,ph,playerColor,true,tilt);
+
+    // near-miss flash
+    if(nearMissTimer>0){
+      ctx.fillStyle=`rgba(255,220,0,${nearMissTimer/8*0.12})`;
+      ctx.fillRect(rl,0,rw,H);
+    }
+
+    // particles & floating text
+    for(const pp of particles){
+      ctx.globalAlpha=Math.min(1,pp.t);
+      if(pp.txt){
+        ctx.font=`bold 13px 'IBM Plex Mono',monospace`;
+        ctx.fillStyle=pp.c||fgClr();
+        ctx.textAlign='center'; ctx.fillText(pp.txt,pp.x,pp.y); ctx.textAlign='left';
+      } else {
+        ctx.fillStyle=pp.c;
+        ctx.beginPath(); ctx.arc(pp.x,pp.y,Math.max(1,4*pp.t),0,Math.PI*2); ctx.fill();
+      }
+      ctx.globalAlpha=1;
+    }
+
+    // ── HUD: speed bar + nitro bar ────────────────────────────────────────────
+    const barX=W-22, barH=H*0.55, barY=H*0.22;
+    // speed bar
+    const spPct=Math.min(1,(playerSpd-MIN_SPEED)/(MAX_SPEED-MIN_SPEED));
+    ctx.fillStyle=p2?'rgba(0,0,0,0.1)':'rgba(255,255,255,0.07)';
+    ctx.fillRect(barX,barY,8,barH);
+    ctx.fillStyle=nitroActive?'#d4c040':`hsl(${120-spPct*120},70%,${p2?35:50}%)`;
+    ctx.fillRect(barX,barY+barH*(1-spPct),8,barH*spPct);
+    ctx.font=`300 7px 'IBM Plex Mono',monospace`;
+    ctx.fillStyle=p2?'rgba(0,0,0,0.4)':'rgba(255,255,255,0.35)';
+    ctx.textAlign='center'; ctx.fillText('SPD',barX+4,barY-4);
+
+    // nitro bar (smaller, beside speed bar)
+    const nitroPct=nitroCool===0?1:nitroLeft>0?nitroLeft/NITRO_DUR:1-nitroCool/NITRO_COOL;
+    ctx.fillStyle=p2?'rgba(0,0,0,0.1)':'rgba(255,255,255,0.07)';
+    ctx.fillRect(barX-12,barY,6,barH);
+    ctx.fillStyle=nitroCool>0&&nitroLeft===0?'#888':(p2?'#a89010':'#d4c040');
+    ctx.fillRect(barX-12,barY+barH*(1-nitroPct),6,barH*nitroPct);
+    ctx.fillText('NOS',barX-9,barY-4);
+    ctx.textAlign='left';
+
+    // brake indicator
+    if(keys['ArrowDown']||keys['s']||keys['S']){
+      ctx.fillStyle=p2?'rgba(200,50,50,0.5)':'rgba(255,60,60,0.5)';
+      ctx.font=`bold 10px 'IBM Plex Mono',monospace`;
+      ctx.textAlign='center';
+      ctx.fillText('BRAKE',W/2,H-14);
+      ctx.textAlign='left';
+    }
+
+    if(gameOver){
+      ctx.fillStyle=bgFade(0.65); ctx.fillRect(0,0,W,H);
+      ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillStyle=fgClr();
+      ctx.font=`bold 22px 'IBM Plex Mono',monospace`;
+      ctx.fillText('GAME OVER',W/2,H/2-18);
+      ctx.font=`300 11px 'IBM Plex Mono',monospace`;
+      ctx.fillStyle=p2?'rgba(0,0,0,0.5)':'rgba(255,255,255,0.5)';
+      ctx.fillText(`score: ${score}  ·  R or click to restart`,W/2,H/2+8);
+      ctx.textAlign='left'; ctx.textBaseline='alphabetic';
+    }
+  }
+
+  // ── input ──────────────────────────────────────────────────────────────────
+  const onKey=e=>{
+    keys[e.key]=e.type==='keydown';
+    if(e.key==='r'||e.key==='R') initGame();
+    if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.key)) e.preventDefault();
+  };
+  c.addEventListener('click',()=>{ if(gameOver) initGame(); });
+  window.addEventListener('keydown',onKey);
+  window.addEventListener('keyup',onKey);
+
+  // touch: left half=left, right half=right, swipe up=accel, swipe down=brake, tap center=nitro
+  let touchStart=null;
+  c.addEventListener('touchstart',e=>{
+    e.preventDefault();
+    touchStart={x:e.touches[0].clientX,y:e.touches[0].clientY};
+    if(gameOver){ initGame(); return; }
+    // center tap = nitro
+    const cx=e.touches[0].clientX;
+    if(cx>W*0.35&&cx<W*0.65) keys['n']=true;
+  },{passive:false});
+  c.addEventListener('touchmove',e=>{
+    e.preventDefault();
+    const tx=e.touches[0].clientX, ty=e.touches[0].clientY;
+    const dx=tx-(touchStart?.x||W/2), dy=ty-(touchStart?.y||H/2);
+    keys['ArrowLeft']=tx<W*0.38;
+    keys['ArrowRight']=tx>W*0.62;
+    keys['ArrowUp']=dy<-20;
+    keys['ArrowDown']=dy>20;
+  },{passive:false});
+  c.addEventListener('touchend',()=>{
+    keys['ArrowLeft']=keys['ArrowRight']=keys['ArrowUp']=keys['ArrowDown']=keys['n']=false;
+    touchStart=null;
+  });
+
+  // ctrl bar
+  mkBtn('Restart',ctrl).addEventListener('click',()=>initGame());
+  const ctrlInfo=mkInfo(ctrl);
+  ctrlInfo.textContent='↑↓ speed · ←→ steer · N nitro';
+
+  function loop(){ update(); draw(); raf=requestAnimationFrame(loop); }
+  initGame(); loop();
+  return ()=>{
+    cancelAnimationFrame(raf); ro.disconnect();
+    window.removeEventListener('keydown',onKey); window.removeEventListener('keyup',onKey);
+  };
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// TOY — DOTS & BOXES
+// ════════════════════════════════════════════════════════════════════════════
+function initDotsBoxes(body, ctrl) {
+  const {c, ctx, ro} = mkCanvas(body);
+  let W = c.width, H = c.height;
+  let COLS, ROWS; // number of boxes per row/col
+  let hLines, vLines, boxes; // hLines[r][c]=owner, vLines[r][c]=owner, boxes[r][c]=owner
+  let scores, turn, gameOver, raf;
+  // twoPlayer read dynamically
+  const scoreEl = mkInfo(ctrl);
+
+  const P1C  = () => isPaper()?'#c83030':'#ff4455';
+  const P2C  = () => isPaper()?'#2060c0':'#44aaff';
+  const playerColor = (p) => p===0?P1C():P2C();
+
+  function dotSpacing(){ return Math.floor(Math.min((W-48)/(COLS),(H-64)/(ROWS))); }
+  function gridOffX(){ return Math.floor((W - COLS*dotSpacing())/2); }
+  function gridOffY(){ return Math.floor((H - ROWS*dotSpacing())/2); }
+
+  function initGame(cols,rows){
+    W=c.width=body.clientWidth; H=c.height=body.clientHeight;
+    COLS=cols; ROWS=rows;
+    // hLines[r][c]: horizontal line between dot(r,c)—dot(r,c+1), r=0..ROWS, c=0..COLS-1
+    hLines=Array.from({length:ROWS+1},()=>Array(COLS).fill(-1));
+    // vLines[r][c]: vertical line between dot(r,c)—dot(r+1,c), r=0..ROWS-1, c=0..COLS+1
+    vLines=Array.from({length:ROWS},()=>Array(COLS+1).fill(-1));
+    boxes=Array.from({length:ROWS},()=>Array(COLS).fill(-1));
+    scores=[0,0]; turn=0; gameOver=false;
+    scoreEl.textContent='P1: 0  P2: 0  ·  P1\'s turn';
+  }
+
+  // check if a box (r,c) is complete and unclaimed, if so claim it
+  function checkBox(r,c,player){
+    if(r<0||r>=ROWS||c<0||c>=COLS) return false;
+    if(boxes[r][c]!==-1) return false;
+    if(hLines[r][c]!==-1 && hLines[r+1][c]!==-1 && vLines[r][c]!==-1 && vLines[r][c+1]!==-1){
+      boxes[r][c]=player; scores[player]++;
+      return true;
+    }
+    return false;
+  }
+
+  // returns true if the move scored at least one box (player gets another turn)
+  function makeMove(isH, r, c){
+    if(isH){ if(hLines[r][c]!==-1) return false; hLines[r][c]=turn; }
+    else    { if(vLines[r][c]!==-1) return false; vLines[r][c]=turn; }
+    let scored=false;
+    if(isH){ scored=checkBox(r-1,c,turn)||scored; scored=checkBox(r,c,turn)||scored; }
+    else    { scored=checkBox(r,c-1,turn)||scored; scored=checkBox(r,c,turn)||scored; }
+    const total=COLS*ROWS;
+    if(scores[0]+scores[1]===total){ gameOver=true; updateHs('Dots & Boxes',scores[0]); }
+    else if(!scored) turn=1-turn;
+    const turnStr=gameOver?'':`  ·  ${turn===0?'P1':'P2'}'s turn`;
+    scoreEl.textContent=`P1: ${scores[0]}  P2: ${scores[1]}${turnStr}`;
+    return true;
+  }
+
+  // ── AI ─────────────────────────────────────────────────────────────────────
+  function aiMove(){
+    // 1. take any completing moves
+    for(let r=0;r<ROWS;r++) for(let c=0;c<COLS;c++){
+      if(boxes[r][c]!==-1) continue;
+      const t=hLines[r][c]!==-1, b=hLines[r+1][c]!==-1, l=vLines[r][c]!==-1, ri2=vLines[r][c+1]!==-1;
+      const count=[t,b,l,ri2].filter(Boolean).length;
+      if(count===3){
+        if(!t&&hLines[r][c]===-1)  { makeMove(true,r,c); return; }
+        if(!b&&hLines[r+1][c]===-1){ makeMove(true,r+1,c); return; }
+        if(!l&&vLines[r][c]===-1)  { makeMove(false,r,c); return; }
+        if(!ri2&&vLines[r][c+1]===-1){ makeMove(false,r,c+1); return; }
+      }
+    }
+    // 2. avoid giving chains — pick a line that doesn't give opponent 3 sides
+    const safe=[];
+    for(let r=0;r<=ROWS;r++) for(let c=0;c<COLS;c++){
+      if(hLines[r][c]===-1){
+        let gives=false;
+        for(const br of [r-1,r]){
+          if(br<0||br>=ROWS) continue;
+          const t=hLines[br][c]!==-1, b=hLines[br+1][c]!==-1, l=vLines[br][c]!==-1, ri2=vLines[br][c+1]!==-1;
+          if([t,b,l,ri2].filter(Boolean).length===2) gives=true;
+        }
+        if(!gives) safe.push({isH:true,r,c});
+      }
+    }
+    for(let r=0;r<ROWS;r++) for(let c=0;c<=COLS;c++){
+      if(vLines[r][c]===-1){
+        let gives=false;
+        for(const bc of [c-1,c]){
+          if(bc<0||bc>=COLS) continue;
+          const t=hLines[r][bc]!==-1, b=hLines[r+1][bc]!==-1, l=vLines[r][bc]!==-1, ri2=vLines[r][bc+1]!==-1;
+          if([t,b,l,ri2].filter(Boolean).length===2) gives=true;
+        }
+        if(!gives) safe.push({isH:false,r,c});
+      }
+    }
+    if(safe.length){ const m=safe[Math.floor(Math.random()*safe.length)]; makeMove(m.isH,m.r,m.c); return; }
+    // 3. random
+    const all=[];
+    for(let r=0;r<=ROWS;r++) for(let c=0;c<COLS;c++) if(hLines[r][c]===-1) all.push({isH:true,r,c});
+    for(let r=0;r<ROWS;r++) for(let c=0;c<=COLS;c++) if(vLines[r][c]===-1) all.push({isH:false,r,c});
+    if(all.length){ const m=all[Math.floor(Math.random()*all.length)]; makeMove(m.isH,m.r,m.c); }
+  }
+
+  // ── hit detection ──────────────────────────────────────────────────────────
+  function nearestLine(px,py){
+    const ds=dotSpacing(), ox=gridOffX(), oy=gridOffY();
+    const THRESH=ds*0.3;
+    let best=null, bestD=Infinity;
+    // horizontal lines
+    for(let r=0;r<=ROWS;r++) for(let c=0;c<COLS;c++){
+      if(hLines[r][c]!==-1) continue;
+      const lx=ox+c*ds+ds/2, ly=oy+r*ds;
+      const dx=px-lx, dy=py-ly;
+      if(Math.abs(dy)<THRESH&&Math.abs(dx)<ds*0.5){
+        const d=Math.abs(dy)+Math.abs(dx)*0.1;
+        if(d<bestD){ bestD=d; best={isH:true,r,c}; }
+      }
+    }
+    // vertical lines
+    for(let r=0;r<ROWS;r++) for(let c=0;c<=COLS;c++){
+      if(vLines[r][c]!==-1) continue;
+      const lx=ox+c*ds, ly=oy+r*ds+ds/2;
+      const dx=px-lx, dy=py-ly;
+      if(Math.abs(dx)<THRESH&&Math.abs(dy)<ds*0.5){
+        const d=Math.abs(dx)+Math.abs(dy)*0.1;
+        if(d<bestD){ bestD=d; best={isH:false,r,c}; }
+      }
+    }
+    return bestD<THRESH*2?best:null;
+  }
+
+  let hoverLine=null;
+
+  function draw(){
+    W=c.width=body.clientWidth; H=c.height=body.clientHeight;
+    ctx.fillStyle=bgClr(); ctx.fillRect(0,0,W,H);
+    const ds=dotSpacing(), ox=gridOffX(), oy=gridOffY();
+    const p2=isPaper();
+
+    // boxes
+    for(let r=0;r<ROWS;r++) for(let c=0;c<COLS;c++){
+      if(boxes[r][c]===-1) continue;
+      ctx.fillStyle=boxes[r][c]===0
+        ?(p2?'rgba(200,48,48,0.18)':'rgba(255,68,85,0.15)')
+        :(p2?'rgba(32,96,192,0.18)':'rgba(68,170,255,0.15)');
+      ctx.fillRect(ox+c*ds+2,oy+r*ds+2,ds-4,ds-4);
+      // initial
+      ctx.font=`bold ${Math.max(10,ds*0.35)}px 'IBM Plex Mono',monospace`;
+      ctx.fillStyle=playerColor(boxes[r][c]);
+      ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillText(boxes[r][c]===0?'1':'2', ox+c*ds+ds/2, oy+r*ds+ds/2);
+      ctx.textAlign='left'; ctx.textBaseline='alphabetic';
+    }
+
+    // hover highlight
+    if(hoverLine&&!gameOver){
+      const {isH,r,c}=hoverLine;
+      ctx.strokeStyle=playerColor(turn);
+      ctx.globalAlpha=0.4; ctx.lineWidth=ds*0.18; ctx.lineCap='round';
+      ctx.beginPath();
+      if(isH){ ctx.moveTo(ox+c*ds,oy+r*ds); ctx.lineTo(ox+(c+1)*ds,oy+r*ds); }
+      else    { ctx.moveTo(ox+c*ds,oy+r*ds); ctx.lineTo(ox+c*ds,oy+(r+1)*ds); }
+      ctx.stroke(); ctx.globalAlpha=1;
+    }
+
+    // drawn lines
+    ctx.lineCap='round';
+    for(let r=0;r<=ROWS;r++) for(let c=0;c<COLS;c++){
+      if(hLines[r][c]===-1) continue;
+      ctx.strokeStyle=playerColor(hLines[r][c]);
+      ctx.lineWidth=Math.max(3,ds*0.16);
+      ctx.beginPath(); ctx.moveTo(ox+c*ds,oy+r*ds); ctx.lineTo(ox+(c+1)*ds,oy+r*ds); ctx.stroke();
+    }
+    for(let r=0;r<ROWS;r++) for(let c=0;c<=COLS;c++){
+      if(vLines[r][c]===-1) continue;
+      ctx.strokeStyle=playerColor(vLines[r][c]);
+      ctx.lineWidth=Math.max(3,ds*0.16);
+      ctx.beginPath(); ctx.moveTo(ox+c*ds,oy+r*ds); ctx.lineTo(ox+c*ds,oy+(r+1)*ds); ctx.stroke();
+    }
+
+    // empty line slots (faint)
+    ctx.strokeStyle=p2?'rgba(0,0,0,0.08)':'rgba(255,255,255,0.07)';
+    ctx.lineWidth=1; ctx.setLineDash([3,5]);
+    for(let r=0;r<=ROWS;r++) for(let c=0;c<COLS;c++){
+      if(hLines[r][c]!==-1) continue;
+      ctx.beginPath(); ctx.moveTo(ox+c*ds+8,oy+r*ds); ctx.lineTo(ox+(c+1)*ds-8,oy+r*ds); ctx.stroke();
+    }
+    for(let r=0;r<ROWS;r++) for(let c=0;c<=COLS;c++){
+      if(vLines[r][c]!==-1) continue;
+      ctx.beginPath(); ctx.moveTo(ox+c*ds,oy+r*ds+8); ctx.lineTo(ox+c*ds,oy+(r+1)*ds-8); ctx.stroke();
+    }
+    ctx.setLineDash([]);
+
+    // dots
+    const dr=Math.max(4,ds*0.14);
+    for(let r=0;r<=ROWS;r++) for(let c=0;c<=COLS;c++){
+      ctx.fillStyle=fgClr(); ctx.globalAlpha=0.8;
+      ctx.beginPath(); ctx.arc(ox+c*ds,oy+r*ds,dr,0,Math.PI*2); ctx.fill();
+      ctx.globalAlpha=1;
+    }
+
+    if(gameOver){
+      ctx.fillStyle=bgFade(0.6); ctx.fillRect(0,0,W,H);
+      ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillStyle=fgClr();
+      ctx.font=`bold 20px 'IBM Plex Mono',monospace`;
+      const msg=scores[0]===scores[1]?'DRAW!':(scores[0]>scores[1]?'P1 WINS!':'P2 WINS!');
+      ctx.fillText(msg,W/2,H/2-14);
+      ctx.font=`300 11px 'IBM Plex Mono',monospace`;
+      ctx.fillStyle=p2?'rgba(0,0,0,0.5)':'rgba(255,255,255,0.5)';
+      ctx.fillText(`P1: ${scores[0]}  P2: ${scores[1]}  ·  click to play again`,W/2,H/2+10);
+      ctx.textAlign='left'; ctx.textBaseline='alphabetic';
+    }
+  }
+
+  const onMouseMove=e=>{
+    const rect=c.getBoundingClientRect();
+    hoverLine=nearestLine(e.clientX-rect.left,e.clientY-rect.top);
+  };
+  const onClick=e=>{
+    if(gameOver){ initGame(COLS,ROWS); return; }
+    if(!twoPlayer&&turn===1) return;  // block human click when it's AI's turn
+    const rect=c.getBoundingClientRect();
+    const line=nearestLine(e.clientX-rect.left,e.clientY-rect.top);
+    if(!line) return;
+    if(makeMove(line.isH,line.r,line.c)&&!twoPlayer&&!gameOver){
+      // keep going while AI scores (extra turn chains)
+      let safety=50;
+      while(turn===1&&!gameOver&&safety-->0) aiMove();
+    }
+  };
+  c.addEventListener('mousemove',onMouseMove);
+  c.addEventListener('click',onClick);
+  c.addEventListener('mouseleave',()=>hoverLine=null);
+
+  // Reads the global twoPlayer sidebar toggle — no in-game button needed
+
+  let sz=5;
+  const szSl=document.createElement('input'); szSl.type='range'; szSl.min=3; szSl.max=8; szSl.value=sz; szSl.className='sb-slider'; szSl.style.width='55px';
+  styleSlider(szSl); ctrl.appendChild(szSl);
+  const szLbl=mkInfo(ctrl); szLbl.textContent='5×5';
+  szSl.addEventListener('input',()=>{ sz=+szSl.value; szLbl.textContent=`${sz}×${sz}`; styleSlider(szSl); initGame(sz,sz); });
+
+  mkBtn('New',ctrl).addEventListener('click',()=>initGame(COLS,ROWS));
+
+  function loop(){ draw(); raf=requestAnimationFrame(loop); }
+  initGame(sz,sz); loop();
+  return ()=>{ cancelAnimationFrame(raf); ro.disconnect(); c.removeEventListener('mousemove',onMouseMove); c.removeEventListener('click',onClick); };
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// TOY — LUDO
+// twoPlayer OFF → Red (human) vs Green/Blue/Yellow (AI)
+// twoPlayer ON  → Red+Blue (humans, alternating) vs Green+Yellow (AI)
+// ════════════════════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════════════════
+// TOY — LUDO
+// twoPlayer OFF → Red (human) vs Green/Blue/Yellow (AI)
+// twoPlayer ON  → Red+Blue (humans alternating) vs Green+Yellow (AI)
+// ════════════════════════════════════════════════════════════════════════════
+function initLudo(body, ctrl) {
+  const {c, ctx, ro} = mkCanvas(body);
+  let W = c.width, H = c.height, raf;
+
+  // ── Board is drawn as a 15×15 grid ───────────────────────────────────────
+  const G = 15;
+  const bs  = () => Math.floor(Math.min(W, H - 48) / G) * G;
+  const cs  = () => bs() / G;
+  const ox  = () => Math.floor((W - bs()) / 2);
+  const oy  = () => Math.floor((H - 48 - bs()) / 2) + 4;
+
+  // Player colours (index 0=Red,1=Green,2=Blue,3=Yellow)
+  const PC  = ['#e05252','#52b06a','#4484e0','#d4c040'];
+  const PCP = ['#c83030','#287840','#2060c0','#a89010'];
+  const PN  = ['Red','Green','Blue','Yellow'];
+  const pc  = (p) => (isPaper() ? PCP : PC)[p];
+  const isHuman = (p) => p === 0 || (twoPlayer && p === 2);
+
+  // ── Complete hardcoded paths on the 15×15 grid ───────────────────────────
+  // Each path is 52 [row,col] cells = one full lap of the board.
+  // Red starts bottom-left of centre column and goes clockwise.
+  // Verified against standard Ludo layout (0-indexed, row 0 = top).
+
+  // Red path: 52 cells, clockwise from Red's entry square.
+  // Red yard is top-left; Red enters at [13,6] (left of centre, near bottom).
+  const R_PATH = [
+    // 1-6: up the left side of the centre column
+    [13,6],[12,6],[11,6],[10,6],[9,6],[8,6],
+    // 7-11: left across row 8 toward left wall
+    [8,5],[8,4],[8,3],[8,2],[8,1],
+    // 12-13: up col 1
+    [7,1],[6,1],
+    // 14-18: right across row 6 (top of left yard block)
+    [6,2],[6,3],[6,4],[6,5],[6,6],
+    // 19-23: up col 6 to top edge
+    [5,6],[4,6],[3,6],[2,6],[1,6],
+    // 24-25: right across top row
+    [1,7],[1,8],
+    // 26-30: down col 8 from top
+    [2,8],[3,8],[4,8],[5,8],[6,8],
+    // 31-35: right across row 6 (top of right yard block)
+    [6,9],[6,10],[6,11],[6,12],[6,13],
+    // 36-37: down col 13
+    [7,13],[8,13],
+    // 38-42: left across row 8 (right side)
+    [8,12],[8,11],[8,10],[8,9],[8,8],
+    // 43-47: down col 8 to bottom
+    [9,8],[10,8],[11,8],[12,8],[13,8],
+    // 48-52: across bottom row back toward Red start
+    [14,8],[14,7],[14,6],[14,5],[14,4],
+  ];  // exactly 52 cells
+
+  // Rotate 90° CW around grid centre (7,7): [r,c] → [c, G-1-r]
+  function rot([r,c]){ return [c, G-1-r]; }
+  function rotN(path, n){ let p=[...path]; for(let i=0;i<n;i++) p=p.map(rot); return p; }
+
+  const PATHS = [
+    R_PATH,
+    rotN(R_PATH,1),
+    rotN(R_PATH,2),
+    rotN(R_PATH,3),
+  ];
+
+  // Home column (5 cells from track into home, per player) — Red goes up col 7
+  const R_HOME = [[13,7],[12,7],[11,7],[10,7],[9,7]];
+  const HOME_COLS = [
+    R_HOME,
+    rotN(R_HOME,1),
+    rotN(R_HOME,2),
+    rotN(R_HOME,3),
+  ];
+
+  // Yard piece positions (2×2 arrangement inside each corner yard)
+  const YARDS = [
+    [[2,2],[2,4],[4,2],[4,4]],       // Red   top-left
+    [[2,10],[2,12],[4,10],[4,12]],   // Green top-right
+    [[10,10],[10,12],[12,10],[12,12]], // Blue  bottom-right
+    [[10,2],[10,4],[12,2],[12,4]],   // Yellow bottom-left
+  ];
+
+  // Safe squares (stars): pieces here can't be captured
+  const SAFE = new Set([0,8,13,21,26,34,39,47]);
+
+  const TRACK = 52;   // main track length
+  const HLEN  = 5;    // home column length
+  const DONE  = TRACK + HLEN; // position value when piece is home
+
+  // ── State ─────────────────────────────────────────────────────────────────
+  let pieces, turn, dice, rolled, movable, winner, gameOver;
+  let anim; // {p,i,newPos,fromR,fromC,toR,toC,t}
+  let rollFlash, rollT;
+  let infoEl2;
+
+  function init() {
+    pieces   = Array.from({length:4}, ()=>[-1,-1,-1,-1]);
+    turn=0; dice=0; rolled=false; movable=[]; winner=-1; gameOver=false;
+    anim=null; rollFlash=false; rollT=0;
+    setInfo();
+    // AI takes over immediately if turn 0 is AI (never happens — Red is always human)
+  }
+
+  function setInfo() {
+    if(!infoEl2) return;
+    if(gameOver){ infoEl2.textContent=`${PN[winner]} wins! 🎉`; return; }
+    const h=isHuman(turn);
+    infoEl2.textContent = rolled
+      ? (movable.length ? `${PN[turn]}: pick a piece` : `${PN[turn]}: no moves`)
+      : (h ? `${PN[turn]}'s turn — click to roll` : `${PN[turn]} (AI)…`);
+  }
+
+  // ── Cell position on canvas ───────────────────────────────────────────────
+  function cellXY(r, col) {
+    return [ox() + col*cs() + cs()/2, oy() + r*cs() + cs()/2];
+  }
+
+  function pieceXY(p, i) {
+    const pos = pieces[p][i];
+    if(pos === -1) {
+      const [yr,yc] = YARDS[p][i];
+      return cellXY(yr, yc);
+    }
+    if(pos >= DONE) {
+      // cluster around home centre (7,7)
+      const offsets=[[-.35,-.35],[.35,-.35],[-.35,.35],[.35,.35]];
+      const [dr,dc]=offsets[i];
+      return [ox()+7*cs()+cs()/2+dc*cs()*0.4, oy()+7*cs()+cs()/2+dr*cs()*0.4];
+    }
+    if(pos >= TRACK) {
+      const [r,col]=HOME_COLS[p][pos-TRACK];
+      return cellXY(r,col);
+    }
+    const [r,col]=PATHS[p][pos];
+    return cellXY(r,col);
+  }
+
+  // ── Game logic ─────────────────────────────────────────────────────────────
+  function rollDice() {
+    dice=Math.floor(Math.random()*6)+1;
+    rolled=true; rollFlash=true; rollT=0;
+    // compute movable pieces
+    movable=[];
+    for(let i=0;i<4;i++) {
+      const pos=pieces[turn][i];
+      if(pos===-1 && dice===6) { movable.push(i); continue; }
+      if(pos>=0 && pos<TRACK+HLEN) {
+        if(pos+dice<=DONE) movable.push(i);
+      }
+    }
+    setInfo();
+    if(!movable.length) {
+      setTimeout(nextTurn, 800);
+    } else if(!isHuman(turn)) {
+      setTimeout(aiMove, 500);
+    }
+  }
+
+  function applyMove(p, i, newPos) {
+    pieces[p][i] = newPos;
+    // capture — only on main track non-safe squares
+    if(newPos>=0 && newPos<TRACK && !SAFE.has(newPos)) {
+      const [tr,tc]=PATHS[p][newPos];
+      for(let op=0;op<4;op++) {
+        if(op===p) continue;
+        for(let oi=0;oi<4;oi++) {
+          const opos=pieces[op][oi];
+          if(opos>=0 && opos<TRACK) {
+            const [or2,oc2]=PATHS[op][opos];
+            if(or2===tr && oc2===tc) pieces[op][oi]=-1;
+          }
+        }
+      }
+    }
+    // win check
+    if(pieces[p].every(pos=>pos>=DONE)) {
+      winner=p; gameOver=true;
+      updateHs('Ludo', isHuman(p)?1:0);
+      setInfo(); return;
+    }
+    if(dice===6) { rolled=false; movable=[]; setInfo();
+      if(!isHuman(turn)) setTimeout(rollDice,500);
+    } else nextTurn();
+  }
+
+  function nextTurn() {
+    turn=(turn+1)%4; rolled=false; movable=[]; setInfo();
+    if(!isHuman(turn)) setTimeout(rollDice,400);
+  }
+
+  function startMove(p, i, newPos) {
+    const [fr,fc]=pieceXY(p,i);
+    let toR,toC;
+    if(newPos>=DONE) {
+      const offsets=[[-.35,-.35],[.35,-.35],[-.35,.35],[.35,.35]];
+      const [dr,dc]=offsets[i];
+      toR=oy()+7*cs()+cs()/2+dr*cs()*0.4;
+      toC=ox()+7*cs()+cs()/2+dc*cs()*0.4;
+    } else if(newPos>=TRACK) {
+      const [r2,c2]=HOME_COLS[p][newPos-TRACK];
+      [toC,toR]=cellXY(r2,c2);
+    } else {
+      const [r2,c2]=PATHS[p][newPos];
+      [toC,toR]=cellXY(r2,c2);
+    }
+    anim={p,i,newPos,fx:fr,fy:fc,tx:toC,ty:toR,t:0};
+    rolled=false; movable=[];
+  }
+
+  function movePiece(p, i) {
+    const pos=pieces[p][i];
+    const newPos=pos===-1?0:pos+dice;
+    startMove(p,i,newPos);
+  }
+
+  function aiMove() {
+    if(!movable.length){nextTurn();return;}
+    let best=movable[0], bestScore=-999;
+    for(const i of movable) {
+      let score=0;
+      const pos=pieces[turn][i];
+      const np=pos===-1?0:pos+dice;
+      if(pos===-1) score+=8;          // entering board is good
+      score+=np;                       // further = better
+      // bonus for capture
+      if(np>=0&&np<TRACK&&!SAFE.has(np)) {
+        const [tr,tc]=PATHS[turn][np];
+        for(let op=0;op<4;op++) {
+          if(op===turn) continue;
+          for(let oi=0;oi<4;oi++) {
+            const opos=pieces[op][oi];
+            if(opos>=0&&opos<TRACK) {
+              const [or2,oc2]=PATHS[op][opos];
+              if(or2===tr&&oc2===tc) score+=50;
+            }
+          }
+        }
+      }
+      // penalise unsafe squares slightly
+      if(np>=0&&np<TRACK&&!SAFE.has(np)) score-=2;
+      if(score>bestScore){bestScore=score;best=i;}
+    }
+    movePiece(turn,best);
+  }
+
+  // ── Draw ─────────────────────────────────────────────────────────────────
+  function draw() {
+    raf=requestAnimationFrame(draw);
+    W=c.width=body.clientWidth; H=c.height=body.clientHeight;
+    ctx.fillStyle=bgClr(); ctx.fillRect(0,0,W,H);
+
+    const p2=isPaper();
+    const cell=cs(), boardX=ox(), boardY=oy(), boardS=bs();
+
+    // ── step animation ──────────────────────────────────────────────────────
+    if(anim) {
+      anim.t+=0.07;
+      if(anim.t>=1) {
+        applyMove(anim.p,anim.i,anim.newPos);
+        anim=null;
+      }
+    }
+    if(rollFlash) { rollT+=0.1; if(rollT>1) rollFlash=false; }
+
+    // ── board background ────────────────────────────────────────────────────
+    ctx.fillStyle=p2?'#e8e4d8':'#1e1e1e';
+    ctx.fillRect(boardX,boardY,boardS,boardS);
+
+    // grid lines
+    ctx.strokeStyle=p2?'rgba(0,0,0,0.08)':'rgba(255,255,255,0.05)';
+    ctx.lineWidth=0.5;
+    for(let i=0;i<=G;i++){
+      ctx.beginPath();ctx.moveTo(boardX+i*cell,boardY);ctx.lineTo(boardX+i*cell,boardY+boardS);ctx.stroke();
+      ctx.beginPath();ctx.moveTo(boardX,boardY+i*cell);ctx.lineTo(boardX+boardS,boardY+i*cell);ctx.stroke();
+    }
+
+    // ── corner yards (6×6 coloured blocks) ─────────────────────────────────
+    const yardCorners=[[0,0,0],[0,9,1],[9,9,2],[9,0,3]];
+    for(const [br,bc,p] of yardCorners){
+      ctx.fillStyle=pc(p);
+      ctx.fillRect(boardX+bc*cell,boardY+br*cell,cell*6,cell*6);
+      // inner white/dark area
+      ctx.fillStyle=p2?'#f5f1e8':'#2a2a2a';
+      ctx.fillRect(boardX+(bc+1)*cell,boardY+(br+1)*cell,cell*4,cell*4);
+      // 4 yard circles
+      for(const [yr,yc] of YARDS[p]) {
+        const [cx2,cy2]=cellXY(yr,yc);
+        ctx.beginPath(); ctx.arc(cx2,cy2,cell*0.36,0,Math.PI*2);
+        ctx.fillStyle=pc(p); ctx.fill();
+        ctx.strokeStyle=p2?'rgba(0,0,0,0.25)':'rgba(255,255,255,0.2)';
+        ctx.lineWidth=1; ctx.stroke();
+      }
+    }
+
+    // ── home stretch columns (coloured) ────────────────────────────────────
+    for(let p=0;p<4;p++) {
+      for(const [r,col] of HOME_COLS[p]) {
+        ctx.fillStyle=pc(p)+(p2?'cc':'99');
+        ctx.fillRect(boardX+col*cell,boardY+r*cell,cell,cell);
+      }
+    }
+
+    // ── centre home square (4 coloured triangles) ──────────────────────────
+    const hx=boardX+6*cell, hy=boardY+6*cell, hs=cell*3;
+    const mid=[hx+hs/2, hy+hs/2];
+    const corn=[[hx,hy],[hx+hs,hy],[hx+hs,hy+hs],[hx,hy+hs]];
+    for(let p=0;p<4;p++){
+      ctx.beginPath();
+      ctx.moveTo(mid[0],mid[1]);
+      ctx.lineTo(corn[p][0],corn[p][1]);
+      ctx.lineTo(corn[(p+1)%4][0],corn[(p+1)%4][1]);
+      ctx.closePath();
+      ctx.fillStyle=pc(p); ctx.fill();
+    }
+
+    // ── safe square markers (star) ─────────────────────────────────────────
+    ctx.textAlign='center'; ctx.textBaseline='middle';
+    for(const sq of SAFE) {
+      const [r,col]=R_PATH[sq];
+      const [cx2,cy2]=cellXY(r,col);
+      ctx.fillStyle=p2?'rgba(0,0,0,0.15)':'rgba(255,255,255,0.12)';
+      ctx.font=`${Math.max(8,cell*0.6)}px sans-serif`;
+      ctx.fillText('★',cx2,cy2);
+    }
+
+    // ── entry markers (arrow per player at their path[0]) ──────────────────
+    for(let p=0;p<4;p++){
+      const [r,col]=PATHS[p][0];
+      const [cx2,cy2]=cellXY(r,col);
+      ctx.fillStyle=pc(p);
+      ctx.font=`bold ${Math.max(8,cell*0.55)}px sans-serif`;
+      ctx.fillText('▲',cx2,cy2);
+    }
+    ctx.textAlign='left'; ctx.textBaseline='alphabetic';
+
+    // ── pieces ─────────────────────────────────────────────────────────────
+    for(let p=0;p<4;p++){
+      for(let i=0;i<4;i++){
+        let px2,py2;
+        if(anim&&anim.p===p&&anim.i===i){
+          const t=Math.min(1,anim.t);
+          const e=t<0.5?2*t*t:(4-2*t)*t-1;
+          px2=anim.fx+(anim.tx-anim.fx)*e;
+          py2=anim.fy+(anim.ty-anim.fy)*e;
+        } else {
+          [px2,py2]=pieceXY(p,i);
+        }
+        const pr=cell*0.28;
+        const glow=rolled&&movable.includes(i)&&turn===p;
+        if(glow){ctx.shadowColor=pc(p);ctx.shadowBlur=10;}
+        ctx.beginPath();ctx.arc(px2,py2,pr,0,Math.PI*2);
+        ctx.fillStyle=pc(p);ctx.fill();
+        ctx.strokeStyle=p2?'rgba(0,0,0,0.35)':'rgba(255,255,255,0.35)';
+        ctx.lineWidth=1.5;ctx.stroke();
+        ctx.shadowBlur=0;
+        // piece number
+        ctx.fillStyle=p2?'rgba(0,0,0,0.75)':'rgba(255,255,255,0.9)';
+        ctx.font=`bold ${Math.max(6,pr*0.85)}px 'IBM Plex Mono',monospace`;
+        ctx.textAlign='center';ctx.textBaseline='middle';
+        ctx.fillText(i+1,px2,py2);
+        ctx.textAlign='left';ctx.textBaseline='alphabetic';
+      }
+    }
+
+    // ── dice ───────────────────────────────────────────────────────────────
+    const diceSize=Math.min(48,cell*2.2);
+    const diceX=boardX+boardS+8, diceY=boardY+(boardS-diceSize)/2;
+    if(diceX+diceSize<W) { // only draw if space
+      const face=rollFlash?Math.ceil(Math.random()*6):dice;
+      ctx.fillStyle=p2?'#f8f4ec':'#2c2c2c';
+      ctx.strokeStyle=pc(turn); ctx.lineWidth=2;
+      roundRect(ctx,diceX,diceY,diceSize,diceSize,6);
+      ctx.fill(); ctx.stroke();
+      if(dice>0){
+        const dots={
+          1:[[.5,.5]],
+          2:[[.28,.28],[.72,.72]],
+          3:[[.28,.28],[.5,.5],[.72,.72]],
+          4:[[.28,.28],[.72,.28],[.28,.72],[.72,.72]],
+          5:[[.28,.28],[.72,.28],[.5,.5],[.28,.72],[.72,.72]],
+          6:[[.28,.22],[.72,.22],[.28,.5],[.72,.5],[.28,.78],[.72,.78]]
+        };
+        ctx.fillStyle=pc(turn);
+        for(const [dx,dy] of (dots[face]||[])){
+          ctx.beginPath();ctx.arc(diceX+dx*diceSize,diceY+dy*diceSize,diceSize*0.09,0,Math.PI*2);ctx.fill();
+        }
+      } else {
+        ctx.fillStyle=p2?'rgba(0,0,0,0.2)':'rgba(255,255,255,0.15)';
+        ctx.font=`${Math.max(10,diceSize*0.35)}px 'IBM Plex Mono',monospace`;
+        ctx.textAlign='center';ctx.textBaseline='middle';
+        ctx.fillText('?',diceX+diceSize/2,diceY+diceSize/2);
+        ctx.textAlign='left';ctx.textBaseline='alphabetic';
+      }
+      // turn colour strip
+      for(let p=0;p<4;p++){
+        const sy=diceY-40+p*12;
+        ctx.fillStyle=p===turn?pc(p):(p2?'rgba(0,0,0,0.1)':'rgba(255,255,255,0.07)');
+        ctx.fillRect(diceX,sy,diceSize,9);
+        ctx.fillStyle=p===turn?(p2?'#fff':'#000'):(p2?'rgba(0,0,0,0.4)':'rgba(255,255,255,0.3)');
+        ctx.font=`300 ${Math.max(6,cell*0.4)}px 'IBM Plex Mono',monospace`;
+        ctx.textAlign='center';ctx.textBaseline='middle';
+        ctx.fillText(PN[p],diceX+diceSize/2,sy+4.5);
+        ctx.textAlign='left';ctx.textBaseline='alphabetic';
+      }
+    }
+
+    // ── game over overlay ──────────────────────────────────────────────────
+    if(gameOver){
+      ctx.fillStyle=bgFade(0.6); ctx.fillRect(boardX,boardY,boardS,boardS);
+      ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillStyle=pc(winner);
+      ctx.font=`bold ${Math.max(14,cell)}px 'IBM Plex Mono',monospace`;
+      ctx.fillText(`${PN[winner]} wins! 🎉`,boardX+boardS/2,boardY+boardS/2-cell*0.6);
+      ctx.font=`300 ${Math.max(9,cell*0.6)}px 'IBM Plex Mono',monospace`;
+      ctx.fillStyle=p2?'rgba(0,0,0,0.5)':'rgba(255,255,255,0.5)';
+      ctx.fillText('click to play again',boardX+boardS/2,boardY+boardS/2+cell*0.5);
+      ctx.textAlign='left'; ctx.textBaseline='alphabetic';
+    }
+  }
+
+  // ── Input ─────────────────────────────────────────────────────────────────
+  c.addEventListener('click', e=>{
+    if(gameOver){init();return;}
+    if(!isHuman(turn)||anim) return;
+    const rect=c.getBoundingClientRect();
+    const mx=(e.clientX-rect.left)*(W/rect.width);
+    const my=(e.clientY-rect.top)*(H/rect.height);
+
+    if(!rolled){rollDice();return;}
+
+    // Try to click on a movable piece
+    for(const i of movable){
+      const [px2,py2]=pieceXY(turn,i);
+      if(Math.hypot(mx-px2,my-py2)<cs()*0.45){
+        movePiece(turn,i); return;
+      }
+    }
+    // If only one movable piece, any click moves it
+    if(movable.length===1) movePiece(turn,movable[0]);
+  });
+
+  // ctrl bar
+  infoEl2=mkInfo(ctrl);
+  mkBtn('New Game',ctrl).addEventListener('click',()=>init());
+  mkInfo(ctrl).textContent=twoPlayer?'Red+Blue vs AI':'Red vs AI';
+
+  init();
+  requestAnimationFrame(draw);
+  return ()=>{cancelAnimationFrame(raf);ro.disconnect();};
 }
 
 // ── final init ────────────────────────────────────────────────────────────────
