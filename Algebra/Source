@@ -77,7 +77,7 @@
     let t = s;
     // fractions  a/b or (a)/(b)
     t = t.replace(/\(([^()]+)\)\/\(([^()]+)\)/g, (_,n,d)=>`\\frac{${n}}{${d}}`);
-    t = t.replace(/(-?\w+)\/(-?\w+)/g, (_,n,d)=>`\\frac{${n}}{${d}}`);
+    t = t.replace(/(-?\w+)\/(\d+)/g, (_,n,d)=>`\\frac{${n}}{${d}}`);
     // exponents
     t = t.replace(/\^(-?\d+)/g, (_,e)=>`^{${e}}`);
     // multiplication dot
@@ -213,7 +213,7 @@
     const r=parseFloat(coeff.toFixed(9));let s="";
     const entries=Object.entries(vars).filter(([,e])=>e!==0).sort((a,b)=>a[0].localeCompare(b[0]));
     if(entries.length===0)return fmtNum(r);
-    if(r===-1)s="-";else if(r!==1)s=fmtNum(r);
+    if(r===-1)s="-";else if(r!==1){const fn=fmtNum(r);s=(fn.includes("/")&&entries.length>0)?"("+fn+")":fn;}
     for(const[v,e]of entries){s+=v;if(e!==1)s+="^"+e;}
     return s||"1";
   }
@@ -1289,7 +1289,7 @@
           const closeIdx=findMatchingParen(raw,i);
           expStr=raw.slice(i+1,closeIdx);i=closeIdx+1;
         } else {
-          while(i<raw.length&&/[\w\-\/]/.test(raw[i])){expStr+=raw[i];i++;}
+          while(i<raw.length&&/[\d\-\/]/.test(raw[i])){expStr+=raw[i];i++;}
         }
         if(expStr){
           const sup=document.createElement("sup");
@@ -1375,9 +1375,9 @@
     if(!raw){resultDiv.innerHTML='<span style="color:#ccc;">Enter an expression above…</span>';resultDiv.style.cssText="min-height:52px;padding:12px;border:1px solid #e8e8e8;border-radius:8px;background:#fafafa;font-size:13px;position:relative;";return;}
     try{
       let res;
-      if(mode==="simplify")     res=doSimplify(raw);
-      else if(mode==="expand")  res=doExpand(raw);
-      else if(mode==="index")   res=doIndexForm(raw);
+      if(mode==="simplify")      res=doSimplify(raw);
+      else if(mode==="expand")   res=doExpand(raw);
+      else if(mode==="index")    res=doIndexForm(raw);
       else if(mode==="factorise")res=doFactorise(raw);
       else if(mode==="binomial") res=doBinomial(raw);
       else if(mode==="hcflcm")   res=doHcfLcm(raw);
@@ -1391,43 +1391,72 @@
         excluded:"Excluded values",solve:"Solution"};
       const label=modeLabels[mode]||mode;
 
-      // Build LaTeX for copy
-      const latexResult=rawToLatex(val);
+      // Split multiple results on the "  or  " separator used by doSolve / doExcluded
+      const resultParts=val.split(/\s{2}or\s{2}/).map(s=>s.trim()).filter(Boolean);
+      const multiResult=resultParts.length>1;
 
-      let html='<button class="__at-copy-btn__" id="__at-copy-result__" title="Copy result as LaTeX">LaTeX ⎘</button>';
-      html+='<div style="font-size:10px;color:#999;text-transform:uppercase;letter-spacing:.06em;margin-bottom:5px;">'+label+'</div>';
-      html+='<div style="font-size:21px;font-weight:600;font-family:Georgia,serif;margin-bottom:12px;color:#111;padding-right:60px;">'+renderMath(val)+'</div>';
-      html+='<div style="border-top:1px solid #ececec;padding-top:8px;">';
-      steps.forEach((step,i)=>{
-        const text=typeof step==="string"?step:step.text;
-        const rule=typeof step==="object"&&step.rule?step.rule:null;
-        html+='<div style="display:flex;gap:8px;margin-bottom:6px;line-height:1.5;align-items:flex-start;">'+
-          '<span style="min-width:17px;height:17px;border-radius:50%;background:#ebebeb;font-size:10px;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:2px;color:#777;">'+(i+1)+'</span>'+
-          '<span style="color:#444;font-size:12px;font-family:Georgia,serif;">'+renderMath(text)+(rule?'<span class="__at-rule-badge__">'+escHtml(rule)+'</span>':"")+'</span>'+
-          '</div>';
-      });
-      html+='</div>';
+      function buildResultHtml(idx){
+        const current=resultParts[idx];
+        const latexResult=rawToLatex(current);
+        let html='<button class="__at-copy-btn__" id="__at-copy-result__" title="Copy result as LaTeX">LaTeX ⎘</button>';
+        html+='<div style="font-size:10px;color:#999;text-transform:uppercase;letter-spacing:.06em;margin-bottom:5px;">'+label+'</div>';
 
-      resultDiv.style.cssText="min-height:52px;padding:12px;border:1px solid #d0e4ff;border-radius:8px;background:#f5f9ff;font-size:13px;position:relative;";
-      resultDiv.innerHTML=html;
+        // Result display with optional prev/next switcher
+        html+='<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;padding-right:60px;">';
+        html+='<div style="font-size:21px;font-weight:600;font-family:Georgia,serif;color:#111;flex:1;">'+renderMath(current)+'</div>';
+        if(multiResult){
+          html+='<div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">';
+          html+='<button id="__at-prev-result__" style="width:26px;height:26px;border:1.5px solid #b0c8f8;border-radius:50%;background:'+(idx>0?"#1a5abf":"#e8e8e8")+';color:'+(idx>0?"#fff":"#bbb")+';font-size:14px;cursor:'+(idx>0?"pointer":"default")+';display:flex;align-items:center;justify-content:center;line-height:1;" '+(idx===0?'disabled':'')+'>‹</button>';
+          html+='<span style="font-size:11px;color:#777;font-family:monospace;min-width:32px;text-align:center;">'+(idx+1)+' / '+resultParts.length+'</span>';
+          html+='<button id="__at-next-result__" style="width:26px;height:26px;border:1.5px solid #b0c8f8;border-radius:50%;background:'+(idx<resultParts.length-1?"#1a5abf":"#e8e8e8")+';color:'+(idx<resultParts.length-1?"#fff":"#bbb")+';font-size:14px;cursor:'+(idx<resultParts.length-1?"pointer":"default")+';display:flex;align-items:center;justify-content:center;line-height:1;" '+(idx===resultParts.length-1?'disabled':'')+'>›</button>';
+          html+='</div>';
+        }
+        html+='</div>';
 
-      // Wire up copy button
-      const copyBtn=document.getElementById("__at-copy-result__");
-      if(copyBtn){
-        copyBtn._latex=latexResult;
-        copyBtn.onclick=function(){
-          navigator.clipboard.writeText(this._latex).then(()=>{
-            this.textContent="Copied ✓";this.classList.add("copied");
-            setTimeout(()=>{this.textContent="LaTeX ⎘";this.classList.remove("copied");},2000);
-          }).catch(()=>{
-            // fallback
-            const ta=document.createElement("textarea");ta.value=this._latex;document.body.appendChild(ta);ta.select();document.execCommand("copy");document.body.removeChild(ta);
-            this.textContent="Copied ✓";this.classList.add("copied");
-            setTimeout(()=>{this.textContent="LaTeX ⎘";this.classList.remove("copied");},2000);
-          });
-        };
+        html+='<div style="border-top:1px solid #ececec;padding-top:8px;">';
+        steps.forEach((step,i)=>{
+          const text=typeof step==="string"?step:step.text;
+          const rule=typeof step==="object"&&step.rule?step.rule:null;
+          html+='<div style="display:flex;gap:8px;margin-bottom:6px;line-height:1.5;align-items:flex-start;">'+
+            '<span style="min-width:17px;height:17px;border-radius:50%;background:#ebebeb;font-size:10px;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:2px;color:#777;">'+(i+1)+'</span>'+
+            '<span style="color:#444;font-size:12px;font-family:Georgia,serif;">'+renderMath(text)+(rule?'<span class="__at-rule-badge__">'+escHtml(rule)+'</span>':"")+'</span>'+
+            '</div>';
+        });
+        html+='</div>';
+        return{html,latexResult};
       }
 
+      function renderAtIdx(idx){
+        const{html,latexResult}=buildResultHtml(idx);
+        resultDiv.style.cssText="min-height:52px;padding:12px;border:1px solid #d0e4ff;border-radius:8px;background:#f5f9ff;font-size:13px;position:relative;";
+        resultDiv.innerHTML=html;
+
+        // Copy button
+        const copyBtn=document.getElementById("__at-copy-result__");
+        if(copyBtn){
+          copyBtn._latex=latexResult;
+          copyBtn.onclick=function(){
+            navigator.clipboard.writeText(this._latex).then(()=>{
+              this.textContent="Copied ✓";this.classList.add("copied");
+              setTimeout(()=>{this.textContent="LaTeX ⎘";this.classList.remove("copied");},2000);
+            }).catch(()=>{
+              const ta=document.createElement("textarea");ta.value=this._latex;document.body.appendChild(ta);ta.select();document.execCommand("copy");document.body.removeChild(ta);
+              this.textContent="Copied ✓";this.classList.add("copied");
+              setTimeout(()=>{this.textContent="LaTeX ⎘";this.classList.remove("copied");},2000);
+            });
+          };
+        }
+
+        // Switcher buttons
+        if(multiResult){
+          const prevBtn=document.getElementById("__at-prev-result__");
+          const nextBtn=document.getElementById("__at-next-result__");
+          if(prevBtn)prevBtn.onclick=()=>{if(idx>0)renderAtIdx(idx-1);};
+          if(nextBtn)nextBtn.onclick=()=>{if(idx<resultParts.length-1)renderAtIdx(idx+1);};
+        }
+      }
+
+      renderAtIdx(0);
       pushHistory(raw,mode,val);
 
     } catch(err){
