@@ -1,1 +1,995 @@
+// ============================================================
+//  ALGEBRA EXPRESSION TOOL — paste into browser console
+//
+//  Input modes:
+//    • Rich editor: ^ = power, / = ÷, * = ×, ? = fraction
+//    • LaTeX: paste  p^5\times \left(p^2\right)^3
+//             and it auto-converts to the visual rich format
+//    • Plain math: paste  3x^5 * 4x^6  etc.
+//
+//  Keyboard shortcuts (in main editor):
+//    ^  or  Shift+digit/letter  → superscript exponent
+//    ArrowLeft/Right at edge of sup → exit sup
+//    ArrowDown anywhere in sup → exit sup
+//    Escape → exit sup
+//    ?  or  Shift+/  → fraction widget
+//    Tab (inside fraction) → numerator → denominator → after
+// ============================================================
 
+(function () {
+  const existing = document.getElementById("__algebra-tool__");
+  if (existing) { existing.remove(); return; }
+
+  // ══════════════════════════════════════════════════════════
+  //  LaTeX → raw-math converter
+  // ══════════════════════════════════════════════════════════
+  function latexToRaw(latex) {
+    let s = latex.trim();
+
+    // Strip display/inline math delimiters
+    s = s.replace(/^\$\$[\s\S]*\$\$$/, m => m.slice(2,-2));
+    s = s.replace(/^\$|\$$/g, "");
+    s = s.replace(/^\\\[|\\\]$/g, "");
+    s = s.replace(/^\\\(|\\\)$/g, "");
+    s = s.replace(/^\\begin\{[^}]*\}|\\end\{[^}]*\}$/g, "");
+    s = s.trim();
+
+    // \left( … \right) → ( … )
+    s = s.replace(/\\left\s*\(/g, "(").replace(/\\right\s*\)/g, ")");
+    s = s.replace(/\\left\s*\[/g, "(").replace(/\\right\s*\]/g, ")");
+    s = s.replace(/\\left\s*\{/g, "(").replace(/\\right\s*\}/g, ")");
+    s = s.replace(/\\left\s*\|/g, "|").replace(/\\right\s*\|/g, "|");
+    s = s.replace(/\\left\s*\./g, "").replace(/\\right\s*\./g, "");
+
+    // \frac{a}{b} → (a)/(b)
+    s = expandLatexCmd(s, "frac",   2, a => "("+a[0]+")/("+a[1]+")");
+    s = expandLatexCmd(s, "dfrac",  2, a => "("+a[0]+")/("+a[1]+")");
+    s = expandLatexCmd(s, "tfrac",  2, a => "("+a[0]+")/("+a[1]+")");
+
+    // \sqrt[n]{a} → a^(1/n),  \sqrt{a} → sqrt(a)
+    s = s.replace(/\\sqrt\s*\[([^\]]+)\]\s*\{([^}]*)\}/g, "($2)^(1/$1)");
+    s = expandLatexCmd(s, "sqrt", 1, a => "sqrt("+a[0]+")");
+
+    // Operators
+    s = s.replace(/\\cdot\b/g,  "*");
+    s = s.replace(/\\times\b/g, "*");
+    s = s.replace(/\\div\b/g,   "/");
+    s = s.replace(/\\pm\b/g,    "±");
+
+    // Named functions
+    ["sin","cos","tan","cot","sec","csc","arcsin","arccos","arctan",
+     "ln","log","exp","abs","min","max","gcd","lcm"].forEach(fn => {
+      s = s.replace(new RegExp("\\\\"+fn+"\\b","g"), fn);
+    });
+
+    // Greek letters
+    const greek = {alpha:"α",beta:"β",gamma:"γ",delta:"δ",epsilon:"ε",
+      zeta:"ζ",eta:"η",theta:"θ",iota:"ι",kappa:"κ",lambda:"λ",
+      mu:"μ",nu:"ν",xi:"ξ",pi:"π",rho:"ρ",sigma:"σ",tau:"τ",
+      upsilon:"υ",phi:"φ",chi:"χ",psi:"ψ",omega:"ω",
+      Gamma:"Γ",Delta:"Δ",Theta:"Θ",Lambda:"Λ",Xi:"Ξ",
+      Pi:"Π",Sigma:"Σ",Upsilon:"Υ",Phi:"Φ",Psi:"Ψ",Omega:"Ω",
+      infty:"∞"};
+    Object.entries(greek).forEach(([k,v]) => {
+      s = s.replace(new RegExp("\\\\"+k+"\\b","g"), v);
+    });
+
+    // \text{}, \mathrm{}, etc. → strip wrapper
+    ["text","mathrm","mathbf","mathit","mathbb","operatorname"].forEach(cmd => {
+      s = expandLatexCmd(s, cmd, 1, a => a[0]);
+    });
+
+    // ^{...} → ^(...)   (before we strip braces)
+    s = s.replace(/\^\s*\{/g, "^(");
+
+    // _{...} subscripts: strip (not used in these expressions)
+    s = s.replace(/_\s*\{([^}]*)\}/g, "");
+    s = s.replace(/_[a-zA-Z0-9]/g, "");
+
+    // Remaining { } → ( )
+    s = s.replace(/\{/g, "(").replace(/\}/g, ")");
+
+    // Clean whitespace
+    s = s.replace(/\s+/g, "");
+
+    // Remove any remaining backslash commands
+    s = s.replace(/\\[a-zA-Z]+\s*/g, "");
+
+    // Clean empty parens
+    s = s.replace(/\(\)/g, "");
+
+    return s;
+  }
+
+  function expandLatexCmd(s, cmd, numArgs, replacer) {
+    const tag = "\\"+cmd;
+    let result = "", i = 0;
+    while (i < s.length) {
+      const idx = s.indexOf(tag, i);
+      if (idx === -1) { result += s.slice(i); break; }
+      const after = s[idx + tag.length];
+      if (after && /[a-zA-Z]/.test(after)) { result += s.slice(i, idx+1); i = idx+1; continue; }
+      result += s.slice(i, idx);
+      let pos = idx + tag.length;
+      while (pos < s.length && s[pos] === " ") pos++;
+      const args = [];
+      for (let a = 0; a < numArgs; a++) {
+        while (pos < s.length && s[pos] === " ") pos++;
+        if (s[pos] === "{") {
+          const end = findMatchingBrace(s, pos);
+          args.push(s.slice(pos+1, end));
+          pos = end + 1;
+        } else {
+          args.push(s[pos] || "");
+          pos++;
+        }
+      }
+      result += replacer(args);
+      i = pos;
+    }
+    return result;
+  }
+
+  function findMatchingBrace(s, open) {
+    let depth = 0;
+    for (let i = open; i < s.length; i++) {
+      if (s[i] === "{") depth++;
+      else if (s[i] === "}") { depth--; if (depth === 0) return i; }
+    }
+    return s.length - 1;
+  }
+
+  function looksLikeLatex(s) {
+    return /\\[a-zA-Z]/.test(s) || /\\\(|\\\[|\$/.test(s);
+  }
+
+  // ══════════════════════════════════════════════════════════
+  //  Math helpers
+  // ══════════════════════════════════════════════════════════
+  function fmtNum(n) {
+    const r = parseFloat(n.toFixed(9));
+    if (Number.isInteger(r)) return String(r);
+    for (let d = 2; d <= 100; d++) {
+      const num = Math.round(r * d);
+      if (Math.abs(num / d - r) < 1e-9) return num + "/" + d;
+    }
+    return r.toFixed(4).replace(/\.?0+$/, "");
+  }
+  function normalise(s) {
+    return s.replace(/\s+/g,"").replace(/[÷]/g,"/").replace(/[×]/g,"*");
+  }
+  function tokeniseTopLevel(s) {
+    const tokens=[]; let depth=0, cur="";
+    for (let i=0;i<s.length;i++) {
+      const c=s[i];
+      if(c==="("){depth++;cur+=c;}
+      else if(c===")"){depth--;cur+=c;}
+      else if((c==="*"||c==="/")&&depth===0){if(cur)tokens.push(cur);tokens.push(c);cur="";}
+      else cur+=c;
+    }
+    if(cur)tokens.push(cur); return tokens;
+  }
+  function parseMonomial(s) {
+    s=s.replace(/^\(+|\)+$/g,""); let sign=1;
+    if(s.startsWith("-")){sign=-1;s=s.slice(1);}
+    const nm=s.match(/^(\d+\.?\d*)/);
+    let coeff=nm?parseFloat(nm[1]):1;
+    const rest=nm?s.slice(nm[0].length):s;
+    const vars={}; const vr=/([a-zA-Z])(?:\^(-?\d+))?/g; let m;
+    while((m=vr.exec(rest))!==null) vars[m[1]]=(vars[m[1]]||0)+(m[2]!==undefined?parseInt(m[2]):1);
+    return {coeff:sign*coeff,vars};
+  }
+  // Detect pattern (inner)^n — e.g. (-3x^4)^4
+  function parsePowerToken(t) {
+    const m = t.match(/^(-?)\((.+)\)\^(-?\d+)$/);
+    if (m) return { sign: m[1]==='-'?-1:1, inner: m[2], outerExp: parseInt(m[3]) };
+    return null;
+  }
+  // Like parseMonomial but handles outer (expr)^n first
+  function parseMonomialWithOuterPow(t) {
+    const pow = parsePowerToken(t);
+    if (pow) {
+      const inner = parseMonomial(pow.inner);
+      const n = pow.outerExp;
+      const nc = Math.pow(inner.coeff, n);
+      const newVars = {};
+      for (const [v,e] of Object.entries(inner.vars)) newVars[v] = e * n;
+      return { coeff: nc, vars: newVars };
+    }
+    return parseMonomial(t);
+  }
+
+  function formatMonomial(coeff,vars) {
+    const r=parseFloat(coeff.toFixed(9)); let s="";
+    const entries=Object.entries(vars).filter(([,e])=>e!==0).sort((a,b)=>a[0].localeCompare(b[0]));
+    if(entries.length===0)return fmtNum(r);
+    if(r===-1)s="-"; else if(r!==1)s=fmtNum(r);
+    for(const[v,e]of entries){s+=v;if(e!==1)s+="^"+e;}
+    return s||"1";
+  }
+  function tryParseNumber(s){s=s.replace(/^\(+|\)+$/g,"");const n=parseFloat(s);return isNaN(n)?null:n;}
+  function tryParseMonomial(s) {
+    s=s.replace(/^\(+|\)+$/g,"");
+    const m=s.match(/^(-?\d*\.?\d*)([a-zA-Z])(?:\^(\d+))?$/); if(!m)return null;
+    const coeff=m[1]?(m[1]==="-"?-1:parseFloat(m[1])):1;
+    return {coeff,varName:m[2],exp:m[3]?parseInt(m[3]):1};
+  }
+  function parsePolynomial(s) {
+    const tokens=tokeniseTopLevel(s); let a=0,b=0,c=0,varName=null;
+    for(const t of tokens){
+      if(t==="*"||t==="/")continue;
+      const m=parseMonomial(t); const v=Object.keys(m.vars)[0];
+      if(!varName&&v)varName=v;
+      const exp=v?m.vars[v]:0;
+      if(exp===2)a+=m.coeff; else if(exp===1)b+=m.coeff; else c+=m.coeff;
+    }
+    return {a,b,c,varName:varName||"x"};
+  }
+  function fmtPoly(a,b,c,v) {
+    let s="";
+    if(a)s+=(a===1?"":(a===-1?"-":a))+v+"²";
+    if(b)s+=(b>0&&s?" + ":b<0?" − ":"")+( Math.abs(b)===1?"":Math.abs(b))+v;
+    if(c)s+=(c>0&&s?" + ":c<0?" − ":"")+Math.abs(c);
+    return s||"0";
+  }
+  function findTopLevelSlash(s) {
+    let depth=0;
+    for(let i=0;i<s.length;i++){
+      if(s[i]==="(")depth++; else if(s[i]===")")depth--;
+      else if(s[i]==="/"&&depth===0)return i;
+    }
+    return -1;
+  }
+  function solveForZero(expr,steps) {
+    expr=expr.replace(/^\(+|\)+$/g,""); const zeros=[];
+    const linM=expr.match(/^(-?\d*\.?\d*)([a-zA-Z])([+-]\d+\.?\d*)?$/);
+    if(linM){
+      const a=linM[1]?(linM[1]==="-"?-1:parseFloat(linM[1])):1;
+      const b=linM[3]?parseFloat(linM[3]):0; const z=-b/a;
+      steps.push("Solve: "+(a!==1?a:"")+linM[2]+(b>=0?"+":"")+b+" = 0  →  "+linM[2]+" = "+fmtNum(z));
+      zeros.push(fmtNum(z)); return zeros;
+    }
+    const qM=expr.match(/^(-?\d*\.?\d*)[a-zA-Z]\^2([+-]\d*\.?\d*[a-zA-Z])?([+-]\d+\.?\d*)?$/);
+    if(qM){
+      const a=qM[1]?(qM[1]==="-"?-1:parseFloat(qM[1])):1;
+      const bv=qM[2]?parseFloat(qM[2].replace(/[a-z]/gi,"")):0;
+      const cv=qM[3]?parseFloat(qM[3]):0; const disc=bv*bv-4*a*cv;
+      if(disc<0){steps.push("Discriminant < 0, no real zeros");return [];}
+      const r1=(-bv+Math.sqrt(disc))/(2*a),r2=(-bv-Math.sqrt(disc))/(2*a);
+      steps.push("Quadratic formula: x = "+fmtNum(r1)+(Math.abs(disc)>1e-9?", x = "+fmtNum(r2):""));
+      zeros.push(fmtNum(r1)); if(Math.abs(disc)>1e-9)zeros.push(fmtNum(r2)); return zeros;
+    }
+    if(/^[a-zA-Z](\^\d+)?$/.test(expr)){steps.push("Variable = 0");zeros.push("0");return zeros;}
+    throw new Error("Could not find zeros of: "+expr);
+  }
+  function doSimplify(raw) {
+    const s=normalise(raw); const steps=[];
+    const tokens=tokeniseTopLevel(s); let coeff=1,vars={},curDen=false;
+    steps.push("Original: "+s.replace(/\*/g," × ").replace(/\//g," ÷ "));
+    steps.push("Apply product/quotient of powers (add exponents for ×, subtract for ÷):");
+    for(const t of tokens){
+      if(t==="*"){curDen=false;continue;} if(t==="/"){curDen=true;continue;}
+      const m=parseMonomialWithOuterPow(t);
+      if(curDen){
+        coeff/=m.coeff;
+        for(const[v,e]of Object.entries(m.vars))vars[v]=(vars[v]||0)-e;
+        steps.push("  ÷ "+t+" → ÷"+fmtNum(m.coeff)+", "+Object.entries(m.vars).map(([v,e])=>v+"^(−"+e+")").join(" "));
+      } else {
+        coeff*=m.coeff;
+        for(const[v,e]of Object.entries(m.vars))vars[v]=(vars[v]||0)+e;
+        steps.push("  × "+t+" → ×"+fmtNum(m.coeff)+", "+Object.entries(m.vars).map(([v,e])=>v+"^(+"+e+")").join(" "));
+      }
+    }
+    const result=formatMonomial(coeff,vars);
+    steps.push("Result: "+result); return {result,steps};
+  }
+  function doExcluded(raw) {
+    const s=normalise(raw); const steps=[];
+    const si=findTopLevelSlash(s);
+    if(si===-1)throw new Error("No division found. Enter a fraction like 5/(x−3).");
+    const den=s.slice(si+1).replace(/^\(|\)$/g,"");
+    steps.push("Denominator: "+den); steps.push("Set denominator = 0: "+den+" = 0");
+    const zeros=solveForZero(den,steps);
+    const result=zeros.length?zeros.map(z=>"x ≠ "+z).join(",  "):"No excluded values";
+    return {result,steps};
+  }
+  function doSolve(raw) {
+    const s=normalise(raw); const steps=[]; const ei=s.indexOf("=");
+    if(ei===-1)throw new Error("No '=' found. Enter an equation like x^2 = 9.");
+    const lhs=s.slice(0,ei),rhs=s.slice(ei+1);
+    steps.push("Equation: "+lhs+" = "+rhs);
+    const rhsVal=tryParseNumber(rhs); const lhsMon=tryParseMonomial(lhs);
+    if(lhsMon&&rhsVal!==null){
+      const{coeff,varName,exp}=lhsMon;
+      if(exp===1){
+        const sol=rhsVal/coeff; steps.push("÷ both sides by "+coeff+": "+varName+" = "+fmtNum(sol));
+        return {result:varName+" = "+fmtNum(sol),steps};
+      }
+      const r2=rhsVal/coeff; steps.push("÷ both sides by "+coeff+": "+varName+"^"+exp+" = "+fmtNum(r2));
+      if(exp===2){
+        if(r2<0){steps.push("Negative under √ → no real solution");return {result:"No real solution",steps};}
+        const sr=Math.sqrt(r2); steps.push("√ both sides: "+varName+" = ±"+fmtNum(sr));
+        return {result:varName+" = "+fmtNum(sr)+"  or  "+varName+" = "+fmtNum(-sr),steps};
+      }
+      const sol=Math.pow(r2,1/exp); steps.push("Take "+exp+"th root: "+varName+" = "+fmtNum(sol));
+      return {result:varName+" = "+fmtNum(sol),steps};
+    }
+    const poly=parsePolynomial(lhs+"-("+rhs+")");
+    if(poly){
+      const{a,b,c,varName}=poly; steps.push("Rearranged: "+fmtPoly(a,b,c,varName)+" = 0");
+      if(a===0){
+        if(b===0)throw new Error("No variable found.");
+        const sol=-c/b; steps.push(varName+" = "+fmtNum(sol));
+        return {result:varName+" = "+fmtNum(sol),steps};
+      }
+      const disc=b*b-4*a*c; steps.push("Discriminant = "+fmtNum(b)+"² − 4·"+fmtNum(a)+"·"+fmtNum(c)+" = "+fmtNum(disc));
+      if(disc<0)return {result:"No real solutions",steps};
+      if(Math.abs(disc)<1e-9){
+        const sol=-b/(2*a); steps.push("Double root: "+varName+" = "+fmtNum(sol));
+        return {result:varName+" = "+fmtNum(sol),steps};
+      }
+      const r1=(-b+Math.sqrt(disc))/(2*a),r2=(-b-Math.sqrt(disc))/(2*a);
+      steps.push(varName+" = ("+fmtNum(-b)+" ± √"+fmtNum(disc)+") / "+fmtNum(2*a));
+      return {result:varName+" = "+fmtNum(r1)+"  or  "+varName+" = "+fmtNum(r2),steps};
+    }
+    throw new Error("Could not solve this automatically.");
+  }
+
+  // ── doExpand ──────────────────────────────────────────────
+  // Writes out every factor as repeated multiplication.
+  // e.g.  3x^2 * 2y^3  →  3 × x × x × 2 × y × y × y
+  // Handles: monomials, products, quotients, (base)^exp notation.
+  // Max expansion per exponent = 12 (anything larger stays as ^n).
+  const EXPAND_LIMIT = 12;
+
+  function expandRaw(raw) {
+    // Parse the normalised string into a flat list of factors,
+    // keeping track of numerator vs denominator.
+    const s = normalise(raw);
+    const steps = [];
+    steps.push("Original: " + s.replace(/\*/g," × ").replace(/\//g," ÷ "));
+
+    // Split top-level on * and /
+    const tokens = tokeniseTopLevel(s);
+
+    const numParts = [];  // strings for numerator factors
+    const denParts = [];  // strings for denominator factors
+    let curDen = false;
+
+    for (const t of tokens) {
+      if (t === "*") { curDen = false; continue; }
+      if (t === "/") { curDen = true;  continue; }
+      const parts = curDen ? denParts : numParts;
+      expandToken(t, parts, steps);
+    }
+
+    // Build result string
+    let result = "";
+    if (numParts.length === 0) numParts.push("1");
+
+    if (denParts.length === 0) {
+      result = numParts.join(" × ");
+    } else {
+      result = "(" + numParts.join(" × ") + ") ÷ (" + denParts.join(" × ") + ")";
+    }
+    steps.push("Expanded: " + result);
+    return { result, steps };
+  }
+
+  function expandToken(t, parts, steps) {
+    // Strip outer parens  →  handle (expr)^n
+    const powMatch = t.match(/^\((.+)\)\^(\-?\d+)$/);
+    if (powMatch) {
+      const inner = powMatch[1];
+      const n = parseInt(powMatch[2]);
+      if (n < 0 || n > EXPAND_LIMIT) {
+        parts.push("(" + inner + ")^" + n);
+        steps.push("  (" + inner + ")^" + n + " kept as-is (exponent too large or negative)");
+      } else {
+        const innerParts = [];
+        expandToken(inner, innerParts, steps);
+        const group = innerParts.length > 1 ? "(" + innerParts.join(" × ") + ")" : innerParts[0];
+        for (let i = 0; i < n; i++) parts.push(group);
+        steps.push("  (" + inner + ")^" + n + " → " + Array(n).fill(group).join(" × "));
+      }
+      return;
+    }
+
+    // Plain monomial: optional coefficient + variable factors
+    const clean = t.replace(/^\(+|\)+$/g, "");
+    let s2 = clean;
+    let sign = 1;
+    if (s2.startsWith("-")) { sign = -1; s2 = s2.slice(1); }
+
+    const nm = s2.match(/^(\d+\.?\d*)/);
+    const coeff = nm ? parseFloat(nm[1]) : 1;
+    const rest  = nm ? s2.slice(nm[0].length) : s2;
+
+    const signedCoeff = sign * coeff;
+    if (signedCoeff !== 1 || rest === "") {
+      parts.push(fmtNum(signedCoeff));
+    }
+
+    // Parse variable^exp pairs
+    const vr = /([a-zA-Z])(?:\^(-?\d+))?/g;
+    let m;
+    while ((m = vr.exec(rest)) !== null) {
+      const v   = m[1];
+      const exp = m[2] !== undefined ? parseInt(m[2]) : 1;
+      if (exp === 1) {
+        parts.push(v);
+      } else if (exp < 0 || exp > EXPAND_LIMIT) {
+        parts.push(v + "^" + exp);
+        steps.push("  " + v + "^" + exp + " kept as-is");
+      } else {
+        for (let i = 0; i < exp; i++) parts.push(v);
+        steps.push("  " + v + "^" + exp + " → " + Array(exp).fill(v).join(" × "));
+      }
+    }
+  }
+
+  function doExpand(raw) {
+    return expandRaw(raw);
+  }
+
+  // ── Build UI ──────────────────────────────────────────────
+  const overlay = document.createElement("div");
+  overlay.id = "__algebra-tool__";
+  overlay.style.cssText = "position:fixed;top:20px;right:20px;z-index:999999;width:460px;max-width:calc(100vw - 40px);background:#fff;color:#111;border:1px solid #ddd;border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,0.18);font-family:system-ui,sans-serif;font-size:14px;overflow:hidden;";
+
+  const styleEl = document.createElement("style");
+  styleEl.textContent = [
+    ".__at-kbd__{padding:2px 7px;background:#f0f0f0;border:1px solid #ccc;border-radius:4px;font-size:11px;font-family:monospace;color:#555;}",
+    ".__at-frac__{display:inline-flex;flex-direction:column;align-items:center;vertical-align:middle;margin:0 2px;line-height:1.1;}",
+    ".__at-frac__ .__at-num__,.__at-frac__ .__at-den__{display:inline-block;min-width:14px;min-height:1em;padding:0 3px;outline:none;border-radius:3px;font-family:Georgia,serif;font-size:0.9em;text-align:center;}",
+    ".__at-frac__ .__at-num__:focus,.__at-frac__ .__at-den__:focus{background:rgba(26,90,191,0.08);}",
+    ".__at-frac__ .__at-bar__{width:100%;min-width:20px;border-top:1.5px solid #111;margin:1px 0;}",
+    "#__at-editor__ sup:focus-within{background:rgba(26,90,191,0.07);border-radius:2px;}",
+    "#__at-latex-badge__{display:none;position:absolute;top:-8px;right:4px;font-size:10px;padding:1px 6px;background:#e8f0fe;color:#1a5abf;border-radius:3px;pointer-events:none;font-family:monospace;border:1px solid #b0c8f8;}",
+  ].join("");
+
+  overlay.innerHTML =
+    '<div id="__at-hdr__" style="display:flex;align-items:center;justify-content:space-between;padding:11px 16px;background:#f5f5f5;border-bottom:1px solid #e0e0e0;cursor:move;user-select:none;">'+
+      '<span style="font-weight:600;font-size:15px;">Algebra Tool</span>'+
+      '<button id="__at-x__" style="background:none;border:none;font-size:18px;cursor:pointer;padding:0 4px;color:#555;line-height:1;">✕</button>'+
+    '</div>'+
+    '<div style="padding:14px 16px 12px;">'+
+      '<div style="display:flex;gap:8px;margin-bottom:12px;align-items:flex-start;">'+
+        '<div style="position:relative;flex:1;">'+
+          '<div id="__at-editor__" contenteditable="true" spellcheck="false" style="min-height:42px;max-height:90px;overflow-y:auto;padding:7px 10px;border:1.5px solid #bbb;border-radius:7px;font-size:16px;font-family:Georgia,serif;outline:none;line-height:1.9;background:#fff;color:#111;cursor:text;"></div>'+
+          '<span id="__at-latex-badge__">LaTeX ✓</span>'+
+        '</div>'+
+        '<select id="__at-mode__" style="padding:7px 8px;border:1px solid #ccc;border-radius:7px;background:#fff;color:#111;font-size:13px;cursor:pointer;flex-shrink:0;">'+
+          '<option value="simplify">Simplify</option>'+
+          '<option value="expand">Expand</option>'+
+          '<option value="index">Index form</option>'+
+          '<option value="excluded">Excluded values</option>'+
+          '<option value="solve">Solve</option>'+
+        '</select>'+
+      '</div>'+
+      '<div style="display:flex;gap:5px;margin-bottom:10px;flex-wrap:wrap;align-items:center;">'+
+        '<span style="font-size:11px;color:#aaa;margin-right:2px;">Type:</span>'+
+        '<span class="__at-kbd__">^ = power</span>'+
+        '<span class="__at-kbd__">/ = ÷</span>'+
+        '<span class="__at-kbd__">* = ×</span>'+
+        '<span class="__at-kbd__">? = fraction</span>'+
+        '<span class="__at-kbd__">Esc/↓ = exit power</span>'+
+        '<span class="__at-kbd__" style="background:#e8f0fe;border-color:#b0c8f8;color:#1a5abf;">or paste LaTeX</span>'+
+      '</div>'+
+      '<button id="__at-go__" style="width:100%;padding:9px;background:#1a1a1a;color:#fff;border:none;border-radius:7px;font-size:14px;font-weight:500;cursor:pointer;margin-bottom:10px;">Go</button>'+
+      '<div style="margin-bottom:8px;">'+
+        '<div style="font-size:10px;color:#bbb;text-transform:uppercase;letter-spacing:.06em;margin-bottom:5px;">Examples</div>'+
+        '<div id="__at-chips__" style="display:flex;flex-wrap:wrap;gap:5px;"></div>'+
+      '</div>'+
+      '<div id="__at-result__" style="min-height:52px;padding:12px;border:1px solid #e5e5e5;border-radius:8px;background:#fafafa;font-size:13px;">'+
+        '<span style="color:#ccc;">Enter an expression above…</span>'+
+      '</div>'+
+    '</div>';
+
+  overlay.prepend(styleEl);
+  document.body.appendChild(overlay);
+
+  const editor    = document.getElementById("__at-editor__");
+  const resultDiv = document.getElementById("__at-result__");
+  const ltBadge   = document.getElementById("__at-latex-badge__");
+
+  function flashLatexBadge(){
+    ltBadge.style.display="block";
+    clearTimeout(ltBadge._t);
+    ltBadge._t=setTimeout(()=>{ ltBadge.style.display="none"; },2200);
+  }
+
+  // ── Placeholder ───────────────────────────────────────────
+  function showPlaceholder(){
+    editor.innerHTML='<span style="color:#bbb;pointer-events:none;user-select:none;" id="__at-ph__">e.g. 3x<sup style="font-size:0.7em;color:#bbb;">5</sup> × 4x<sup style="font-size:0.7em;color:#bbb;">6</sup>  or paste LaTeX</span>';
+    editor._placeholder=true;
+  }
+  function clearPlaceholder(){
+    if(editor._placeholder){editor.innerHTML="";editor._placeholder=false;}
+  }
+  showPlaceholder();
+  editor.addEventListener("focus",clearPlaceholder);
+  editor.addEventListener("blur",e=>{
+    if(editor.contains(e.relatedTarget))return;
+    if(!editor.textContent.replace(/\u200B/g,"").trim()&&!editor.querySelector(".__at-frac__"))
+      showPlaceholder();
+  });
+
+  // ── Cursor helpers ────────────────────────────────────────
+  function getSel(){return window.getSelection();}
+  function getAncestorOfType(tag){
+    const sel=getSel();if(!sel.rangeCount)return null;
+    let n=sel.getRangeAt(0).startContainer;
+    while(n&&n!==editor){if(n.nodeName===tag.toUpperCase())return n;n=n.parentNode;}
+    return null;
+  }
+  function isInsideSup(){return!!getAncestorOfType("SUP");}
+  function getCurrentSup(){return getAncestorOfType("SUP");}
+  function getCursorOffsetInNode(node){
+    const sel=getSel();if(!sel.rangeCount)return -1;
+    const range=sel.getRangeAt(0);
+    const pre=range.cloneRange();
+    pre.selectNodeContents(node);
+    pre.setEnd(range.startContainer,range.startOffset);
+    return pre.toString().replace(/\u200B/g,"").length;
+  }
+  function getTextLengthOfNode(node){return node.textContent.replace(/\u200B/g,"").length;}
+
+  // ── Insert helpers ────────────────────────────────────────
+  function insertText(text){
+    clearPlaceholder();editor.focus();
+    const sel=getSel();if(!sel.rangeCount)return;
+    const range=sel.getRangeAt(0);range.deleteContents();
+    const tn=document.createTextNode(text);
+    range.insertNode(tn);range.setStartAfter(tn);range.collapse(true);
+    sel.removeAllRanges();sel.addRange(range);
+  }
+  function moveCursorBefore(node){
+    const sel=getSel();const range=document.createRange();
+    range.setStartBefore(node);range.collapse(true);
+    sel.removeAllRanges();sel.addRange(range);
+  }
+
+  // ── SUP ───────────────────────────────────────────────────
+  function enterSupMode(){
+    clearPlaceholder();editor.focus();
+    const sel=getSel();if(!sel.rangeCount)return;
+    const range=sel.getRangeAt(0);range.deleteContents();
+    const sup=document.createElement("sup");
+    sup.style.cssText="font-size:0.72em;line-height:0;vertical-align:super;color:#1a5abf;min-width:3px;display:inline;";
+    const zw=document.createTextNode("\u200B");
+    sup.appendChild(zw);range.insertNode(sup);
+    sup.after(document.createTextNode("\u200B"));
+    const inner=document.createRange();inner.setStartAfter(zw);inner.collapse(true);
+    sel.removeAllRanges();sel.addRange(inner);
+  }
+  function exitSupAfter(){
+    const sup=getCurrentSup();if(!sup)return;
+    if(sup.textContent.replace(/\u200B/g,"").trim()===""){
+      const next=sup.nextSibling;sup.parentNode.removeChild(sup);
+      if(next){const r=document.createRange();r.setStart(next,0);r.collapse(true);getSel().removeAllRanges();getSel().addRange(r);}
+      return;
+    }
+    let after=sup.nextSibling;
+    if(!after){after=document.createTextNode("\u200B");sup.parentNode.appendChild(after);}
+    const r=document.createRange();
+    r.setStart(after,after.nodeType===3?Math.min(1,after.length):0);r.collapse(true);
+    getSel().removeAllRanges();getSel().addRange(r);
+  }
+  function exitSupBefore(){
+    const sup=getCurrentSup();if(!sup)return;
+    if(sup.textContent.replace(/\u200B/g,"").trim()==="")sup.parentNode.removeChild(sup);
+    else moveCursorBefore(sup);
+  }
+  function enterSupModeInEl(el){
+    const sel=getSel();if(!sel.rangeCount)return;
+    const range=sel.getRangeAt(0);range.deleteContents();
+    const sup=document.createElement("sup");
+    sup.style.cssText="font-size:0.72em;line-height:0;vertical-align:super;color:#1a5abf;min-width:3px;display:inline;";
+    const zw=document.createTextNode("\u200B");
+    sup.appendChild(zw);range.insertNode(sup);
+    const inner=document.createRange();inner.setStartAfter(zw);inner.collapse(true);
+    sel.removeAllRanges();sel.addRange(inner);
+  }
+
+  // ── FRACTION ─────────────────────────────────────────────
+  function makeFracNode(numText,denText){
+    const frac=document.createElement("span");frac.className="__at-frac__";frac.setAttribute("data-frac","1");
+    const num=document.createElement("span");num.className="__at-num__";num.contentEditable="true";num.setAttribute("data-slot","num");
+    num.textContent=numText||"\u200B";
+    const bar=document.createElement("span");bar.className="__at-bar__";bar.contentEditable="false";
+    const den=document.createElement("span");den.className="__at-den__";den.contentEditable="true";den.setAttribute("data-slot","den");
+    den.textContent=denText||"\u200B";
+    frac.appendChild(num);frac.appendChild(bar);frac.appendChild(den);
+    [num,den].forEach(s=>{
+      s.addEventListener("keydown",fracKeyHandler);
+      s.addEventListener("keydown",e=>e.stopPropagation(),true);
+    });
+    return frac;
+  }
+  function insertFraction(){
+    clearPlaceholder();editor.focus();
+    const sel=getSel();if(!sel.rangeCount)return;
+    const range=sel.getRangeAt(0);
+    const frac=makeFracNode("","");
+    range.deleteContents();range.insertNode(frac);
+    frac.after(document.createTextNode("\u200B"));
+    focusSlotEnd(frac.querySelector("[data-slot='num']"));
+  }
+  function focusSlotEnd(slot){
+    slot.focus();
+    const r=document.createRange();r.selectNodeContents(slot);r.collapse(false);
+    getSel().removeAllRanges();getSel().addRange(r);
+  }
+  function isAtStartOfSlot(slot){return getCursorOffsetInNode(slot)===0;}
+  function isAtEndOfSlot(slot){return getCursorOffsetInNode(slot)>=getTextLengthOfNode(slot);}
+  function exitFracAfter(frac){
+    editor.focus();
+    let after=frac.nextSibling;
+    if(!after){after=document.createTextNode("\u200B");frac.parentNode.appendChild(after);}
+    const r=document.createRange();
+    r.setStart(after,after.nodeType===3?Math.min(1,after.length):0);r.collapse(true);
+    getSel().removeAllRanges();getSel().addRange(r);
+  }
+  function fracKeyHandler(e){
+    const slot=e.currentTarget;
+    const frac=slot.closest(".__at-frac__");
+    const num=frac.querySelector("[data-slot='num']");
+    const den=frac.querySelector("[data-slot='den']");
+    const isNum=slot===num;
+    if(e.key==="Tab"||(e.key==="ArrowDown"&&isNum)||(e.key==="ArrowRight"&&isNum&&isAtEndOfSlot(slot))){
+      e.preventDefault();if(isNum)focusSlotEnd(den);else exitFracAfter(frac);return;
+    }
+    if((e.key==="ArrowLeft"&&!isNum&&isAtStartOfSlot(slot))||(e.key==="ArrowUp"&&!isNum)){
+      e.preventDefault();focusSlotEnd(num);return;
+    }
+    if(e.key==="ArrowRight"&&!isNum&&isAtEndOfSlot(slot)){e.preventDefault();exitFracAfter(frac);return;}
+    if(e.key==="Escape"){e.preventDefault();exitFracAfter(frac);return;}
+    if(e.key==="Enter"){e.preventDefault();editor.focus();run();return;}
+    if(e.key==="/"&&!e.shiftKey){e.preventDefault();document.execCommand("insertText",false,"÷");return;}
+    if(e.key==="*"||(e.shiftKey&&e.key==="8")){e.preventDefault();document.execCommand("insertText",false,"×");return;}
+    if(e.key==="^"||(e.shiftKey&&e.key==="6")){e.preventDefault();enterSupModeInEl(slot);return;}
+  }
+
+  // ── Arrow exit from SUP ───────────────────────────────────
+  function handleSupArrow(e){
+    const sup=getCurrentSup();if(!sup)return false;
+    const len=getTextLengthOfNode(sup);
+    const offset=getCursorOffsetInNode(sup);
+    if(e.key==="ArrowDown"){e.preventDefault();exitSupAfter();return true;}
+    if(e.key==="ArrowRight"&&offset>=len){e.preventDefault();exitSupAfter();return true;}
+    if(e.key==="ArrowLeft"&&offset===0){e.preventDefault();exitSupBefore();return true;}
+    return false;
+  }
+
+  // ── Main keydown ──────────────────────────────────────────
+  editor.addEventListener("keydown",function(e){
+    if(e.key==="Enter"){e.preventDefault();run();return;}
+    if(e.key==="Escape"){e.preventDefault();if(isInsideSup())exitSupAfter();return;}
+    if(isInsideSup()&&(e.key==="ArrowLeft"||e.key==="ArrowRight"||e.key==="ArrowDown")){
+      if(handleSupArrow(e))return;
+    }
+    if((e.key==="^"||(e.shiftKey&&e.key==="6"))&&!isInsideSup()){
+      e.preventDefault();enterSupMode();return;
+    }
+    if(e.key==="?"){e.preventDefault();insertFraction();return;}
+    if(e.shiftKey&&e.key==="/"&&!isInsideSup()){e.preventDefault();insertFraction();return;}
+    if(e.key==="/"&&!e.shiftKey&&!isInsideSup()){e.preventDefault();insertText("÷");return;}
+    if((e.key==="*"||(e.shiftKey&&e.key==="8"))&&!isInsideSup()){e.preventDefault();insertText("×");return;}
+    if(e.shiftKey&&/^[0-9]$/.test(e.key)&&!isInsideSup()){e.preventDefault();enterSupMode();insertText(e.key);return;}
+    if(e.shiftKey&&/^[a-zA-Z]$/.test(e.key)&&!isInsideSup()){e.preventDefault();enterSupMode();insertText(e.key.toLowerCase());return;}
+    if(isInsideSup()&&(e.key===" "||e.key==="+"||e.key==="-"||e.key==="="||e.key==="("||e.key===")")){
+      exitSupAfter();
+    }
+  });
+
+  // ── Paste: detect LaTeX and convert ──────────────────────
+  editor.addEventListener("paste",function(e){
+    e.preventDefault();
+    const text=(e.clipboardData||window.clipboardData).getData("text/plain").trim();
+    if(!text)return;
+    clearPlaceholder();
+    if(looksLikeLatex(text)){
+      flashLatexBadge();
+      loadRawIntoEditor(latexToRaw(text));
+    } else {
+      loadRawIntoEditor(text);
+    }
+  });
+
+  // ── Auto-convert on input if editor contains raw LaTeX ───
+  editor.addEventListener("input",function(){
+    if(editor.querySelector("sup,.__at-frac__"))return; // already rich
+    const text=editor.textContent.replace(/\u200B/g,"").trim();
+    // Convert only when it clearly ends a LaTeX expression
+    if(looksLikeLatex(text)&&(/\}$/.test(text)||text.length>12)){
+      flashLatexBadge();
+      loadRawIntoEditor(latexToRaw(text));
+    }
+  });
+
+  // ── getRawMath ────────────────────────────────────────────
+  function getRawMath(){
+    function extract(node){
+      if(node.nodeType===3)return node.textContent.replace(/\u200B/g,"");
+      if(node.nodeName==="SUP"){
+        const t=node.textContent.replace(/\u200B/g,"").trim();
+        return t?"^"+t:"";
+      }
+      if(node.classList&&node.classList.contains("__at-frac__")){
+        const n=node.querySelector("[data-slot='num']");
+        const d=node.querySelector("[data-slot='den']");
+        return "("+extractSlot(n)+")/("+extractSlot(d)+")";
+      }
+      if(node.id==="__at-ph__")return "";
+      let out="";for(const ch of node.childNodes)out+=extract(ch);return out;
+    }
+    function extractSlot(slot){
+      if(!slot)return "";
+      let out="";for(const ch of slot.childNodes)out+=extract(ch);
+      return out.replace(/\u200B/g,"").trim();
+    }
+    return extract(editor).trim();
+  }
+
+  // ── loadRawIntoEditor ─────────────────────────────────────
+  function loadRawIntoEditor(raw){
+    editor._placeholder=false;
+    editor.innerHTML="";
+    let i=0;
+    function appendText(c){
+      const last=editor.lastChild;
+      if(last&&last.nodeType===3)last.textContent+=c;
+      else editor.appendChild(document.createTextNode(c));
+    }
+    while(i<raw.length){
+      const c=raw[i];
+      // Fraction: (num)/(den)
+      if(c==="("){
+        let depth=0,j=i;
+        while(j<raw.length){if(raw[j]==="(")depth++;else if(raw[j]===")"){depth--;if(depth===0)break;}j++;}
+        if(raw[j+1]==="/"&&raw[j+2]==="("){
+          const numContent=raw.slice(i+1,j);
+          const k=j+2;let d2=0,l=k;
+          while(l<raw.length){if(raw[l]==="(")d2++;else if(raw[l]===")"){d2--;if(d2===0)break;}l++;}
+          const denContent=raw.slice(k+1,l);
+          const frac=makeFracNode(numContent,denContent);
+          editor.appendChild(frac);
+          editor.appendChild(document.createTextNode("\u200B"));
+          i=l+1;continue;
+        }
+      }
+      // Superscript: ^(…) or ^chars
+      if(c==="^"){
+        i++;let expStr="";
+        if(i<raw.length&&raw[i]==="("){
+          let depth=0,j=i;
+          while(j<raw.length){if(raw[j]==="(")depth++;else if(raw[j]===")"){depth--;if(depth===0)break;}j++;}
+          expStr=raw.slice(i+1,j);i=j+1;
+        } else {
+          while(i<raw.length&&/[\w\-]/.test(raw[i])){expStr+=raw[i];i++;}
+        }
+        if(expStr){
+          const sup=document.createElement("sup");
+          sup.style.cssText="font-size:0.72em;line-height:0;vertical-align:super;color:#1a5abf;min-width:3px;display:inline;";
+          sup.textContent=expStr;
+          editor.appendChild(sup);
+          editor.appendChild(document.createTextNode("\u200B"));
+        }
+        continue;
+      }
+      if(c==="*"){appendText("×");i++;continue;}
+      if((c==="/"&&raw[i+1]!=="(")||c==="÷"){appendText("÷");i++;continue;}
+      appendText(c);i++;
+    }
+    const range=document.createRange();range.selectNodeContents(editor);range.collapse(false);
+    getSel().removeAllRanges();getSel().addRange(range);
+    editor.focus();
+  }
+
+  const SUP = 'style="font-size:0.7em;vertical-align:super;line-height:0;color:#1a5abf;"';
+  function renderMath(s){
+    return s
+      .replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")
+      .replace(/\^(-?\d+)/g,(_,n)=>'<sup '+SUP+'>'+n+"</sup>")
+      .replace(/²/g,'<sup '+SUP+'>2</sup>');
+  }
+
+  // ── doIndexForm ───────────────────────────────────────────
+  // Converts expanded repeated-multiplication back to index form.
+  // Handles both × and * as separators, understands coefficients.
+  // e.g.  x × x × x         → x^3
+  //       2 × x × x × 3 × x → 6x^3
+  //       x × x × y × y × y → x^2y^3
+  //       a × b × a × b × b → a^2b^3
+  function doIndexForm(raw) {
+    const steps = [];
+    // Normalise: convert × → *, strip whitespace, handle ÷
+    let s = raw.replace(/\s+/g,"").replace(/×/g,"*").replace(/÷/g,"/");
+
+    // Split on top-level * only (no / handling for now — deal with num/den separately)
+    const slashIdx = findTopLevelSlash(s);
+    let numStr = s, denStr = null;
+    if (slashIdx !== -1) {
+      numStr = s.slice(0, slashIdx);
+      denStr = s.slice(slashIdx + 1).replace(/^\(|\)$/g,"");
+    }
+
+    steps.push("Original: " + raw.replace(/\s+/g," ").trim());
+
+    function processGroup(str, label) {
+      const parts = splitTopLevelMul(str.replace(/^\(|\)$/g,""));
+      let coeff = 1;
+      const vars = {};
+
+      for (const p of parts) {
+        const clean = p.replace(/^\(|\)$/g,"");
+        // Pure number?
+        const asNum = parseFloat(clean);
+        if (!isNaN(asNum) && /^-?\d+\.?\d*$/.test(clean)) {
+          coeff *= asNum;
+        } else {
+          // Variable, possibly with coefficient prefix: 2x, -3y, x, y
+          const m = clean.match(/^(-?\d*\.?\d*)([a-zA-Z])(?:\^(-?\d+))?$/);
+          if (m) {
+            const c = m[1] ? (m[1]==="-"?-1: parseFloat(m[1])) : 1;
+            const v = m[2];
+            const e = m[3] ? parseInt(m[3]) : 1;
+            coeff *= c;
+            vars[v] = (vars[v]||0) + e;
+          } else {
+            // Can't parse — keep as-is
+            steps.push("  Could not parse factor: "+clean);
+          }
+        }
+      }
+      steps.push("  Count factors in "+label+": coeff="+fmtNum(coeff)+", vars="+JSON.stringify(vars));
+      return { coeff, vars };
+    }
+
+    function toIndexStr(coeff, vars) {
+      const r = parseFloat(coeff.toFixed(9));
+      let s = "";
+      const entries = Object.entries(vars).filter(([,e])=>e!==0).sort((a,b)=>a[0].localeCompare(b[0]));
+      if (entries.length===0) return fmtNum(r);
+      if (r===-1) s="-"; else if (r!==1) s=fmtNum(r);
+      for (const [v,e] of entries) { s+=v; if(e!==1) s+="^"+e; }
+      return s||"1";
+    }
+
+    const num = processGroup(numStr, "numerator");
+
+    if (denStr) {
+      const den = processGroup(denStr, "denominator");
+      // Combine: num / den
+      const finalCoeff = num.coeff / den.coeff;
+      const finalVars = {...num.vars};
+      for (const [v,e] of Object.entries(den.vars)) finalVars[v] = (finalVars[v]||0) - e;
+      const result = toIndexStr(finalCoeff, finalVars);
+      steps.push("Combine: divide coefficients, subtract exponents");
+      steps.push("Result: "+result);
+      return { result, steps };
+    } else {
+      const result = toIndexStr(num.coeff, num.vars);
+      steps.push("Result: "+result);
+      return { result, steps };
+    }
+  }
+
+  // Split a string on top-level * (not inside parens)
+  function splitTopLevelMul(s) {
+    const parts = []; let depth=0, cur="";
+    for (let i=0;i<s.length;i++) {
+      const c=s[i];
+      if(c==="(") { depth++; cur+=c; }
+      else if(c===")") { depth--; cur+=c; }
+      else if(c==="*" && depth===0) { if(cur) parts.push(cur); cur=""; }
+      else cur+=c;
+    }
+    if(cur) parts.push(cur);
+    return parts;
+  }
+
+  // ── Close & drag ─────────────────────────────────────────
+  document.getElementById("__at-x__").onclick=()=>overlay.remove();
+  let dragging=false,dx=0,dy=0;
+  document.getElementById("__at-hdr__").addEventListener("mousedown",e=>{
+    dragging=true;const r=overlay.getBoundingClientRect();dx=e.clientX-r.left;dy=e.clientY-r.top;
+  });
+  document.addEventListener("mousemove",e=>{
+    if(!dragging)return;
+    overlay.style.left=(e.clientX-dx)+"px";overlay.style.top=(e.clientY-dy)+"px";overlay.style.right="auto";
+  });
+  document.addEventListener("mouseup",()=>{dragging=false;});
+
+  // ── Examples ──────────────────────────────────────────────
+  const richExamples=[
+    {label:"a⁶ ÷ a⁴",       raw:"a^6÷a^4",            mode:"simplify"},
+    {label:"3x⁵ × 4x⁶",     raw:"3x^5×4x^6",           mode:"simplify"},
+    {label:"p⁵·(p²)³",       raw:"p^5*(p^2)^3",         mode:"simplify"},
+    {label:"10c⁷ / 2c³",     raw:"(10c^7)/(2c^3)",      mode:"simplify"},
+    {label:"-20x⁶ ÷ -5x²",  raw:"-20x^6÷(-5x^2)",      mode:"simplify"},
+    {label:"x³ expand",       raw:"x^3",                 mode:"expand"},
+    {label:"2x²y³ expand",    raw:"2x^2*y^3",            mode:"expand"},
+    {label:"3a²b × 2ab² exp.",raw:"3a^2*b*2a*b^2",       mode:"expand"},
+    {label:"x×x×x → index",   raw:"x*x*x",               mode:"index"},
+    {label:"2×x×x×3×x → idx", raw:"2*x*x*3*x",           mode:"index"},
+    {label:"a×a×b×b×b → idx", raw:"a*a*b*b*b",           mode:"index"},
+    {label:"x² = 9",         raw:"x^2=9",               mode:"solve"},
+    {label:"2x²−8=0",        raw:"2x^2-8=0",            mode:"solve"},
+    {label:"5/(x−3)",        raw:"(5)/(x-3)",           mode:"excluded"},
+  ];
+  const latexExamples=[
+    {label:"p^5\\times\\left(p^2\\right)^3",  mode:"simplify"},
+    {label:"\\frac{-20x^6}{-5x^2}",           mode:"simplify"},
+    {label:"\\frac{15y^{12}}{6y^5}",          mode:"simplify"},
+    {label:"\\frac{1}{x^2-4}",                mode:"excluded"},
+  ];
+
+  const chipsDiv=document.getElementById("__at-chips__");
+
+  richExamples.forEach(ex=>{
+    const chip=document.createElement("span");
+    chip.style.cssText="padding:3px 9px;font-size:12px;font-family:Georgia,serif;border:1px solid #ddd;border-radius:999px;cursor:pointer;color:#444;background:#f5f5f5;white-space:nowrap;";
+    chip.innerHTML=ex.label.replace(/([⁰¹²³⁴⁵⁶⁷⁸⁹]+)/g,s=>{
+      const digits=[...s].map(c=>"⁰¹²³⁴⁵⁶⁷⁸⁹".indexOf(c)).join("");
+      return '<sup style="font-size:0.72em;color:#1a5abf;">'+digits+"</sup>";
+    });
+    chip.onmouseover=()=>chip.style.background="#e8e8e8";
+    chip.onmouseout=()=>chip.style.background="#f5f5f5";
+    chip.onclick=()=>{loadRawIntoEditor(ex.raw);document.getElementById("__at-mode__").value=ex.mode;};
+    chipsDiv.appendChild(chip);
+  });
+
+  latexExamples.forEach(ex=>{
+    const chip=document.createElement("span");
+    chip.title=ex.label;
+    const short=ex.label.length>24?ex.label.slice(0,22)+"…":ex.label;
+    chip.style.cssText="padding:3px 9px;font-size:10px;font-family:monospace;border:1px solid #b0c8f8;border-radius:999px;cursor:pointer;color:#1a5abf;background:#e8f0fe;white-space:nowrap;max-width:140px;overflow:hidden;text-overflow:ellipsis;display:inline-block;vertical-align:middle;";
+    chip.textContent=short;
+    chip.onmouseover=()=>chip.style.background="#d0e2fd";
+    chip.onmouseout=()=>chip.style.background="#e8f0fe";
+    chip.onclick=()=>{
+      flashLatexBadge();
+      loadRawIntoEditor(latexToRaw(ex.label));
+      document.getElementById("__at-mode__").value=ex.mode;
+    };
+    chipsDiv.appendChild(chip);
+  });
+
+  // ── Run ───────────────────────────────────────────────────
+  function run(){
+    const raw=getRawMath();
+    const mode=document.getElementById("__at-mode__").value;
+    if(!raw){resultDiv.innerHTML='<span style="color:#ccc;">Enter an expression above…</span>';return;}
+    try{
+      let res;
+      if(mode==="simplify")res=doSimplify(raw);
+      else if(mode==="expand")res=doExpand(raw);
+      else if(mode==="index")res=doIndexForm(raw);
+      else if(mode==="excluded")res=doExcluded(raw);
+      else res=doSolve(raw);
+      const{result:val,steps}=res;
+      const label=mode==="simplify"?"Simplified":mode==="expand"?"Expanded":mode==="index"?"Index form":mode==="excluded"?"Excluded values":"Solution";
+      let html='<div style="font-size:10px;color:#999;text-transform:uppercase;letter-spacing:.06em;margin-bottom:5px;">'+label+'</div>';
+      html+='<div style="font-size:20px;font-weight:600;font-family:Georgia,serif;margin-bottom:10px;color:#111;">'+renderMath(val)+'</div>';
+      html+='<div style="border-top:1px solid #ececec;padding-top:8px;">';
+      steps.forEach((s,i)=>{
+        html+='<div style="display:flex;gap:8px;margin-bottom:6px;line-height:1.5;">'+
+          '<span style="min-width:17px;height:17px;border-radius:50%;background:#ebebeb;font-size:10px;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:2px;color:#777;">'+(i+1)+'</span>'+
+          '<span style="color:#444;font-size:12px;font-family:Georgia,serif;">'+renderMath(s)+'</span></div>';
+      });
+      html+='</div>';
+      resultDiv.style.cssText="min-height:52px;padding:12px;border:1px solid #d0e4ff;border-radius:8px;background:#f5f9ff;font-size:13px;";
+      resultDiv.innerHTML=html;
+    }catch(err){
+      resultDiv.style.cssText="min-height:52px;padding:12px;border:1px solid #ffcccc;border-radius:8px;background:#fff5f5;font-size:13px;";
+      resultDiv.innerHTML='<span style="color:#c00;font-weight:600;">Error:</span> <span style="color:#c00;">'+err.message+'</span>';
+    }
+  }
+
+  document.getElementById("__at-go__").onclick=run;
+  console.log("%c Algebra Tool loaded!", "color:#1a5abf;font-weight:bold;font-size:14px;");
+  console.log('Paste LaTeX like:  p^5\\times \\left(p^2\\right)^3');
+  console.log("Run the script again to close the panel.");
+})();
