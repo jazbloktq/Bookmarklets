@@ -357,7 +357,99 @@
   //  EXPONENTIAL EQUATION SOLVER  (same-base index law)
   //  e.g. a^x / a^4 = 1/a  →  x - 4 = -1  →  x = 3
   // ══════════════════════════════════════════════════════════
-  function doSolveExponential(lhs, rhs, steps) {
+  function doSolveExponential(lhs, rhs, steps, solveFor) {
+    // ── Strategy 1: compound-base  (expr)^x = (expr2)
+    // If either side is entirely (something)^singleVar, expand both sides via index laws
+    // and equate exponents of each variable to get x.
+    function tryCompoundBase(lhs, rhs, solveFor) {
+      const norm = s => normalise(s);
+
+      // Detect the unknown exponent variable: look for a letter that appears as ^letter on either side
+      // Pattern: something^letter — the letter is the unknown
+      function findExpVar(expr) {
+        const m = expr.match(/\)\^([a-zA-Z])$/) || expr.match(/\^([a-zA-Z])(?:[^a-zA-Z]|$)/);
+        return m ? m[1] : null;
+      }
+
+      // Extract the base expression and exponent variable from an expression like:
+      //   (inner)^x          → base=inner, expVar=x
+      //   (num)/(den)^x      → base=(num)/(den), expVar=x  [^x on whole fraction]
+      //   (num)^x/(den)^x    → same
+      function extractCompound(expr) {
+        const s = norm(expr);
+        // Case 1: entire expr is (inner)^var
+        const m1 = s.match(/^\((.+)\)\^([a-zA-Z])$/);
+        if(m1) return {base:m1[1], expVar:m1[2]};
+
+        // Case 2: fraction where ^var trails at end — (num)/(den)^var or (num)^var/(den)^var
+        // Find the exponent variable from the end of the string
+        const trailM = s.match(/\^([a-zA-Z])$/);
+        if(!trailM) return null;
+        const expVar = trailM[1];
+
+        // Strip all occurrences of ^expVar from the expression to get the base fraction
+        const baseExpr = s.replace(new RegExp("\\^"+expVar+"\\b","g"),"");
+        // Verify the result looks like a valid fraction or monomial
+        if(/[a-zA-Z]/.test(baseExpr)) return {base:baseExpr, expVar};
+        return null;
+      }
+
+      const lhsC = extractCompound(lhs);
+      const rhsC = extractCompound(rhs);
+
+      let baseExpr, expVar, otherExpr;
+      if(lhsC && (!solveFor || solveFor===lhsC.expVar)){
+        expVar=lhsC.expVar; baseExpr=lhsC.base; otherExpr=rhs;
+      } else if(rhsC && (!solveFor || solveFor===rhsC.expVar)){
+        expVar=rhsC.expVar; baseExpr=rhsC.base; otherExpr=lhs;
+      } else return null;
+
+      // Expand baseExpr and otherExpr using doSimplify
+      let baseSimp, otherSimp;
+      try { baseSimp = doSimplify(normalise(baseExpr)); } catch(e){ return null; }
+      try { otherSimp = doSimplify(normalise(otherExpr)); } catch(e){ return null; }
+
+      steps.push({text:"Simplify base: ("+baseSimp.result+")^"+expVar+" = "+otherSimp.result, rule:"index law"});
+
+      // Parse both as monomials
+      let baseMon, otherMon;
+      try { baseMon = parseMonomial(baseSimp.result); } catch(e){ return null; }
+      try { otherMon = parseMonomial(otherSimp.result); } catch(e){ return null; }
+
+      // (baseMon)^expVar = otherMon
+      // For each variable v: baseMon.vars[v] * expVar = otherMon.vars[v]
+      let xVal = null;
+      const checks = [];
+      for(const [v,e] of Object.entries(baseMon.vars)){
+        const target = otherMon.vars[v]||0;
+        if(e===0) continue;
+        const candidate = target/e;
+        checks.push({v, baseExp:e, targetExp:target, candidate});
+        if(xVal===null) xVal=candidate;
+        else if(Math.abs(xVal-candidate)>1e-9) return null; // inconsistent
+      }
+      for(const [v,e] of Object.entries(otherMon.vars)){
+        if(!(v in baseMon.vars)&&e!==0) return null;
+      }
+      if(xVal===null) return null;
+
+      const ex = checks[0];
+      if(ex){
+        steps.push({text:"Equate exponents of "+ex.v+": "+fmtNum(ex.baseExp)+"×"+expVar+" = "+fmtNum(ex.targetExp), rule:"index law"});
+        steps.push({text:expVar+" = "+fmtNum(ex.targetExp)+" ÷ "+fmtNum(ex.baseExp)+" = "+fmtNum(xVal), rule:"solve"});
+      }
+      // Verify with another variable if available
+      if(checks.length>1){
+        const ex2=checks[1];
+        steps.push({text:"Verify with "+ex2.v+": "+fmtNum(ex2.baseExp)+"×"+fmtNum(xVal)+" = "+fmtNum(ex2.targetExp)+" ✓", rule:"check"});
+      }
+      return {result: expVar+" = "+fmtNum(xVal), steps};
+    }
+
+    const compound = tryCompoundBase(lhs, rhs, solveFor);
+    if(compound) return compound;
+
+    // ── Strategy 2: same-base index law (original logic) ──
     // Collect all base^exp tokens from both sides
     // Returns null if it can't handle it
     function collectBaseExps(expr) {
@@ -387,25 +479,84 @@
           }
           if(wraps)t=t.slice(1,-1);else break;
         }
-        // Now t might be e.g. "a^x" or "a^4" or "1" or "a"
-        // Match base^exp
-        const m = t.match(/^([a-zA-Z][a-zA-Z0-9]*)\^(.+)$/);
-        if(m){
-          const base=m[1], exp=m[2].replace(/^\(|\)$/g,"");
-          pairs.push({base, exp: isDen?"(-("+exp+"))":exp});
+
+        // Handle (inner_product)^exp — distribute exponent: (ab)^x → a^x * b^x
+        // Match: starts with ( ... ) ^ exp where inner contains only variable letters/numbers
+        const compoundM = t.match(/^\(([^()]+)\)\^(.+)$/);
+        if(compoundM){
+          const inner = compoundM[1];
+          const outerExp = compoundM[2].replace(/^\(|\)$/g,"");
+          // inner should be a product of simple vars like "ab", "a*b", "2ab" etc.
+          // Strip leading coefficient
+          const innerCoeffStrip = inner.match(/^-?\d*\.?\d*([a-zA-Z].*)$/) || [null, inner];
+          const innerVarPart = innerCoeffStrip[1] || inner;
+          // Extract each variable from inner (implicit exp 1 each)
+          const varRe = /([a-zA-Z])(?:\^(-?\d+))?/g;
+          let vm;
+          while((vm=varRe.exec(innerVarPart))!==null){
+            const v=vm[1], baseE=vm[2]!==undefined?parseInt(vm[2]):1;
+            // Combined exponent: baseE * outerExp
+            const combinedExp = baseE===1 ? outerExp : "("+baseE+"*("+outerExp+"))";
+            pairs.push({base:v, exp: isDen?"(-("+combinedExp+"))":combinedExp});
+          }
           return true;
         }
-        // Bare variable like "a" (implicit exp 1)
-        const bareVar = t.match(/^([a-zA-Z])$/);
-        if(bareVar){
-          pairs.push({base:bareVar[1], exp: isDen?"-1":"1"});
-          return true;
+
+        // Strip optional leading numeric coefficient (e.g. "3a^4" → "a^4")
+        const coeffStrip = t.match(/^-?\d*\.?\d*([a-zA-Z].*)$/);
+        if(coeffStrip) t = coeffStrip[1];
+
+        // Parse each base^exp pair by scanning left to right.
+        // A letter starts a NEW BASE unless it is preceded by a digit AND is not itself
+        // followed by ^ (meaning it's part of the preceding exponent, like the x in a^3x).
+        let found = false;
+        let i2 = 0;
+        while(i2 < t.length){
+          if(!/[a-zA-Z]/.test(t[i2])){i2++;continue;}
+          const letter = t[i2];
+          const afterLetter = t.slice(i2+1);
+
+          if(afterLetter.startsWith("^")){
+            // This letter has its own exponent — it's definitely a base.
+            // Scan the exponent: grab chars until we hit a letter that ITSELF has a ^
+            // (meaning that letter is a new base), or a letter not preceded by digit (new base).
+            const expContent = afterLetter.slice(1); // after the ^
+            let expEnd = 0;
+            while(expEnd < expContent.length){
+              const c = expContent[expEnd];
+              if(/[a-zA-Z]/.test(c)){
+                // Is this letter part of the exponent or a new base?
+                // It's part of exponent if preceded by digit AND not followed by ^
+                const prev = expEnd>0 ? expContent[expEnd-1] : "^";
+                const nextC = expContent[expEnd+1];
+                const prevIsDigit = /\d/.test(prev);
+                const prevIsHat = prev === "^";
+                const nextIsHat = nextC === "^";
+                if((prevIsDigit || prevIsHat) && !nextIsHat){
+                  expEnd++; // part of exponent (e.g. "x" alone, or "3x" where x follows 3)
+                } else {
+                  break; // new base starts here
+                }
+              } else {
+                expEnd++;
+              }
+            }
+            const expStr = expContent.slice(0, expEnd).replace(/^\(|\)$/g,"");
+            pairs.push({base: letter, exp: isDen ? "(-("+expStr+"))" : expStr});
+            found = true;
+            i2 = i2 + 1 + 1 + expEnd; // letter + "^" + expContent consumed
+          } else {
+            // No ^ after this letter — bare variable, exponent = 1
+            pairs.push({base: letter, exp: isDen ? "-1" : "1"});
+            found = true;
+            i2++;
+          }
         }
-        // Bare number 1 — identity, skip
-        if(t==="1") return true;
-        // Bare number (coefficient only, no variable) — skip for exponent purposes
-        if(/^-?\d+\.?\d*$/.test(t)) return true;
-        return false; // can't parse
+        if(found) return true;
+
+        // Pure number — skip
+        if(/^-?\d+\.?\d*$/.test(t)||t==="1") return true;
+        return false;
       }
 
       // Tokenise at top-level * and /
@@ -463,13 +614,14 @@
     // Filter to those that are actually the exponent variable (simple letter in exp string)
     // The unknown is the letter that shows up in exponents not as a whole numeric value
     // Let's just find letters in exponent values
-    let unknown = null;
-    for(const {base,exp} of [...lhsPairs,...rhsPairs]){
-      const m = exp.match(/^-?([a-zA-Z])$/);
-      if(m && m[1]!==base){ unknown=m[1]; break; }
-      // handle compound like "x+2" or "2x"
-      const cm = exp.match(/([a-zA-Z])/);
-      if(cm && cm[1]!==base){ unknown=cm[1]; break; }
+    let unknown = solveFor || null;
+    if(!unknown){
+      for(const {base,exp} of [...lhsPairs,...rhsPairs]){
+        const m = exp.match(/^-?([a-zA-Z])$/);
+        if(m && m[1]!==base){ unknown=m[1]; break; }
+        const cm = exp.match(/([a-zA-Z])/);
+        if(cm && cm[1]!==base){ unknown=cm[1]; break; }
+      }
     }
     if(!unknown) return null;
 
@@ -506,43 +658,73 @@
       return null;
     }
 
-    // For each base: sum LHS linear exps = sum RHS linear exps
-    // This gives us: A*unknown + B = 0 after moving RHS to left
-    let totalA=0, totalB=0;
-    let equationParts=[];
+    // Compute totalA just to check if unknown appears anywhere in exponents at all
+    let totalA=0;
     for(const [base, {lhs:lhsExps, rhs:rhsExps}] of Object.entries(baseMap)){
-      // LHS exps positive, RHS exps become negative (move to left)
-      for(const exp of lhsExps){
+      for(const exp of [...lhsExps,...rhsExps]){
         const parsed = parseLinearExp(exp, unknown);
-        if(!parsed) return null;
-        totalA+=parsed.a; totalB+=parsed.b;
-        equationParts.push({side:"lhs",base,exp,parsed});
-      }
-      for(const exp of rhsExps){
-        const parsed = parseLinearExp(exp, unknown);
-        if(!parsed) return null;
-        totalA-=parsed.a; totalB-=parsed.b;
-        equationParts.push({side:"rhs",base,exp,parsed});
+        if(parsed) totalA+=Math.abs(parsed.a);
       }
     }
 
-    if(totalA===0) return null; // no unknown in exponents
+    if(totalA===0) return null; // unknown doesn't appear in any exponent
 
-    // Show the exponent equation
-    const lhsExpStr = equationParts.filter(p=>p.side==="lhs").map(p=>p.exp).join(" + ");
-    const rhsExpStr = equationParts.filter(p=>p.side==="rhs").map(p=>p.exp).join(" + ");
-    steps.push({text:"Same base → equate exponents:  "+lhsExpStr+" = "+rhsExpStr, rule:"index law"});
+    // Clean up display of wrapped negations like (-(4)) → -4
+    function cleanExpDisplay(e){return e.replace(/\(-\((.+?)\)\)/g,"(-$1)").replace(/^\((-?.+)\)$/,"$1");}
 
-    // Simplify to linear: totalA·x + totalB = 0
-    const lhsLinear = (totalA!==0?fmtNum(Math.abs(totalA))+unknown:"")+(totalB!==0?(totalB>0&&totalA!==0?"+":"")+fmtNum(totalB):"");
-    steps.push({text:"Simplify: "+lhsLinear+" = 0", rule:"collect like terms"});
+    // ── Per-base consistency check and solve ──
+    // Rather than summing across all bases (which double-counts x),
+    // solve from the first base that gives a linear equation, then verify all others match.
+    const perBase = {};
+    for(const [base, {lhs:lhsExps, rhs:rhsExps}] of Object.entries(baseMap)){
+      let bA=0, bB=0;
+      let ok=true;
+      for(const exp of lhsExps){
+        const p=parseLinearExp(exp,unknown);
+        if(!p){ok=false;break;}
+        bA+=p.a; bB+=p.b;
+      }
+      if(!ok) continue;
+      for(const exp of rhsExps){
+        const p=parseLinearExp(exp,unknown);
+        if(!p){ok=false;break;}
+        bA-=p.a; bB-=p.b;
+      }
+      if(!ok) continue;
+      // bA*x + bB = 0 → x = -bB/bA  (if bA != 0)
+      if(bA!==0) perBase[base]={a:bA, b:bB, sol:-bB/bA};
+    }
 
-    const sol = -totalB/totalA;
-    steps.push({text:"Solve: "+unknown+" = "+fmtNum(-totalB)+" ÷ "+fmtNum(totalA)+" = "+fmtNum(sol), rule:"linear"});
-    return {result: unknown+" = "+fmtNum(sol), steps};
+    const solvedBases = Object.entries(perBase);
+    if(solvedBases.length===0) return null;
+
+    // Check consistency
+    const firstSol = solvedBases[0][1].sol;
+    for(const [base,{sol}] of solvedBases){
+      if(Math.abs(sol-firstSol)>1e-9) return null; // inconsistent
+    }
+
+    // Build step display using the first solvable base
+    const [exBase, exVals] = solvedBases[0];
+    // Show exponent equation for that base
+    const lhsExpParts = baseMap[exBase].lhs.map(e=>cleanExpDisplay(e)).join(" + ") || "0";
+    const rhsExpParts = baseMap[exBase].rhs.map(e=>cleanExpDisplay(e)).join(" + ") || "0";
+    steps.push({text:"Equate exponents of "+exBase+":  "+lhsExpParts+" = "+rhsExpParts, rule:"index law"});
+    const lhsLinear = (exVals.a!==0?(Math.abs(exVals.a)===1?"":(Math.abs(exVals.a)))+unknown:"")+(exVals.b!==0?(exVals.b>0&&exVals.a!==0?"+":"")+fmtNum(exVals.b):"") || "0";
+    const rhsLinear = fmtNum(exVals.a!==0 ? -exVals.b : 0);
+    steps.push({text:"Solve: "+lhsLinear+" = "+rhsLinear+" → "+unknown+" = "+fmtNum(firstSol), rule:"linear"});
+
+    // Show verification for other bases if any
+    for(const [base,{sol}] of solvedBases.slice(1)){
+      const lp = baseMap[base].lhs.map(e=>cleanExpDisplay(e)).join("+");
+      const rp = baseMap[base].rhs.map(e=>cleanExpDisplay(e)).join("+");
+      steps.push({text:"Verify with "+base+": "+lp+" = "+rp+" → "+unknown+" = "+fmtNum(sol)+" ✓", rule:"check"});
+    }
+
+    return {result: unknown+" = "+fmtNum(firstSol), steps};
   }
 
-  function doSolve(raw) {
+  function doSolve(raw, solveFor) {
     const s=normalise(raw);const steps=[];const ei=s.indexOf("=");
     if(ei===-1)throw new Error("No '=' found. Enter an equation like x^2 = 9.");
     let lhs=s.slice(0,ei),rhs=s.slice(ei+1);
@@ -553,10 +735,10 @@
     const lhsMon=tryParseMonomial(lhs);
 
     // Check for exponential/index-law equation early (e.g. a^x / a^4 = 1/a)
-    const looksExponential = /[a-zA-Z]\^[a-zA-Z(]/.test(lhs+rhs) || /[a-zA-Z]\^[a-zA-Z(]/.test(rhs);
+    const looksExponential = /[a-zA-Z]\^[a-zA-Z(]/.test(lhs+rhs) || /\)\^[a-zA-Z]/.test(lhs+rhs);
     if(looksExponential){
       const expSteps=[{text:"Equation: "+lhs+" = "+rhs}];
-      const expRes = doSolveExponential(lhs, rhs, expSteps);
+      const expRes = doSolveExponential(lhs, rhs, expSteps, solveFor);
       if(expRes) return expRes;
     }
 
@@ -584,20 +766,20 @@
     // General polynomial approach: rearrange to LHS
     const combined=lhs+"-("+rhs+")";
     const poly=parsePolynomial(normalise(combined));
-    const{a,b,c,varName}=poly;
+    let{a,b,c,varName}=poly;
+    // If user specified a variable and it differs from auto-detected, try to honour it
+    if(solveFor && solveFor!==varName && /^[a-zA-Z]$/.test(solveFor)) varName=solveFor;
     steps.push({text:"Rearranged: "+fmtPoly(a,b,c,varName)+" = 0",rule:"rearrange"});
     if(a===0){
       if(b===0){
         // Try exponential / index-law solver before giving up
-        const expRes = doSolveExponential(lhs, rhs, steps);
+        const expRes = doSolveExponential(lhs, rhs, steps, solveFor);
         if(expRes) return expRes;
         // Partial: if there are any variables at all, report what we have
-        const anyVars=[...s.matchAll(/[a-zA-Z]/g)].map(m=>m[0]);
-        if(anyVars.length>0){
-          steps.push({text:"Could not solve algebraically — equation may involve multiple unknowns or transcendental terms"});
-          return{result:"Cannot solve for "+[...new Set(anyVars)].join(", ")+" symbolically",steps};
-        }
-        throw new Error("No variable found.");
+        const anyVars=[...new Set([...s.matchAll(/[a-zA-Z]/g)].map(m=>m[0]))];
+        const target = solveFor || (anyVars[0]||"?");
+        steps.push({text:"Could not solve algebraically — try specifying 'Solve for: "+target+"' and ensure both sides use the same base"});
+        return{result:"Could not solve for "+target,steps};
       }
       const sol=-c/b;
       steps.push({text:"Divide both sides by "+fmtNum(b)+": "+varName+" = "+fmtNum(sol),rule:"linear"});
@@ -1189,6 +1371,7 @@
     "#__at-recip-lbl__:hover{background:#f0f4ff;border-color:#1a5abf;}",
     "#__at-recip-lbl__:has(input:checked){background:#e8f0fe;border-color:#1a5abf;color:#1a5abf;}",
     "#__at-exp-sign__:focus{border-color:#1a5abf;}",
+    "#__at-solvefor__:focus{border-color:#1a5abf;}",
   ].join("");
 
   overlay.innerHTML=
@@ -1235,6 +1418,11 @@
           '<option value="positive">Positive exponents only</option>'+
           '<option value="negative">Negative exponents only</option>'+
         '</select>'+
+      '</div>'+
+      '<div id="__at-solvefor-row__" style="display:none;align-items:center;gap:8px;margin-bottom:10px;">'+
+        '<label style="font-size:12px;color:#555;white-space:nowrap;">Solve for:</label>'+
+        '<input id="__at-solvefor__" type="text" maxlength="4" placeholder="e.g. x" style="width:60px;padding:5px 8px;border:1.5px solid #ccc;border-radius:7px;font-size:14px;font-family:Georgia,serif;outline:none;text-align:center;color:#1a5abf;font-weight:600;">'+
+        '<span style="font-size:11px;color:#aaa;">(leave blank to auto-detect)</span>'+
       '</div>'+
       '<button id="__at-go__">Calculate</button>'+
       '<div style="margin-bottom:12px;">'+
@@ -1395,6 +1583,7 @@
     if((e.key==="ArrowLeft"&&!isNum&&isAtStartOfSlot(slot))||(e.key==="ArrowUp"&&!isNum)){e.preventDefault();focusSlotEnd(num);return;}
     if(e.key==="ArrowRight"&&!isNum&&isAtEndOfSlot(slot)){e.preventDefault();exitFracAfter(frac);return;}
     if(e.key==="Escape"){e.preventDefault();exitFracAfter(frac);return;}
+    if(e.key==="="){e.preventDefault();exitFracAfter(frac);insertText("=");return;}
     if(e.key==="Enter"){e.preventDefault();editor.focus();run();return;}
     if(e.key==="/"&&!e.shiftKey){e.preventDefault();document.execCommand("insertText",false,"÷");return;}
     if(e.key==="*"||(e.shiftKey&&e.key==="8")){e.preventDefault();document.execCommand("insertText",false,"×");return;}
@@ -1423,7 +1612,14 @@
     if((e.key==="*"||(e.shiftKey&&e.key==="8"))&&!isInsideSup()){e.preventDefault();insertText("×");return;}
     if(e.shiftKey&&/^[0-9]$/.test(e.key)&&!isInsideSup()){e.preventDefault();enterSupMode();insertText(e.key);return;}
     if(e.shiftKey&&/^[a-zA-Z]$/.test(e.key)&&!isInsideSup()){e.preventDefault();enterSupMode();insertText(e.key.toLowerCase());return;}
-    if(isInsideSup()&&(e.key===" "||e.key==="+"||e.key==="-"||e.key==="="||e.key==="("||e.key===")")){exitSupAfter();}
+    if(isInsideSup()&&(e.key===" "||e.key==="+"||e.key==="="||e.key==="("||e.key===")")){exitSupAfter();}
+    // Allow "-" inside sup only as first char (negative exponent like ^-3); otherwise exit
+    if(isInsideSup()&&e.key==="-"){
+      const sup=getCurrentSup();
+      const content=sup?sup.textContent.replace(/\u200B/g,"").trim():"";
+      if(content!==""){exitSupAfter();}
+      // if empty, let the "-" type normally inside the sup
+    }
   });
 
   // ── Paste: detect LaTeX ──
@@ -1705,6 +1901,7 @@
     const mode=document.getElementById("__at-mode__").value;
     const reciprocal=document.getElementById("__at-recip__").checked;
     const expSign=document.getElementById("__at-exp-sign__").value;
+    const solveFor=(document.getElementById("__at-solvefor__").value||"").trim().slice(0,4)||null;
     if(!raw){resultDiv.innerHTML='<span style="color:#ccc;">Enter an expression above…</span>';resultDiv.style.cssText="min-height:52px;padding:12px;border:1px solid #e8e8e8;border-radius:8px;background:#fafafa;font-size:13px;position:relative;";return;}
     try{
       // Apply reciprocal: wrap input as 1/(expr)
@@ -1721,7 +1918,7 @@
       else if(mode==="binomial") res=doBinomial(raw);
       else if(mode==="hcflcm")   res=doHcfLcm(raw);
       else if(mode==="excluded") res=doExcludedClean(raw);
-      else                       res=doSolve(raw);
+      else                       res=doSolve(raw, solveFor);
 
       // Apply exponent-sign filter to result
       if(expSign!=="any"){
@@ -1826,6 +2023,15 @@
   document.addEventListener("mouseup",()=>{dragging=false;});
 
   document.getElementById("__at-go__").onclick=run;
+
+  // Show/hide "Solve for" row based on mode
+  const modeEl=document.getElementById("__at-mode__");
+  const solveForRow=document.getElementById("__at-solvefor-row__");
+  function updateSolveForVisibility(){
+    solveForRow.style.display=modeEl.value==="solve"?"flex":"none";
+  }
+  modeEl.addEventListener("change",updateSolveForVisibility);
+  updateSolveForVisibility();
   console.log("%c Algebra Tool loaded!", "color:#1a5abf;font-weight:bold;font-size:14px;");
   console.log("Modes: simplify · expand · index · factorise · binomial · hcf/lcm · excluded · solve");
   console.log("Run the script again to close the panel.");
