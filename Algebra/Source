@@ -978,6 +978,9 @@
     ".__at-copy-btn__:hover{background:#f0f0f0;color:#111;}",
     ".__at-copy-btn__.copied{background:#edfaf3;border-color:#7dd3a8;color:#1a7a40;}",
     ".__at-rule-badge__{font-size:9.5px;font-family:monospace;color:#1a5abf;background:#e8f0fe;border:1px solid #b0c8f8;border-radius:3px;padding:1px 5px;margin-left:6px;white-space:nowrap;vertical-align:middle;}",
+    "#__at-recip-lbl__:hover{background:#f0f4ff;border-color:#1a5abf;}",
+    "#__at-recip-lbl__:has(input:checked){background:#e8f0fe;border-color:#1a5abf;color:#1a5abf;}",
+    "#__at-exp-sign__:focus{border-color:#1a5abf;}",
   ].join("");
 
   overlay.innerHTML=
@@ -1013,6 +1016,17 @@
         '<span class="__at-kbd__">? fraction</span>'+
         '<span class="__at-kbd__">Esc/↓ exit power</span>'+
         '<span class="__at-kbd__ latex">paste LaTeX</span>'+
+      '</div>'+
+      '<div style="display:flex;gap:8px;margin-bottom:10px;align-items:center;flex-wrap:wrap;">'+
+        '<label style="display:flex;align-items:center;gap:5px;font-size:12px;color:#555;cursor:pointer;user-select:none;padding:5px 10px;border:1.5px solid #ccc;border-radius:7px;background:#fafafa;transition:all 0.15s;" id="__at-recip-lbl__">'+
+          '<input type="checkbox" id="__at-recip__" style="accent-color:#1a5abf;width:13px;height:13px;">'+
+          '<span>Reciprocal <span style="font-family:Georgia,serif;color:#1a5abf;">1/x</span></span>'+
+        '</label>'+
+        '<select id="__at-exp-sign__" style="padding:5px 8px;border:1.5px solid #ccc;border-radius:7px;background:#fafafa;color:#555;font-size:12px;cursor:pointer;outline:none;flex:1;min-width:160px;">'+
+          '<option value="any">Any exponents</option>'+
+          '<option value="positive">Positive exponents only</option>'+
+          '<option value="negative">Negative exponents only</option>'+
+        '</select>'+
       '</div>'+
       '<button id="__at-go__">Calculate</button>'+
       '<div style="margin-bottom:12px;">'+
@@ -1368,12 +1382,129 @@
     chipsDiv.appendChild(chip);
   });
 
+  // ── Reciprocal & exponent-sign post-processing ──
+
+  // Convert a simplified result string so all exponents match the requested sign.
+  // Strategy:
+  //   positive-only: move every negative-exponent factor to denominator with positive exp
+  //   negative-only: move every positive-exponent factor (and coeff) to denominator with negative exp
+  function applyExpSignFilter(raw, mode) {
+    if(mode==="any") return {result:raw, note:null};
+
+    // Parse the result as a flat monomial: coeff × var^e × ...
+    // We only handle simple monomial results (what simplify/indexForm produce).
+    // For anything complex (contains +, -, spaces) we skip silently.
+    const s = raw.replace(/\s/g,"");
+    if(/[+\-]/.test(s.replace(/^\-/,""))) return {result:raw, note:null};
+
+    // Extract coefficient and variable powers
+    let work = s;
+    let sign = 1;
+    if(work.startsWith("-")){sign=-1; work=work.slice(1);}
+
+    // Pull leading coefficient fraction like 5/2
+    let numCoeff=1, denCoeff=1;
+    const fracM = work.match(/^\((\d+)\/(\d+)\)/);
+    const intM  = work.match(/^(\d+\.?\d*)/);
+    if(fracM){ numCoeff=parseInt(fracM[1]); denCoeff=parseInt(fracM[2]); work=work.slice(fracM[0].length);}
+    else if(intM){ numCoeff=parseFloat(intM[1]); work=work.slice(intM[0].length);}
+
+    // Pull all variable^exp
+    const varRegex=/([a-zA-Z])\^?(-?\d+)?/g;
+    let m;
+    const varPowers={};
+    while((m=varRegex.exec(work))!==null){
+      const v=m[1], e=m[2]!==undefined?parseInt(m[2]):1;
+      varPowers[v]=(varPowers[v]||0)+e;
+    }
+
+    // Build numerator vars and denominator vars based on mode
+    const numVars={}, denVars={};
+    if(mode==="positive"){
+      // Negative exponents move to denominator as positive
+      for(const[v,e] of Object.entries(varPowers)){
+        if(e>0) numVars[v]=e;
+        else if(e<0) denVars[v]=-e;
+        // e===0 means it cancels, skip
+      }
+    } else { // negative
+      // Positive exponents move to denominator and become negative (shown as x^-n in den)
+      // Equivalently: represent as 1/x^n in numerator with negative exponent form
+      // But "negative exponents only" means we want all vars as negative exponents in the top.
+      // So positive-exp vars become negative: x^3 → x^-3, x^-2 stays x^-2
+      // Coeff stays in numerator; we just negate all positive exponents
+      for(const[v,e] of Object.entries(varPowers)){
+        if(e>0) numVars[v]=-e;       // flip to negative
+        else if(e<0) numVars[v]=e;   // already negative
+      }
+    }
+
+    // Reconstruct
+    function buildMonomialStr(c, dc, vars){
+      let s="";
+      const signStr = sign===-1?"-":"";
+      // coefficient
+      let coeffStr="";
+      if(dc!==1){
+        coeffStr=fmtNum(c/dc);
+        if(coeffStr.includes("/")) coeffStr="("+coeffStr+")";
+      } else {
+        coeffStr = c===1?"":fmtNum(c);
+      }
+      s += signStr;
+      s += coeffStr;
+      const entries=Object.entries(vars).sort((a,b)=>a[0].localeCompare(b[0]));
+      for(const[v,e] of entries){
+        s+=v;
+        if(e!==1) s+="^"+e;
+      }
+      return s||fmtNum(sign*c/dc);
+    }
+
+    let result, note;
+    if(mode==="positive"){
+      const denEntries=Object.entries(denVars);
+      if(denEntries.length===0){
+        // No negative exponents — already fine, but double-check
+        result = raw;
+        note = null;
+      } else {
+        // Build numerator
+        const numStr = buildMonomialStr(numCoeff,denCoeff,numVars);
+        // Build denominator
+        let dStr="";
+        denEntries.sort((a,b)=>a[0].localeCompare(b[0])).forEach(([v,e])=>{dStr+=v+(e!==1?"^"+e:"");});
+        result = (numStr==="1"||numStr===""?"1":numStr)+"/"+dStr;
+        note = "Negative exponents moved to denominator (positive exponents only)";
+      }
+    } else {
+      // negative mode: every var now has negative exponent in numVars; coeff stays
+      const hasPositive = Object.values(numVars).some(e=>e>0);
+      if(hasPositive){
+        // Shouldn't happen with our logic but fall back
+        result = raw; note=null;
+      } else {
+        result = buildMonomialStr(numCoeff, denCoeff, numVars);
+        note = "Positive exponents converted to negative form (negative exponents only)";
+      }
+    }
+    return {result, note};
+  }
+
   // ── Run ──
   function run(){
-    const raw=getRawMath();
+    let raw=getRawMath();
     const mode=document.getElementById("__at-mode__").value;
+    const reciprocal=document.getElementById("__at-recip__").checked;
+    const expSign=document.getElementById("__at-exp-sign__").value;
     if(!raw){resultDiv.innerHTML='<span style="color:#ccc;">Enter an expression above…</span>';resultDiv.style.cssText="min-height:52px;padding:12px;border:1px solid #e8e8e8;border-radius:8px;background:#fafafa;font-size:13px;position:relative;";return;}
     try{
+      // Apply reciprocal: wrap input as 1/(expr)
+      if(reciprocal){
+        const stripped=raw.replace(/^\(|\)$/g,"");
+        raw="1/("+stripped+")";
+      }
+
       let res;
       if(mode==="simplify")      res=doSimplify(raw);
       else if(mode==="expand")   res=doExpand(raw);
@@ -1383,6 +1514,15 @@
       else if(mode==="hcflcm")   res=doHcfLcm(raw);
       else if(mode==="excluded") res=doExcludedClean(raw);
       else                       res=doSolve(raw);
+
+      // Apply exponent-sign filter to result
+      if(expSign!=="any"){
+        const filtered=applyExpSignFilter(res.result, expSign);
+        if(filtered.result!==res.result){
+          res.steps.push({text:"Rewrite using "+(expSign==="positive"?"positive":"negative")+" exponents only: "+filtered.result, rule:expSign+" exponents"});
+          res.result=filtered.result;
+        }
+      }
 
       const{result:val,steps}=res;
 
