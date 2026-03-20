@@ -179,15 +179,15 @@ const ROOT = document.createElement('div');
 ROOT.id = '__SB_ROOT__';
 document.body.appendChild(ROOT);
 
-// launcher mode: panel hidden, all IDs still in document so getElementById works
+// panel hidden in launcher mode — kept in DOM so getElementById calls work
 const PANEL = document.createElement('div');
 PANEL.id = '__SB_PANEL__';
-PANEL.style.cssText = 'display:none!important;';
+PANEL.style.cssText = 'display:none!important;pointer-events:none;';
 PANEL.innerHTML = '<div id="__SB_PANEL_HEAD__"><span id="__SB_TITLE__"></span><button id="__SB_COLLAPSE__"></button></div><div id="__SB_LIST__"></div><div id="__SB_SETTINGS__"></div>';
 ROOT.appendChild(PANEL);
 const TAB = document.createElement('button');
 TAB.id = '__SB_TAB__';
-TAB.style.cssText = 'display:none!important;';
+TAB.style.cssText = 'display:none!important;pointer-events:none;';
 ROOT.appendChild(TAB);
 
 // ── theme palettes ────────────────────────────────────────────────────────────
@@ -342,12 +342,30 @@ function mkCanvas(body) {
   const ro = new ResizeObserver(sync); ro.observe(body);
   return { c, ctx: c.getContext('2d'), sync, ro };
 }
-function rafLoop(fn) {
-  let id, live=true;
-  const tick=()=>{ if(!live)return; fn(); id=requestAnimationFrame(tick); };
+// ── 60fps cap: all game loops run at most 60fps regardless of display refresh ──
+const _TARGET_MS = 1000 / 60;
+function _cappedRAF(fn) {
+  let id, live=true, last=0;
+  const tick=(ts)=>{
+    if(!live)return;
+    id=requestAnimationFrame(tick);
+    if(ts - last < _TARGET_MS - 1) return;
+    last=ts;
+    fn();
+  };
   id=requestAnimationFrame(tick);
   return ()=>{ live=false; cancelAnimationFrame(id); };
 }
+function rafLoop(fn) { return _cappedRAF(fn); }
+// override global rAF so direct calls are also capped
+const _origRAF = requestAnimationFrame.bind(window);
+window.requestAnimationFrame = function(cb) {
+  let last=0;
+  return _origRAF(function tick(ts){
+    if(ts - last >= _TARGET_MS - 1){ last=ts; cb(ts); }
+    else _origRAF(tick);
+  });
+};
 function mkBtn(label, ctrl, lit) {
   const b=document.createElement('button'); b.className='sb-btn'+(lit?' lit':''); b.textContent=label; ctrl.appendChild(b); styleBtn(b); return b;
 }
