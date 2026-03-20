@@ -179,9 +179,11 @@ const ROOT = document.createElement('div');
 ROOT.id = '__SB_ROOT__';
 document.body.appendChild(ROOT);
 
-const _noop={add:()=>{},remove:()=>{},toggle:()=>{},contains:()=>false};
-const PANEL={classList:_noop,style:{}};
-const TAB={classList:_noop,style:{}};
+// panel/tab not used in launcher mode — build detached so getElementById still works
+const _ghost = document.createElement('div');
+_ghost.innerHTML = '<div id="__SB_PANEL__"><div id="__SB_PANEL_HEAD__"><span id="__SB_TITLE__"></span><button id="__SB_COLLAPSE__"></button></div><div id="__SB_LIST__"></div><div id="__SB_SETTINGS__"></div></div><button id="__SB_TAB__"></button>';
+const PANEL = _ghost.querySelector('#__SB_PANEL__');
+const TAB   = _ghost.querySelector('#__SB_TAB__');
 
 // ── theme palettes ────────────────────────────────────────────────────────────
 const TH = {
@@ -587,7 +589,7 @@ const TOYS = [
   {name:'Dots & Boxes',         init:initDotsBoxes,      game:true},
   {name:'Ludo',                 init:initLudo,           game:true},
 ];
-const LIST  = document.createElement('div'); // detached, not in DOM
+const LIST  = document.getElementById('__SB_LIST__');
 const items = [];
 TOYS.forEach((toy,i) => {
   const item=document.createElement('button'); item.className='sb-item';
