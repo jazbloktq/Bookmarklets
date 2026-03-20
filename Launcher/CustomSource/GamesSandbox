@@ -179,11 +179,16 @@ const ROOT = document.createElement('div');
 ROOT.id = '__SB_ROOT__';
 document.body.appendChild(ROOT);
 
-// panel/tab not used in launcher mode — build detached so getElementById still works
-const _ghost = document.createElement('div');
-_ghost.innerHTML = '<div id="__SB_PANEL__"><div id="__SB_PANEL_HEAD__"><span id="__SB_TITLE__"></span><button id="__SB_COLLAPSE__"></button></div><div id="__SB_LIST__"></div><div id="__SB_SETTINGS__"></div></div><button id="__SB_TAB__"></button>';
-const PANEL = _ghost.querySelector('#__SB_PANEL__');
-const TAB   = _ghost.querySelector('#__SB_TAB__');
+// launcher mode: panel hidden, all IDs still in document so getElementById works
+const PANEL = document.createElement('div');
+PANEL.id = '__SB_PANEL__';
+PANEL.style.cssText = 'display:none!important;';
+PANEL.innerHTML = '<div id="__SB_PANEL_HEAD__"><span id="__SB_TITLE__"></span><button id="__SB_COLLAPSE__"></button></div><div id="__SB_LIST__"></div><div id="__SB_SETTINGS__"></div>';
+ROOT.appendChild(PANEL);
+const TAB = document.createElement('button');
+TAB.id = '__SB_TAB__';
+TAB.style.cssText = 'display:none!important;';
+ROOT.appendChild(TAB);
 
 // ── theme palettes ────────────────────────────────────────────────────────────
 const TH = {
