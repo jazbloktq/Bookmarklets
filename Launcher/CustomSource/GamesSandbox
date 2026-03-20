@@ -179,17 +179,9 @@ const ROOT = document.createElement('div');
 ROOT.id = '__SB_ROOT__';
 document.body.appendChild(ROOT);
 
-const PANEL = document.createElement('div');
-PANEL.id = '__SB_PANEL__';
-PANEL.innerHTML = `<div id="__SB_PANEL_HEAD__"><span id="__SB_TITLE__">Sandbox</span><button id="__SB_COLLAPSE__" title="Minimise">‹</button></div><div id="__SB_LIST__"></div><div id="__SB_SETTINGS__"></div>`;
-ROOT.appendChild(PANEL);
-
-const TAB = document.createElement('button');
-TAB.id = '__SB_TAB__'; TAB.textContent = 'sandbox';
-ROOT.appendChild(TAB);
-
-document.getElementById('__SB_COLLAPSE__').addEventListener('click', () => { PANEL.classList.add('hidden'); TAB.classList.add('visible'); });
-TAB.addEventListener('click', () => { PANEL.classList.remove('hidden'); TAB.classList.remove('visible'); });
+const _noop={add:()=>{},remove:()=>{},toggle:()=>{},contains:()=>false};
+const PANEL={classList:_noop,style:{}};
+const TAB={classList:_noop,style:{}};
 
 // ── theme palettes ────────────────────────────────────────────────────────────
 const TH = {
@@ -595,7 +587,7 @@ const TOYS = [
   {name:'Dots & Boxes',         init:initDotsBoxes,      game:true},
   {name:'Ludo',                 init:initLudo,           game:true},
 ];
-const LIST  = document.getElementById('__SB_LIST__');
+const LIST  = document.createElement('div'); // detached, not in DOM
 const items = [];
 TOYS.forEach((toy,i) => {
   const item=document.createElement('button'); item.className='sb-item';
