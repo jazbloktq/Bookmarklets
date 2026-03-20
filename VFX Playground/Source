@@ -39,7 +39,7 @@
   const style = document.createElement('style');
   style.id = '__vfx_style';
   style.textContent = `
-    #__vfx_root{position:fixed;inset:0;z-index:2147483647;pointer-events:none;}
+    #__vfx_root{position:fixed;inset:0;z-index:2147483646;pointer-events:none;}
     #__vfx_canvas{position:fixed;inset:0;pointer-events:none;z-index:2;}
     #__vfx_stage{position:fixed;inset:0;z-index:1;pointer-events:all;background:transparent;transition:background .4s;}
     #__vfx_stage.vfx-passthru{pointer-events:none!important;cursor:default!important;}
