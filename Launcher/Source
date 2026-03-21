@@ -8,7 +8,7 @@ javascript:(function(){
 //    inline  : runs JS code pasted directly
 //    url     : opens a URL in a new tab
 // ============================================================
-var SB_SRC="https://raw.githubusercontent.com/jazbloktq/Bookmarklets-launcher/refs/heads/main/sandbox.js";
+var SB_SRC="https://raw.githubusercontent.com/jazbloktq/Bookmarklets/refs/heads/main/Launcher/CustomSource/GamesSandbox";
 var TREE=[
   {folder:"School",children:[
     {folder:"Maths",children:[
