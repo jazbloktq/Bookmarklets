@@ -714,18 +714,19 @@ var TREE=[
 })()`},
       {name:"Heatmap",type:"inline",src:"(function(){var el=document.createElement('script');el.src='https://zeman.github.io/perfmap/perfmap.js';document.body.appendChild(el);})();"},
       {name:"To Markdown",type:"inline",src:`(function(){
-  var id='__md__';if(document.getElementById(id)){document.getElementById(id).remove();return;}
-  function init(){
-    var sel=window.getSelection();
-    var html='';
-    if(sel&&sel.rangeCount>0&&sel.toString().trim().length>0){
-      var c=document.createElement('div');c.appendChild(sel.getRangeAt(0).cloneContents());html=c.innerHTML;
-    } else {
-      var art=document.querySelector('article')||document.querySelector('main')||document.querySelector('[role="main"]');
-      if(art){html=art.innerHTML;}else{alert('Select some text first, or ensure the page has an article/main element.');return;}
-    }
-    var td=new TurndownService({headingStyle:'atx',codeBlockStyle:'fenced',emDelimiter:'*',strongDelimiter:'**'});
-    var md=td.turndown(html);
+  if(typeof TurndownService==='undefined'){
+    var s=document.createElement('script');
+    s.src='https://cdnjs.cloudflare.com/ajax/libs/turndown/7.1.2/turndown.min.js';
+    s.onload=run;document.body.appendChild(s);
+  } else {run();}
+  function run(){
+    var sel=window.getSelection();var h='';
+    if(sel.rangeCount>0){var c=document.createElement('div');c.appendChild(sel.getRangeAt(0).cloneContents());h=c.innerHTML;}
+    else{var art=document.querySelector('article');if(art){h=art.innerHTML;}else{alert('No selection found and no article element detected');return;}}
+    if(!h){alert('No content found to convert');return;}
+    var t=new TurndownService({headingStyle:'atx',codeBlockStyle:'fenced',emDelimiter:'*',strongDelimiter:'**'});
+    var m=t.turndown(h);
+    var id='__md__';var ex=document.getElementById(id);if(ex)ex.remove();
     var panel=document.createElement('div');panel.id=id;
     panel.style.cssText='position:fixed;top:20px;right:20px;width:420px;max-height:560px;background:#1e1e2e;color:#cdd6f4;font-family:system-ui,sans-serif;font-size:12px;border:1px solid #45475a;border-radius:10px;z-index:2147483647;box-shadow:0 8px 32px rgba(0,0,0,.5);display:flex;flex-direction:column;overflow:hidden;';
     panel.innerHTML='<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border-bottom:1px solid #313244;background:#181825;flex-shrink:0;">'
@@ -735,20 +736,15 @@ var TREE=[
         +'<button id="__md_x__" style="background:none;border:none;color:#6c7086;font-size:18px;cursor:pointer;line-height:1;padding:0 2px;">x</button>'
       +'</div>'
     +'</div>'
-    +'<textarea id="__md_ta__" style="flex:1;background:#181825;border:none;color:#cdd6f4;font-size:11px;font-family:monospace;padding:12px;resize:none;outline:none;overflow-y:auto;"></textarea>';
+    +'<textarea id="__md_ta__" style="flex:1;min-height:200px;background:#181825;border:none;color:#cdd6f4;font-size:11px;font-family:monospace;padding:12px;resize:none;outline:none;overflow-y:auto;"></textarea>';
     document.body.appendChild(panel);
-    document.getElementById('__md_ta__').value=md;
+    var ta=document.getElementById('__md_ta__');ta.value=m;
     document.getElementById('__md_x__').onclick=function(){panel.remove();};
     document.getElementById('__md_copy__').onclick=function(){
-      navigator.clipboard.writeText(md).catch(function(){});
-      this.textContent='Copied!';var s=this;setTimeout(function(){s.textContent='Copy';},1500);
+      ta.select();document.execCommand('copy');
+      this.textContent='Copied!';var btn=this;setTimeout(function(){btn.textContent='Copy';},2000);
     };
   }
-  if(typeof TurndownService==='undefined'){
-    var s=document.createElement('script');
-    s.src='https://cdnjs.cloudflare.com/ajax/libs/turndown/7.1.2/turndown.min.js';
-    s.onload=init;document.body.appendChild(s);
-  } else {init();}
 })()`},
       {name:"Auto Scroller",type:"inline",src:`(function(){
   var id='__as__';if(document.getElementById(id)){document.getElementById(id).remove();clearInterval(window.__as_iv__);return;}
