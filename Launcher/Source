@@ -15,8 +15,13 @@ var TREE=[
       {name:"Calculator",type:"github",src:"https://raw.githubusercontent.com/jazbloktq/Bookmarklets/refs/heads/main/Calculator/Source"},
       {name:"Geometry",type:"github",src:"https://raw.githubusercontent.com/jazbloktq/Bookmarklets/refs/heads/main/Geometry/Source"},
       {name:"Algebra",type:"github",src:"https://raw.githubusercontent.com/jazbloktq/Bookmarklets/refs/heads/main/Algebra/Source"},
+      {folder:"Revision",children:[
+      ]},
     ]},
     {folder:"Science",children:[
+      {folder:"Revision",children:[
+        {name:"Chemistry",type:"github",src:"https://raw.githubusercontent.com/jazbloktq/Bookmarklets/refs/heads/main/Revision/Science/Chemistry"},
+      ]},
     ]},
     {folder:"Study Tools",children:[
       {name:"Dictionary Lookup",type:"inline",src:`(function(){
@@ -227,86 +232,6 @@ var TREE=[
     var text=inp.value.trim();if(!text)return;
     var from=sels[0].value,to=sels[1].value;
     window.open('https://translate.google.com/?sl='+from+'&tl='+to+'&text='+encodeURIComponent(text)+'&op=translate','_blank');
-  };
-})()`},
-      {name:"Speed Reader",type:"inline",src:`(function(){
-  var id='__sr__';if(document.getElementById(id)){document.getElementById(id).remove();clearInterval(window.__sr_iv__);return;}
-  // Get text: selection if available, else walk all visible text nodes with spaces between them
-  var raw=(window.__bm_sel__||'').trim();
-  if(!raw){
-    var tw=document.createTreeWalker(document.body,4,{acceptNode:function(n){
-      var p=n.parentElement;
-      if(!p)return 3;
-      var tag=p.tagName;
-      if(tag==='SCRIPT'||tag==='STYLE'||tag==='NOSCRIPT')return 3;
-      try{var cs=window.getComputedStyle(p);if(cs.display==='none'||cs.visibility==='hidden')return 3;}catch(e){}
-      return n.nodeValue&&n.nodeValue.trim()?1:3;
-    }},false);
-    var parts=[];
-    while(tw.nextNode())parts.push(tw.currentNode.nodeValue);
-    raw=parts.join(' ');
-  }
-  // Normalise: collapse all whitespace to single spaces, trim edges
-  var words=raw.replace(/\s+/g,' ').trim().split(' ').filter(function(w){return w.length>0;});
-  if(!words.length){alert('No text found');return;}
-  var idx=0,wpm=300,running=false;
-  window.__sr_iv__=null;
-  var panel=document.createElement('div');panel.id=id;
-  panel.style.cssText='position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#1e1e2e;color:#cdd6f4;font-family:system-ui,sans-serif;border:1px solid #45475a;border-radius:14px;z-index:2147483647;padding:28px 36px;box-shadow:0 16px 60px rgba(0,0,0,.7);text-align:center;min-width:360px;user-select:none;';
-  panel.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;">'
-    +'<span id="__sr_info__" style="font-size:11px;color:#6c7086;"></span>'
-    +'<button id="__sr_x__" style="background:none;border:none;color:#6c7086;font-size:18px;cursor:pointer;line-height:1;padding:0;">×</button>'
-    +'</div>'
-    +'<div style="font-size:38px;font-weight:600;min-height:56px;display:flex;justify-content:center;align-items:center;">'
-    +'<span id="__sr_word__" style="color:#cdd6f4;white-space:nowrap;"></span>'
-    +'</div>'
-    +'<div style="margin:12px 0;height:3px;background:#313244;border-radius:2px;">'
-    +'<div id="__sr_bar__" style="height:100%;width:0%;background:#cba6f7;border-radius:2px;"></div>'
-    +'</div>'
-    +'<div style="display:flex;gap:8px;justify-content:center;align-items:center;">'
-    +'<button id="__sr_tog__" style="background:#cba6f7;color:#1e1e2e;border:none;border-radius:7px;padding:8px 22px;font-size:13px;font-weight:600;cursor:pointer;">Play</button>'
-    +'<button id="__sr_rst__" style="background:#313244;color:#cdd6f4;border:none;border-radius:7px;padding:8px 14px;font-size:12px;cursor:pointer;">↺</button>'
-    +'<div style="display:flex;align-items:center;gap:6px;">'
-    +'<span style="font-size:11px;color:#6c7086;">WPM:</span>'
-    +'<input id="__sr_wpm__" type="number" min="60" max="1500" step="10" value="300" style="width:56px;background:#313244;border:1px solid #45475a;border-radius:5px;color:#cdd6f4;font-size:12px;padding:4px 6px;text-align:center;outline:none;">'
-    +'</div>'
-    +'</div>';
-  document.body.appendChild(panel);
-  var wordEl=document.getElementById('__sr_word__');
-  var infoEl=document.getElementById('__sr_info__');
-  var barEl=document.getElementById('__sr_bar__');
-  var togEl=document.getElementById('__sr_tog__');
-  var wpmEl=document.getElementById('__sr_wpm__');
-  function updateDisplay(){
-    wordEl.textContent=words[idx]||'';
-    infoEl.textContent=Math.round(wpm)+' WPM \xb7 '+(idx+1)+'/'+words.length;
-    barEl.style.width=(((idx+1)/words.length)*100)+'%';
-    togEl.textContent=running?'Pause':'Play';
-  }
-  function startInterval(){
-    clearInterval(window.__sr_iv__);
-    window.__sr_iv__=setInterval(function(){
-      idx++;
-      if(idx>=words.length){clearInterval(window.__sr_iv__);running=false;idx=words.length-1;}
-      updateDisplay();
-    },Math.round(60000/wpm));
-  }
-  updateDisplay();
-  document.getElementById('__sr_x__').onclick=function(){clearInterval(window.__sr_iv__);panel.remove();};
-  togEl.onclick=function(){
-    running=!running;
-    if(running){startInterval();}else{clearInterval(window.__sr_iv__);}
-    updateDisplay();
-  };
-  document.getElementById('__sr_rst__').onclick=function(){
-    clearInterval(window.__sr_iv__);running=false;idx=0;updateDisplay();
-  };
-  wpmEl.onchange=function(){
-    var v=parseInt(this.value);
-    if(isNaN(v)||v<60)v=60;if(v>1500)v=1500;
-    wpm=v;this.value=v;
-    if(running){startInterval();}
-    updateDisplay();
   };
 })()`},
     ]},
