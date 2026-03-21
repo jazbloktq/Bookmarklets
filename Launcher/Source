@@ -701,6 +701,7 @@ var TREE=[
   var fmt='APA';
   var panel=document.createElement('div');panel.id=id;
   panel.style.cssText='position:fixed;top:20px;right:20px;width:380px;background:#1e1e2e;color:#cdd6f4;font-family:system-ui,sans-serif;font-size:12px;border:1px solid #45475a;border-radius:10px;z-index:2147483647;box-shadow:0 8px 32px rgba(0,0,0,.5);overflow:hidden;';
+  var currentUrl=location.href;
   function render(result){
     panel.innerHTML='<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border-bottom:1px solid #313244;background:#181825;">'
       +'<span style="color:#cba6f7;font-size:12px;font-weight:600;">Citation Generator</span>'
@@ -712,32 +713,62 @@ var TREE=[
       +'</div>'
       +'<div style="font-size:10px;color:#6c7086;margin-bottom:5px;letter-spacing:.06em;">URL</div>'
       +'<div style="display:flex;gap:6px;margin-bottom:10px;">'
-        +'<input id="__cit_url__" value="'+location.href+'" style="flex:1;background:#313244;border:1px solid #45475a;border-radius:5px;color:#cdd6f4;font-size:11px;padding:5px 8px;outline:none;">'
+        +'<input id="__cit_url__" style="flex:1;background:#313244;border:1px solid #45475a;border-radius:5px;color:#cdd6f4;font-size:11px;padding:5px 8px;outline:none;">'
         +'<button id="__cit_go__" style="background:#cba6f7;color:#1e1e2e;border:none;border-radius:5px;padding:5px 12px;font-size:11px;font-weight:600;cursor:pointer;">Cite</button>'
       +'</div>'
       +(result?'<div id="__cit_res__" style="background:#313244;border-radius:6px;padding:10px;font-size:11px;line-height:1.6;color:#cdd6f4;word-break:break-word;">'+result+'</div>'
         +'<button id="__cit_copy__" style="width:100%;margin-top:8px;background:#313244;color:#a6e3a1;border:none;border-radius:5px;padding:6px;font-size:11px;cursor:pointer;">Copy</button>':'')
       +'</div>';
+    var urlInput=document.getElementById('__cit_url__');
+    urlInput.value=currentUrl;
     document.getElementById('__cit_x__').onclick=function(){panel.remove();};
-    panel.querySelectorAll('[data-fmt]').forEach(function(b){b.onclick=function(){fmt=this.dataset.fmt;render(null);};});
-    document.getElementById('__cit_go__').onclick=function(){cite(document.getElementById('__cit_url__').value.trim());};
+    panel.querySelectorAll('[data-fmt]').forEach(function(b){
+      b.onclick=function(){
+        currentUrl=document.getElementById('__cit_url__').value;
+        fmt=this.dataset.fmt;
+        render(null);
+      };
+    });
+    document.getElementById('__cit_go__').onclick=function(){
+      currentUrl=document.getElementById('__cit_url__').value;
+      cite(currentUrl);
+    };
+    urlInput.addEventListener('keydown',function(e){if(e.key==='Enter'){currentUrl=urlInput.value;cite(currentUrl);}});
     var cp=document.getElementById('__cit_copy__');
     if(cp)cp.onclick=function(){navigator.clipboard.writeText(document.getElementById('__cit_res__').textContent).catch(function(){});this.textContent='Copied!';var s=this;setTimeout(function(){s.textContent='Copy';},1500);};
   }
   function cite(url){
     render('<span style="color:#6c7086;">Fetching...</span>');
-    fetch('https://noembed.com/embed?url='+encodeURIComponent(url))
-      .then(function(r){return r.json();}).catch(function(){return{};})
-      .then(function(oe){
-        var title=oe.title||document.title||'Untitled';
-        var site=oe.provider_name||(function(){try{return new URL(url).hostname.replace(/^www\./,'');}catch(e){return url;}})();
-        var author=oe.author_name||'';
-        var year=new Date().getFullYear();
-        var today=new Date().toLocaleDateString('en-AU',{day:'numeric',month:'long',year:'numeric'});
+    var siteName='';
+    try{siteName=new URL(url).hostname.replace(/^www\./,'');}catch(e){siteName=url;}
+    var year=new Date().getFullYear();
+    var now=new Date();
+    var months=['Jan.','Feb.','Mar.','Apr.','May','June','July','Aug.','Sept.','Oct.','Nov.','Dec.'];
+    var accessedMLA=now.getDate()+' '+months[now.getMonth()]+' '+now.getFullYear();
+    var urlNoProto=url.replace('https://','').replace('http://','');
+    fetch('https://api.allorigins.win/get?url='+encodeURIComponent(url))
+      .then(function(r){return r.json();})
+      .then(function(d){
+        var title=url;
+        var author='';
+        var m=d.contents&&new RegExp('<title[^>]*>([^<]+)<\\/title>','i').exec(d.contents);
+        if(m)title=m[1].trim();
         var ref='';
-        if(fmt==='APA')ref=(author?author+'. ':'')+'('+year+'). <i>'+title+'</i>. '+site+'. Retrieved '+today+', from '+url;
-        else if(fmt==='MLA')ref=(author?author+'. ':'')+'"'+title+'." <i>'+site+'</i>, '+year+', '+url+'. Accessed '+today+'.';
-        else ref=(author?author+'. ':'')+'"'+title+'." '+site+'. '+year+'. '+url+'.';
+        if(fmt==='APA'){
+          ref=(author?author+'. ':'')+'('+year+'). '+title+'. '+siteName+'. '+url;
+        } else if(fmt==='MLA'){
+          ref=(author?author+'. ':'')+'"'+title+'." '+siteName+', '+year+', '+urlNoProto+'. Accessed '+accessedMLA+'.';
+        } else {
+          ref=(author?author+'. ':'')+'"'+title+'." '+siteName+'. '+year+'. '+url+'.';
+        }
+        render(ref);
+      })
+      .catch(function(){
+        var ref='';
+        var title=url;
+        if(fmt==='APA'){ref='('+year+'). '+title+'. '+siteName+'. '+url;}
+        else if(fmt==='MLA'){ref='"'+title+'." '+siteName+', '+year+', '+urlNoProto+'. Accessed '+accessedMLA+'.';}
+        else{ref='"'+title+'." '+siteName+'. '+year+'. '+url+'.';}
         render(ref);
       });
   }
