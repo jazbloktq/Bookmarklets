@@ -65,7 +65,6 @@ var TREE=[
 })()`},
       {name:"Word Counter",type:"inline",src:`(function(){
   var id='__wc__';if(document.getElementById(id)){document.getElementById(id).remove();clearInterval(window.__wc_iv__);return;}
-  // Build panel with fixed DOM refs — update them on interval
   var panel=document.createElement('div');panel.id=id;
   panel.style.cssText='position:fixed;top:20px;right:20px;background:#1e1e2e;color:#cdd6f4;font-family:system-ui,sans-serif;font-size:13px;border:1px solid #45475a;border-radius:10px;z-index:2147483647;padding:16px 18px;box-shadow:0 8px 32px rgba(0,0,0,.5);min-width:220px;';
   panel.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">'
@@ -93,9 +92,7 @@ var TREE=[
     var sel=window.getSelection();
     var selText=sel&&sel.toString?sel.toString():'';
     var hasSel=selText.trim().length>0;
-    // trim() first — leading/trailing whitespace creates phantom empty tokens without it
     var text=hasSel?selText.trim():(document.body.innerText||document.body.textContent||'').trim();
-    // normalise all whitespace to single spaces then split — matches the reference bookmarklet exactly
     var normalised=text.replace(/\s+/g,' ');
     var words=normalised.length>0?normalised.split(' ').filter(function(w){return w.length>0;}):[]; 
     var chars=text.length;
@@ -119,7 +116,7 @@ var TREE=[
   if(document.getElementById(id)){document.getElementById(id).remove();document.removeEventListener('mouseup',window.__hl_up__);return;}
   var colours=['#fef08a','#86efac','#93c5fd','#f9a8d4','#fdba74'];
   var active=colours[0];
-  var mode='highlight'; // 'highlight' | 'erase' | 'off'
+  var mode='highlight';
   var bar=document.createElement('div');bar.id=id;
   bar.style.cssText='position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:#1e1e2e;border:1px solid #45475a;border-radius:30px;padding:7px 14px;display:flex;align-items:center;gap:8px;z-index:2147483647;box-shadow:0 4px 20px rgba(0,0,0,.5);font-family:system-ui,sans-serif;font-size:12px;user-select:none;';
   function renderBar(){
@@ -320,6 +317,82 @@ var TREE=[
     ]},
     {folder:"Utilities",children:[
       {name:"Allow Paste",type:"inline",src:"document.addEventListener('paste',function(e){e.stopImmediatePropagation();},true);"},
+{name:"Reveal Links",type:"inline",src:`(function(){
+  var id='__rl__';
+  if(document.getElementById(id)){
+    document.getElementById(id).remove();
+    document.querySelectorAll('a[data-rl-orig]').forEach(function(a){
+      a.textContent=a.getAttribute('data-rl-orig');
+      a.removeAttribute('data-rl-orig');
+      a.style.removeProperty('word-break');
+      a.style.removeProperty('font-family');
+      a.style.removeProperty('font-size');
+    });
+    return;
+  }
+
+  var panel=document.createElement('div');panel.id=id;
+  panel.style.cssText='position:fixed;top:20px;right:20px;width:300px;background:#1e1e2e;color:#cdd6f4;font-family:system-ui,sans-serif;font-size:12px;border:1px solid #45475a;border-radius:10px;z-index:2147483647;box-shadow:0 8px 32px rgba(0,0,0,.5);overflow:hidden;';
+
+  panel.innerHTML=''
+    +'<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border-bottom:1px solid #313244;background:#181825;">'
+      +'<span style="color:#cba6f7;font-size:12px;font-weight:600;">Reveal Links</span>'
+      +'<button id="__rl_x__" style="background:none;border:none;color:#6c7086;font-size:18px;cursor:pointer;line-height:1;padding:0;">×</button>'
+    +'</div>'
+    +'<div style="padding:14px 12px;display:flex;flex-direction:column;gap:8px;">'
+      +'<button id="__rl_ext__" style="width:100%;background:#313244;color:#f38ba8;border:1px solid rgba(243,139,168,.3);border-radius:7px;padding:10px 14px;font-size:12px;font-weight:600;cursor:pointer;text-align:left;display:flex;align-items:center;gap:8px;">'
+        +'<span style="font-size:15px;">⚠</span>'
+        +'<div>'
+          +'<div>External links only</div>'
+          +'<div style="font-size:10px;font-weight:400;color:#6c7086;margin-top:1px;">Only links going to other websites</div>'
+        +'</div>'
+      +'</button>'
+      +'<button id="__rl_all__" style="width:100%;background:#313244;color:#cdd6f4;border:1px solid #45475a;border-radius:7px;padding:10px 14px;font-size:12px;font-weight:600;cursor:pointer;text-align:left;display:flex;align-items:center;gap:8px;">'
+        +'<span style="font-size:15px;">🔗</span>'
+        +'<div>'
+          +'<div>All links</div>'
+          +'<div style="font-size:10px;font-weight:400;color:#6c7086;margin-top:1px;">Show every link URL on the page</div>'
+        +'</div>'
+      +'</button>'
+    +'</div>'
+    +'<div id="__rl_status__" style="padding:0 12px 10px;font-size:10px;color:#6c7086;display:none;"></div>';
+
+  document.body.appendChild(panel);
+
+  function reveal(externalOnly){
+    var count=0;
+    document.querySelectorAll('a[href]').forEach(function(a){
+      var href=a.getAttribute('href');
+      if(!href||href.startsWith('#')||href.startsWith('javascript'))return;
+      var resolved;
+      try{resolved=new URL(href,location.href).href;}catch(e){return;}
+      if(externalOnly){
+        try{
+          var linkHost=new URL(resolved).hostname;
+          var pageHost=location.hostname;
+          if(linkHost===pageHost||linkHost===('www.'+pageHost)||('www.'+linkHost)===pageHost)return;
+        }catch(e){return;}
+      }
+      a.setAttribute('data-rl-orig',a.textContent);
+      a.textContent=resolved;
+      a.style.wordBreak='break-all';
+      a.style.fontFamily='monospace';
+      a.style.fontSize='11px';
+      count++;
+    });
+    var status=document.getElementById('__rl_status__');
+    status.style.display='block';
+    status.textContent='Revealed '+count+' '+(externalOnly?'external ':'')+'link'+(count!==1?'s':'')+'. Run again to restore.';
+    document.getElementById('__rl_ext__').disabled=true;
+    document.getElementById('__rl_all__').disabled=true;
+    document.getElementById('__rl_ext__').style.opacity='0.4';
+    document.getElementById('__rl_all__').style.opacity='0.4';
+  }
+
+  document.getElementById('__rl_x__').onclick=function(){panel.remove();};
+  document.getElementById('__rl_ext__').onclick=function(){reveal(true);};
+  document.getElementById('__rl_all__').onclick=function(){reveal(false);};
+})()`},
       {name:"Timer / Stopwatch",type:"inline",src:`(function(){
   var id='__tsw__';if(document.getElementById(id)){document.getElementById(id).remove();return;}
   var mode='stopwatch',running=false,iv=null,elapsed=0,countdown=0,cdTotal=0;
@@ -460,6 +533,98 @@ var TREE=[
     +'<div style="margin-top:10px;font-size:10px;color:#6c7086;word-break:break-all;max-width:200px;">'+url.slice(0,60)+(url.length>60?'…':'')+'</div>';
   document.body.appendChild(panel);
   document.getElementById('__qr_x__').onclick=function(){panel.remove();};
+})()`},
+    ]},
+    {folder:"Development",children:[
+      {name:"Edit Mode",type:"inline",src:`(function(){
+  var on=document.designMode==='on';
+  if(on){
+    document.designMode='off';
+    document.body.contentEditable='false';
+    document.getElementById('__em_badge__')&&document.getElementById('__em_badge__').remove();
+  } else {
+    document.designMode='on';
+    var b=document.createElement('div');b.id='__em_badge__';
+    b.style.cssText='position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:#f38ba8;color:#1e1e2e;font-family:system-ui,sans-serif;font-size:11px;font-weight:600;padding:5px 14px;border-radius:20px;z-index:2147483647;pointer-events:none;letter-spacing:.05em;';
+    b.textContent='✎ EDIT MODE ON — run again to exit';
+    document.body.appendChild(b);
+  }
+})()`},
+      {name:"LocalStorage",type:"inline",src:`(function(){
+  var id='__ls__';if(document.getElementById(id)){document.getElementById(id).remove();return;}
+  var panel=document.createElement('div');panel.id=id;
+  panel.style.cssText='position:fixed;top:20px;right:20px;width:400px;max-height:560px;background:#1e1e2e;color:#cdd6f4;font-family:system-ui,sans-serif;font-size:12px;border:1px solid #45475a;border-radius:10px;z-index:2147483647;box-shadow:0 8px 32px rgba(0,0,0,.5);display:flex;flex-direction:column;overflow:hidden;';
+  function getData(){var keys=Object.keys(localStorage).sort();return keys.map(function(k){return{key:k,val:localStorage.getItem(k)};});}
+  function escH(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+  function render(){
+    var data=getData();
+    var rows=data.map(function(item,i){
+      var shortVal=item.val.length>60?item.val.slice(0,60)+'…':item.val;
+      return '<div style="display:flex;align-items:center;gap:6px;padding:6px 10px;border-bottom:1px solid #313244;'+(i%2===0?'':'background:rgba(255,255,255,.02)')+';">'
+        +'<div style="flex:1;min-width:0;">'
+          +'<div style="color:#cba6f7;font-size:11px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+escH(item.key)+'</div>'
+          +'<div style="color:#a6adc8;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:1px;">'+escH(shortVal)+'</div>'
+        +'</div>'
+        +'<button data-edit="'+i+'" style="background:#313244;color:#89b4fa;border:none;border-radius:5px;padding:3px 8px;font-size:10px;cursor:pointer;">Edit</button>'
+        +'<button data-del="'+i+'" style="background:#313244;color:#f38ba8;border:none;border-radius:5px;padding:3px 8px;font-size:10px;cursor:pointer;">Del</button>'
+      +'</div>';
+    }).join('');
+    panel.innerHTML=''
+      +'<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border-bottom:1px solid #45475a;background:#181825;flex-shrink:0;">'
+        +'<span style="color:#cba6f7;font-size:12px;font-weight:600;">LocalStorage <span style="color:#6c7086;font-weight:400;">('+data.length+' keys)</span></span>'
+        +'<div style="display:flex;gap:6px;">'
+          +'<button id="__ls_add__" style="background:#313244;color:#a6e3a1;border:none;border-radius:5px;padding:4px 10px;font-size:11px;cursor:pointer;">+ Add</button>'
+          +'<button id="__ls_clr__" style="background:#313244;color:#f38ba8;border:none;border-radius:5px;padding:4px 10px;font-size:11px;cursor:pointer;">Clear all</button>'
+          +'<button id="__ls_x__" style="background:none;border:none;color:#6c7086;font-size:18px;cursor:pointer;line-height:1;padding:0 2px;">×</button>'
+        +'</div>'
+      +'</div>'
+      +'<div style="overflow-y:auto;flex:1;">'+(data.length?rows:'<div style="padding:16px;color:#6c7086;text-align:center;font-size:11px;">(empty)</div>')+'</div>'
+      +'<div style="padding:8px 10px;border-top:1px solid #313244;background:#181825;flex-shrink:0;">'
+        +'<input id="__ls_search__" placeholder="Filter keys…" style="width:100%;background:#313244;border:1px solid #45475a;border-radius:5px;color:#cdd6f4;font-size:11px;padding:5px 8px;outline:none;box-sizing:border-box;">'
+      +'</div>';
+    document.getElementById('__ls_x__').onclick=function(){panel.remove();};
+    document.getElementById('__ls_clr__').onclick=function(){if(confirm('Clear ALL localStorage?')){localStorage.clear();render();}};
+    document.getElementById('__ls_add__').onclick=function(){openEditor(null,null);};
+    document.getElementById('__ls_search__').oninput=function(){
+      var q=this.value.toLowerCase();
+      panel.querySelectorAll('[data-edit]').forEach(function(btn){
+        var row=btn.parentElement.parentElement;
+        var keyEl=row.querySelector('[style*="cba6f7"]');
+        if(keyEl)row.style.display=keyEl.textContent.toLowerCase().includes(q)?'':'none';
+      });
+    };
+    panel.querySelectorAll('[data-edit]').forEach(function(btn){
+      btn.onclick=function(){var item=data[+this.dataset.edit];openEditor(item.key,item.val);};
+    });
+    panel.querySelectorAll('[data-del]').forEach(function(btn){
+      btn.onclick=function(){var item=data[+this.dataset.del];if(confirm('Delete "'+item.key+'"?')){localStorage.removeItem(item.key);render();}};
+    });
+  }
+  function openEditor(key,val){
+    var overlay=document.createElement('div');
+    overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:2147483648;display:flex;align-items:center;justify-content:center;';
+    var box=document.createElement('div');
+    box.style.cssText='background:#1e1e2e;border:1px solid #45475a;border-radius:10px;padding:18px;width:360px;font-family:system-ui,sans-serif;';
+    var isNew=key===null;
+    box.innerHTML='<div style="color:#cba6f7;font-size:13px;font-weight:600;margin-bottom:12px;">'+(isNew?'Add entry':'Edit entry')+'</div>'
+      +'<div style="font-size:11px;color:#6c7086;margin-bottom:4px;">Key</div>'
+      +'<input id="__ls_ekey__" value="'+escH(key||'')+'" '+(isNew?'':'readonly')+' style="width:100%;background:#313244;border:1px solid #45475a;border-radius:5px;color:'+(isNew?'#cdd6f4':'#89b4fa')+';font-size:12px;padding:6px 8px;outline:none;box-sizing:border-box;margin-bottom:10px;">'
+      +'<div style="font-size:11px;color:#6c7086;margin-bottom:4px;">Value</div>'
+      +'<textarea id="__ls_eval__" style="width:100%;height:100px;background:#313244;border:1px solid #45475a;border-radius:5px;color:#cdd6f4;font-size:12px;padding:6px 8px;outline:none;resize:vertical;box-sizing:border-box;font-family:monospace;">'+escH(val||'')+'</textarea>'
+      +'<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px;">'
+        +'<button id="__ls_ecancel__" style="background:#313244;color:#cdd6f4;border:none;border-radius:6px;padding:7px 14px;font-size:12px;cursor:pointer;">Cancel</button>'
+        +'<button id="__ls_esave__" style="background:#cba6f7;color:#1e1e2e;border:none;border-radius:6px;padding:7px 14px;font-size:12px;font-weight:600;cursor:pointer;">Save</button>'
+      +'</div>';
+    overlay.appendChild(box);document.body.appendChild(overlay);
+    document.getElementById('__ls_ecancel__').onclick=function(){overlay.remove();};
+    document.getElementById('__ls_esave__').onclick=function(){
+      var k=document.getElementById('__ls_ekey__').value.trim();
+      var v=document.getElementById('__ls_eval__').value;
+      if(!k){alert('Key cannot be empty');return;}
+      localStorage.setItem(k,v);overlay.remove();render();
+    };
+  }
+  document.body.appendChild(panel);render();
 })()`},
     ]},
   ]},
