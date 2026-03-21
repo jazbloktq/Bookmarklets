@@ -1,0 +1,248 @@
+(() => {
+  // Remove existing if already open
+  const existing = document.getElementById('chem-revision-popup');
+  if (existing) { existing.remove(); return; }
+
+  const topics = [
+    {
+      name: 'Element',
+      tag: 'Pure substance',
+      tagColor: '#0F6E56', tagBg: '#E1F5EE',
+      svg: `
+        <circle cx="30" cy="40" r="14" fill="#9FE1CB" stroke="#0F6E56" stroke-width="0.5"/>
+        <text x="30" y="44" text-anchor="middle" font-size="11" font-weight="500" fill="#085041">Au</text>
+        <circle cx="70" cy="40" r="14" fill="#9FE1CB" stroke="#0F6E56" stroke-width="0.5"/>
+        <text x="70" y="44" text-anchor="middle" font-size="11" font-weight="500" fill="#085041">Au</text>
+        <circle cx="50" cy="14" r="14" fill="#9FE1CB" stroke="#0F6E56" stroke-width="0.5"/>
+        <text x="50" y="18" text-anchor="middle" font-size="11" font-weight="500" fill="#085041">Au</text>
+        <circle cx="50" cy="66" r="14" fill="#9FE1CB" stroke="#0F6E56" stroke-width="0.5"/>
+        <text x="50" y="70" text-anchor="middle" font-size="11" font-weight="500" fill="#085041">Au</text>`,
+      points: [
+        'Made of only one type of atom',
+        'Cannot be broken down by chemical means',
+        'Listed on the periodic table',
+        'e.g. gold (Au), oxygen (O), carbon (C)'
+      ]
+    },
+    {
+      name: 'Compound',
+      tag: 'Pure substance',
+      tagColor: '#185FA5', tagBg: '#E6F1FB',
+      svg: `
+        <line x1="30" y1="40" x2="55" y2="40" stroke="#888" stroke-width="1.5"/>
+        <line x1="55" y1="40" x2="80" y2="40" stroke="#888" stroke-width="1.5"/>
+        <circle cx="30" cy="40" r="14" fill="#B5D4F4" stroke="#185FA5" stroke-width="0.5"/>
+        <text x="30" y="44" text-anchor="middle" font-size="10" font-weight="500" fill="#0C447C">H</text>
+        <circle cx="55" cy="40" r="14" fill="#F7C1C1" stroke="#A32D2D" stroke-width="0.5"/>
+        <text x="55" y="44" text-anchor="middle" font-size="10" font-weight="500" fill="#791F1F">O</text>
+        <circle cx="80" cy="40" r="14" fill="#B5D4F4" stroke="#185FA5" stroke-width="0.5"/>
+        <text x="80" y="44" text-anchor="middle" font-size="10" font-weight="500" fill="#0C447C">H</text>
+        <text x="55" y="74" text-anchor="middle" font-size="10" fill="#5F5E5A">H₂O</text>`,
+      points: [
+        'Two or more different elements bonded together',
+        'Fixed ratio of atoms (e.g. always H₂O)',
+        'Properties differ from component elements',
+        'Separated only by chemical reactions'
+      ]
+    },
+    {
+      name: 'Mixture',
+      tag: 'Mixture',
+      tagColor: '#854F0B', tagBg: '#FAEEDA',
+      svg: `
+        <circle cx="22" cy="25" r="11" fill="#9FE1CB" stroke="#0F6E56" stroke-width="0.5"/>
+        <text x="22" y="29" text-anchor="middle" font-size="9" font-weight="500" fill="#085041">Fe</text>
+        <circle cx="55" cy="18" r="11" fill="#B5D4F4" stroke="#185FA5" stroke-width="0.5"/>
+        <text x="55" y="22" text-anchor="middle" font-size="9" font-weight="500" fill="#0C447C">S</text>
+        <circle cx="88" cy="30" r="11" fill="#9FE1CB" stroke="#0F6E56" stroke-width="0.5"/>
+        <text x="88" y="34" text-anchor="middle" font-size="9" font-weight="500" fill="#085041">Fe</text>
+        <circle cx="35" cy="56" r="11" fill="#B5D4F4" stroke="#185FA5" stroke-width="0.5"/>
+        <text x="35" y="60" text-anchor="middle" font-size="9" font-weight="500" fill="#0C447C">S</text>
+        <circle cx="72" cy="58" r="11" fill="#9FE1CB" stroke="#0F6E56" stroke-width="0.5"/>
+        <text x="72" y="62" text-anchor="middle" font-size="9" font-weight="500" fill="#085041">Fe</text>`,
+      points: [
+        'Two or more substances physically combined',
+        'No fixed ratio — variable composition',
+        'Components keep their own properties',
+        'Separated by physical means (e.g. filtration)'
+      ]
+    },
+    {
+      name: 'Molecular compound',
+      tag: 'Molecular',
+      tagColor: '#3C3489', tagBg: '#EEEDFE',
+      svg: `
+        <line x1="30" y1="30" x2="55" y2="50" stroke="#7F77DD" stroke-width="1.5"/>
+        <line x1="80" y1="30" x2="55" y2="50" stroke="#7F77DD" stroke-width="1.5"/>
+        <circle cx="30" cy="30" r="12" fill="#CECBF6" stroke="#534AB7" stroke-width="0.5"/>
+        <text x="30" y="34" text-anchor="middle" font-size="9" font-weight="500" fill="#26215C">Cl</text>
+        <circle cx="80" cy="30" r="12" fill="#CECBF6" stroke="#534AB7" stroke-width="0.5"/>
+        <text x="80" y="34" text-anchor="middle" font-size="9" font-weight="500" fill="#26215C">Cl</text>
+        <circle cx="55" cy="50" r="14" fill="#AFA9EC" stroke="#534AB7" stroke-width="0.5"/>
+        <text x="55" y="54" text-anchor="middle" font-size="9" font-weight="500" fill="#26215C">C</text>
+        <text x="55" y="76" text-anchor="middle" font-size="9" fill="#5F5E5A">covalent bonds</text>`,
+      points: [
+        'Non-metals bonded by covalent (shared) bonds',
+        'Exists as discrete molecules',
+        'Often has low melting/boiling points',
+        'e.g. water (H₂O), carbon dioxide (CO₂)'
+      ]
+    },
+    {
+      name: 'Molecular element',
+      tag: 'Molecular',
+      tagColor: '#993C1D', tagBg: '#FAECE7',
+      svg: `
+        <line x1="26" y1="40" x2="52" y2="40" stroke="#D85A30" stroke-width="2"/>
+        <line x1="26" y1="36" x2="52" y2="36" stroke="#D85A30" stroke-width="2"/>
+        <circle cx="20" cy="40" r="14" fill="#F5C4B3" stroke="#993C1D" stroke-width="0.5"/>
+        <text x="20" y="44" text-anchor="middle" font-size="10" font-weight="500" fill="#4A1B0C">O</text>
+        <circle cx="58" cy="40" r="14" fill="#F5C4B3" stroke="#993C1D" stroke-width="0.5"/>
+        <text x="58" y="44" text-anchor="middle" font-size="10" font-weight="500" fill="#4A1B0C">O</text>
+        <text x="55" y="74" text-anchor="middle" font-size="10" fill="#5F5E5A">O₂ (diatomic)</text>`,
+      points: [
+        'Element that naturally exists as bonded molecules',
+        'Same atom bonded to itself (e.g. O₂, N₂, Cl₂)',
+        'Some form larger molecules (e.g. S₈, P₄)',
+        'More stable than individual atoms alone'
+      ]
+    },
+    {
+      name: 'Polymer',
+      tag: 'Molecular',
+      tagColor: '#3B6D11', tagBg: '#EAF3DE',
+      svg: `
+        <polyline points="8,55 22,35 36,55 50,35 64,55 78,35 92,55" fill="none" stroke="#639922" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        <circle cx="8"  cy="55" r="8" fill="#C0DD97" stroke="#3B6D11" stroke-width="0.5"/>
+        <circle cx="22" cy="35" r="8" fill="#C0DD97" stroke="#3B6D11" stroke-width="0.5"/>
+        <circle cx="36" cy="55" r="8" fill="#C0DD97" stroke="#3B6D11" stroke-width="0.5"/>
+        <circle cx="50" cy="35" r="8" fill="#C0DD97" stroke="#3B6D11" stroke-width="0.5"/>
+        <circle cx="64" cy="55" r="8" fill="#C0DD97" stroke="#3B6D11" stroke-width="0.5"/>
+        <circle cx="78" cy="35" r="8" fill="#C0DD97" stroke="#3B6D11" stroke-width="0.5"/>
+        <circle cx="92" cy="55" r="8" fill="#C0DD97" stroke="#3B6D11" stroke-width="0.5"/>
+        <text x="8"  y="58"  text-anchor="middle" font-size="7" font-weight="500" fill="#173404">C</text>
+        <text x="22" y="38"  text-anchor="middle" font-size="7" font-weight="500" fill="#173404">C</text>
+        <text x="36" y="58"  text-anchor="middle" font-size="7" font-weight="500" fill="#173404">C</text>
+        <text x="50" y="38"  text-anchor="middle" font-size="7" font-weight="500" fill="#173404">C</text>
+        <text x="64" y="58"  text-anchor="middle" font-size="7" font-weight="500" fill="#173404">C</text>
+        <text x="78" y="38"  text-anchor="middle" font-size="7" font-weight="500" fill="#173404">C</text>
+        <text x="92" y="58"  text-anchor="middle" font-size="7" font-weight="500" fill="#173404">C</text>
+        <text x="2"  y="48"  font-size="12" fill="#639922">·</text>
+        <text x="96" y="48"  font-size="12" fill="#639922">·</text>
+        <text x="100" y="74" text-anchor="middle" font-size="9" fill="#5F5E5A">–CH₂– repeating units</text>`,
+      points: [
+        'Very large molecule made of repeating units (monomers)',
+        'Chain can be hundreds to millions of units long',
+        'Natural (e.g. proteins, starch) or synthetic (plastics)',
+        'Properties depend on chain length and structure'
+      ]
+    }
+  ];
+
+  // ── Build popup ──────────────────────────────────────────────────────────
+  const popup = document.createElement('div');
+  popup.id = 'chem-revision-popup';
+
+  const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+  const bg     = isDark ? '#1a1a18' : '#ffffff';
+  const bgCard = isDark ? '#242422' : '#f7f6f2';
+  const border = isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)';
+  const textPrimary   = isDark ? '#e8e6dc' : '#1a1a18';
+  const textSecondary = isDark ? '#9c9a92' : '#5f5e5a';
+
+  popup.style.cssText = `
+    position:fixed; top:50%; left:50%; transform:translate(-50%,-50%);
+    width:min(820px,95vw); max-height:90vh;
+    background:${bg}; border:1px solid ${border}; border-radius:16px;
+    box-shadow:0 24px 60px rgba(0,0,0,0.35);
+    font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+    z-index:2147483647; overflow:hidden; display:flex; flex-direction:column;
+  `;
+
+  // Header
+  const header = document.createElement('div');
+  header.style.cssText = `
+    display:flex; align-items:center; justify-content:space-between;
+    padding:16px 20px 14px; border-bottom:1px solid ${border}; flex-shrink:0;
+  `;
+  header.innerHTML = `
+    <div>
+      <div style="font-size:11px;font-weight:500;letter-spacing:.08em;text-transform:uppercase;color:${textSecondary};margin-bottom:2px">Chemistry revision</div>
+      <div style="font-size:18px;font-weight:500;color:${textPrimary}">Types of matter</div>
+    </div>
+    <button id="chem-close-btn" style="
+      background:none;border:1px solid ${border};color:${textSecondary};
+      cursor:pointer;font-size:18px;line-height:1;border-radius:8px;
+      padding:4px 10px;transition:background .15s;
+    ">✕</button>
+  `;
+  popup.appendChild(header);
+
+  // Grid
+  const grid = document.createElement('div');
+  grid.style.cssText = `
+    display:grid; grid-template-columns:repeat(3,1fr); gap:12px;
+    padding:16px; overflow-y:auto; flex:1;
+  `;
+
+  topics.forEach(t => {
+    const card = document.createElement('div');
+    card.style.cssText = `
+      background:${bgCard}; border:1px solid ${border}; border-radius:12px;
+      padding:14px 12px 12px; transition:transform .15s,box-shadow .15s;
+    `;
+    card.onmouseenter = () => { card.style.transform='translateY(-2px)'; card.style.boxShadow='0 6px 20px rgba(0,0,0,.15)'; };
+    card.onmouseleave = () => { card.style.transform=''; card.style.boxShadow=''; };
+
+    card.innerHTML = `
+      <span style="
+        display:inline-block;font-size:9px;font-weight:600;letter-spacing:.05em;
+        text-transform:uppercase;padding:2px 8px;border-radius:20px;margin-bottom:8px;
+        background:${t.tagBg};color:${t.tagColor};
+      ">${t.tag}</span>
+      <div style="font-size:13px;font-weight:500;color:${textPrimary};margin-bottom:8px">${t.name}</div>
+      <svg viewBox="0 0 110 80" width="100%" style="display:block;margin-bottom:10px;max-height:80px">
+        ${t.svg}
+      </svg>
+      <ul style="font-size:11px;color:${textSecondary};line-height:1.65;padding-left:14px;margin:0">
+        ${t.points.map(p => `<li style="margin-bottom:2px">${p}</li>`).join('')}
+      </ul>
+    `;
+    grid.appendChild(card);
+  });
+
+  popup.appendChild(grid);
+
+  // Footer hint
+  const footer = document.createElement('div');
+  footer.style.cssText = `
+    padding:10px 20px;border-top:1px solid ${border};font-size:11px;
+    color:${textSecondary};text-align:center;flex-shrink:0;
+  `;
+  footer.textContent = 'Run the script again to close • drag to move';
+  popup.appendChild(footer);
+
+  // ── Drag to move ────────────────────────────────────────────────────────
+  let dragging=false, ox=0, oy=0, px=0, py=0;
+  header.style.cursor = 'grab';
+  header.addEventListener('mousedown', e => {
+    if (e.target.id === 'chem-close-btn') return;
+    dragging = true;
+    const r = popup.getBoundingClientRect();
+    ox = e.clientX - r.left; oy = e.clientY - r.top;
+    popup.style.transform = 'none';
+    px = r.left; py = r.top;
+    popup.style.left = px+'px'; popup.style.top = py+'px';
+    header.style.cursor = 'grabbing';
+  });
+  document.addEventListener('mousemove', e => {
+    if (!dragging) return;
+    px = e.clientX - ox; py = e.clientY - oy;
+    popup.style.left = px+'px'; popup.style.top = py+'px';
+  });
+  document.addEventListener('mouseup', () => { dragging=false; header.style.cursor='grab'; });
+
+  // ── Close ────────────────────────────────────────────────────────────────
+  document.body.appendChild(popup);
+  document.getElementById('chem-close-btn').addEventListener('click', () => popup.remove());
+})();
