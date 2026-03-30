@@ -326,6 +326,208 @@ var TREE=[
   ecG('ec-clear').onclick=ecReset;
   panel.querySelectorAll('input').forEach(function(inp){inp.addEventListener('keydown',function(e){if(e.key==='Enter')ecCalc();});});
 })()`},
+      {name:"Periodic Table",type:"inline",src:`(function(){
+  var id='__ptable__';if(document.getElementById(id)){document.getElementById(id).remove();return;}
+  var EL=[
+    {z:1,sym:"H",name:"Hydrogen",mass:"1.008",period:1,group:1,cat:"nonmetal",r:1,c:1},
+    {z:2,sym:"He",name:"Helium",mass:"4.003",period:1,group:18,cat:"noble",r:1,c:18},
+    {z:3,sym:"Li",name:"Lithium",mass:"6.941",period:2,group:1,cat:"alkali",r:2,c:1},
+    {z:4,sym:"Be",name:"Beryllium",mass:"9.012",period:2,group:2,cat:"alkaline",r:2,c:2},
+    {z:5,sym:"B",name:"Boron",mass:"10.81",period:2,group:13,cat:"metalloid",r:2,c:13},
+    {z:6,sym:"C",name:"Carbon",mass:"12.01",period:2,group:14,cat:"nonmetal",r:2,c:14},
+    {z:7,sym:"N",name:"Nitrogen",mass:"14.01",period:2,group:15,cat:"nonmetal",r:2,c:15},
+    {z:8,sym:"O",name:"Oxygen",mass:"16.00",period:2,group:16,cat:"nonmetal",r:2,c:16},
+    {z:9,sym:"F",name:"Fluorine",mass:"19.00",period:2,group:17,cat:"halogen",r:2,c:17},
+    {z:10,sym:"Ne",name:"Neon",mass:"20.18",period:2,group:18,cat:"noble",r:2,c:18},
+    {z:11,sym:"Na",name:"Sodium",mass:"22.99",period:3,group:1,cat:"alkali",r:3,c:1},
+    {z:12,sym:"Mg",name:"Magnesium",mass:"24.31",period:3,group:2,cat:"alkaline",r:3,c:2},
+    {z:13,sym:"Al",name:"Aluminium",mass:"26.98",period:3,group:13,cat:"post",r:3,c:13},
+    {z:14,sym:"Si",name:"Silicon",mass:"28.09",period:3,group:14,cat:"metalloid",r:3,c:14},
+    {z:15,sym:"P",name:"Phosphorus",mass:"30.97",period:3,group:15,cat:"nonmetal",r:3,c:15},
+    {z:16,sym:"S",name:"Sulfur",mass:"32.07",period:3,group:16,cat:"nonmetal",r:3,c:16},
+    {z:17,sym:"Cl",name:"Chlorine",mass:"35.45",period:3,group:17,cat:"halogen",r:3,c:17},
+    {z:18,sym:"Ar",name:"Argon",mass:"39.95",period:3,group:18,cat:"noble",r:3,c:18},
+    {z:19,sym:"K",name:"Potassium",mass:"39.10",period:4,group:1,cat:"alkali",r:4,c:1},
+    {z:20,sym:"Ca",name:"Calcium",mass:"40.08",period:4,group:2,cat:"alkaline",r:4,c:2},
+    {z:21,sym:"Sc",name:"Scandium",mass:"44.96",period:4,group:3,cat:"transition",r:4,c:3},
+    {z:22,sym:"Ti",name:"Titanium",mass:"47.87",period:4,group:4,cat:"transition",r:4,c:4},
+    {z:23,sym:"V",name:"Vanadium",mass:"50.94",period:4,group:5,cat:"transition",r:4,c:5},
+    {z:24,sym:"Cr",name:"Chromium",mass:"52.00",period:4,group:6,cat:"transition",r:4,c:6},
+    {z:25,sym:"Mn",name:"Manganese",mass:"54.94",period:4,group:7,cat:"transition",r:4,c:7},
+    {z:26,sym:"Fe",name:"Iron",mass:"55.85",period:4,group:8,cat:"transition",r:4,c:8},
+    {z:27,sym:"Co",name:"Cobalt",mass:"58.93",period:4,group:9,cat:"transition",r:4,c:9},
+    {z:28,sym:"Ni",name:"Nickel",mass:"58.69",period:4,group:10,cat:"transition",r:4,c:10},
+    {z:29,sym:"Cu",name:"Copper",mass:"63.55",period:4,group:11,cat:"transition",r:4,c:11},
+    {z:30,sym:"Zn",name:"Zinc",mass:"65.38",period:4,group:12,cat:"transition",r:4,c:12},
+    {z:31,sym:"Ga",name:"Gallium",mass:"69.72",period:4,group:13,cat:"post",r:4,c:13},
+    {z:32,sym:"Ge",name:"Germanium",mass:"72.63",period:4,group:14,cat:"metalloid",r:4,c:14},
+    {z:33,sym:"As",name:"Arsenic",mass:"74.92",period:4,group:15,cat:"metalloid",r:4,c:15},
+    {z:34,sym:"Se",name:"Selenium",mass:"78.97",period:4,group:16,cat:"nonmetal",r:4,c:16},
+    {z:35,sym:"Br",name:"Bromine",mass:"79.90",period:4,group:17,cat:"halogen",r:4,c:17},
+    {z:36,sym:"Kr",name:"Krypton",mass:"83.80",period:4,group:18,cat:"noble",r:4,c:18},
+    {z:37,sym:"Rb",name:"Rubidium",mass:"85.47",period:5,group:1,cat:"alkali",r:5,c:1},
+    {z:38,sym:"Sr",name:"Strontium",mass:"87.62",period:5,group:2,cat:"alkaline",r:5,c:2},
+    {z:39,sym:"Y",name:"Yttrium",mass:"88.91",period:5,group:3,cat:"transition",r:5,c:3},
+    {z:40,sym:"Zr",name:"Zirconium",mass:"91.22",period:5,group:4,cat:"transition",r:5,c:4},
+    {z:41,sym:"Nb",name:"Niobium",mass:"92.91",period:5,group:5,cat:"transition",r:5,c:5},
+    {z:42,sym:"Mo",name:"Molybdenum",mass:"95.96",period:5,group:6,cat:"transition",r:5,c:6},
+    {z:43,sym:"Tc",name:"Technetium",mass:"(98)",period:5,group:7,cat:"transition",r:5,c:7},
+    {z:44,sym:"Ru",name:"Ruthenium",mass:"101.1",period:5,group:8,cat:"transition",r:5,c:8},
+    {z:45,sym:"Rh",name:"Rhodium",mass:"102.9",period:5,group:9,cat:"transition",r:5,c:9},
+    {z:46,sym:"Pd",name:"Palladium",mass:"106.4",period:5,group:10,cat:"transition",r:5,c:10},
+    {z:47,sym:"Ag",name:"Silver",mass:"107.9",period:5,group:11,cat:"transition",r:5,c:11},
+    {z:48,sym:"Cd",name:"Cadmium",mass:"112.4",period:5,group:12,cat:"transition",r:5,c:12},
+    {z:49,sym:"In",name:"Indium",mass:"114.8",period:5,group:13,cat:"post",r:5,c:13},
+    {z:50,sym:"Sn",name:"Tin",mass:"118.7",period:5,group:14,cat:"post",r:5,c:14},
+    {z:51,sym:"Sb",name:"Antimony",mass:"121.8",period:5,group:15,cat:"metalloid",r:5,c:15},
+    {z:52,sym:"Te",name:"Tellurium",mass:"127.6",period:5,group:16,cat:"metalloid",r:5,c:16},
+    {z:53,sym:"I",name:"Iodine",mass:"126.9",period:5,group:17,cat:"halogen",r:5,c:17},
+    {z:54,sym:"Xe",name:"Xenon",mass:"131.3",period:5,group:18,cat:"noble",r:5,c:18},
+    {z:55,sym:"Cs",name:"Caesium",mass:"132.9",period:6,group:1,cat:"alkali",r:6,c:1},
+    {z:56,sym:"Ba",name:"Barium",mass:"137.3",period:6,group:2,cat:"alkaline",r:6,c:2},
+    {z:57,sym:"La",name:"Lanthanum",mass:"138.9",period:6,group:3,cat:"lanthanide",r:9,c:3},
+    {z:58,sym:"Ce",name:"Cerium",mass:"140.1",period:6,group:null,cat:"lanthanide",r:9,c:4},
+    {z:59,sym:"Pr",name:"Praseodymium",mass:"140.9",period:6,group:null,cat:"lanthanide",r:9,c:5},
+    {z:60,sym:"Nd",name:"Neodymium",mass:"144.2",period:6,group:null,cat:"lanthanide",r:9,c:6},
+    {z:61,sym:"Pm",name:"Promethium",mass:"(145)",period:6,group:null,cat:"lanthanide",r:9,c:7},
+    {z:62,sym:"Sm",name:"Samarium",mass:"150.4",period:6,group:null,cat:"lanthanide",r:9,c:8},
+    {z:63,sym:"Eu",name:"Europium",mass:"152.0",period:6,group:null,cat:"lanthanide",r:9,c:9},
+    {z:64,sym:"Gd",name:"Gadolinium",mass:"157.3",period:6,group:null,cat:"lanthanide",r:9,c:10},
+    {z:65,sym:"Tb",name:"Terbium",mass:"158.9",period:6,group:null,cat:"lanthanide",r:9,c:11},
+    {z:66,sym:"Dy",name:"Dysprosium",mass:"162.5",period:6,group:null,cat:"lanthanide",r:9,c:12},
+    {z:67,sym:"Ho",name:"Holmium",mass:"164.9",period:6,group:null,cat:"lanthanide",r:9,c:13},
+    {z:68,sym:"Er",name:"Erbium",mass:"167.3",period:6,group:null,cat:"lanthanide",r:9,c:14},
+    {z:69,sym:"Tm",name:"Thulium",mass:"168.9",period:6,group:null,cat:"lanthanide",r:9,c:15},
+    {z:70,sym:"Yb",name:"Ytterbium",mass:"173.0",period:6,group:null,cat:"lanthanide",r:9,c:16},
+    {z:71,sym:"Lu",name:"Lutetium",mass:"175.0",period:6,group:3,cat:"lanthanide",r:9,c:17},
+    {z:72,sym:"Hf",name:"Hafnium",mass:"178.5",period:6,group:4,cat:"transition",r:6,c:4},
+    {z:73,sym:"Ta",name:"Tantalum",mass:"180.9",period:6,group:5,cat:"transition",r:6,c:5},
+    {z:74,sym:"W",name:"Tungsten",mass:"183.8",period:6,group:6,cat:"transition",r:6,c:6},
+    {z:75,sym:"Re",name:"Rhenium",mass:"186.2",period:6,group:7,cat:"transition",r:6,c:7},
+    {z:76,sym:"Os",name:"Osmium",mass:"190.2",period:6,group:8,cat:"transition",r:6,c:8},
+    {z:77,sym:"Ir",name:"Iridium",mass:"192.2",period:6,group:9,cat:"transition",r:6,c:9},
+    {z:78,sym:"Pt",name:"Platinum",mass:"195.1",period:6,group:10,cat:"transition",r:6,c:10},
+    {z:79,sym:"Au",name:"Gold",mass:"197.0",period:6,group:11,cat:"transition",r:6,c:11},
+    {z:80,sym:"Hg",name:"Mercury",mass:"200.6",period:6,group:12,cat:"transition",r:6,c:12},
+    {z:81,sym:"Tl",name:"Thallium",mass:"204.4",period:6,group:13,cat:"post",r:6,c:13},
+    {z:82,sym:"Pb",name:"Lead",mass:"207.2",period:6,group:14,cat:"post",r:6,c:14},
+    {z:83,sym:"Bi",name:"Bismuth",mass:"209.0",period:6,group:15,cat:"post",r:6,c:15},
+    {z:84,sym:"Po",name:"Polonium",mass:"(209)",period:6,group:16,cat:"post",r:6,c:16},
+    {z:85,sym:"At",name:"Astatine",mass:"(210)",period:6,group:17,cat:"halogen",r:6,c:17},
+    {z:86,sym:"Rn",name:"Radon",mass:"(222)",period:6,group:18,cat:"noble",r:6,c:18},
+    {z:87,sym:"Fr",name:"Francium",mass:"(223)",period:7,group:1,cat:"alkali",r:7,c:1},
+    {z:88,sym:"Ra",name:"Radium",mass:"(226)",period:7,group:2,cat:"alkaline",r:7,c:2},
+    {z:89,sym:"Ac",name:"Actinium",mass:"(227)",period:7,group:3,cat:"actinide",r:10,c:3},
+    {z:90,sym:"Th",name:"Thorium",mass:"232.0",period:7,group:null,cat:"actinide",r:10,c:4},
+    {z:91,sym:"Pa",name:"Protactinium",mass:"231.0",period:7,group:null,cat:"actinide",r:10,c:5},
+    {z:92,sym:"U",name:"Uranium",mass:"238.0",period:7,group:null,cat:"actinide",r:10,c:6},
+    {z:93,sym:"Np",name:"Neptunium",mass:"(237)",period:7,group:null,cat:"actinide",r:10,c:7},
+    {z:94,sym:"Pu",name:"Plutonium",mass:"(244)",period:7,group:null,cat:"actinide",r:10,c:8},
+    {z:95,sym:"Am",name:"Americium",mass:"(243)",period:7,group:null,cat:"actinide",r:10,c:9},
+    {z:96,sym:"Cm",name:"Curium",mass:"(247)",period:7,group:null,cat:"actinide",r:10,c:10},
+    {z:97,sym:"Bk",name:"Berkelium",mass:"(247)",period:7,group:null,cat:"actinide",r:10,c:11},
+    {z:98,sym:"Cf",name:"Californium",mass:"(251)",period:7,group:null,cat:"actinide",r:10,c:12},
+    {z:99,sym:"Es",name:"Einsteinium",mass:"(252)",period:7,group:null,cat:"actinide",r:10,c:13},
+    {z:100,sym:"Fm",name:"Fermium",mass:"(257)",period:7,group:null,cat:"actinide",r:10,c:14},
+    {z:101,sym:"Md",name:"Mendelevium",mass:"(258)",period:7,group:null,cat:"actinide",r:10,c:15},
+    {z:102,sym:"No",name:"Nobelium",mass:"(259)",period:7,group:null,cat:"actinide",r:10,c:16},
+    {z:103,sym:"Lr",name:"Lawrencium",mass:"(266)",period:7,group:3,cat:"actinide",r:10,c:17},
+    {z:104,sym:"Rf",name:"Rutherfordium",mass:"(267)",period:7,group:4,cat:"transition",r:7,c:4},
+    {z:105,sym:"Db",name:"Dubnium",mass:"(268)",period:7,group:5,cat:"transition",r:7,c:5},
+    {z:106,sym:"Sg",name:"Seaborgium",mass:"(271)",period:7,group:6,cat:"transition",r:7,c:6},
+    {z:107,sym:"Bh",name:"Bohrium",mass:"(272)",period:7,group:7,cat:"transition",r:7,c:7},
+    {z:108,sym:"Hs",name:"Hassium",mass:"(270)",period:7,group:8,cat:"transition",r:7,c:8},
+    {z:109,sym:"Mt",name:"Meitnerium",mass:"(278)",period:7,group:9,cat:"unknown",r:7,c:9},
+    {z:110,sym:"Ds",name:"Darmstadtium",mass:"(281)",period:7,group:10,cat:"unknown",r:7,c:10},
+    {z:111,sym:"Rg",name:"Roentgenium",mass:"(282)",period:7,group:11,cat:"unknown",r:7,c:11},
+    {z:112,sym:"Cn",name:"Copernicium",mass:"(285)",period:7,group:12,cat:"transition",r:7,c:12},
+    {z:113,sym:"Nh",name:"Nihonium",mass:"(286)",period:7,group:13,cat:"unknown",r:7,c:13},
+    {z:114,sym:"Fl",name:"Flerovium",mass:"(289)",period:7,group:14,cat:"unknown",r:7,c:14},
+    {z:115,sym:"Mc",name:"Moscovium",mass:"(290)",period:7,group:15,cat:"unknown",r:7,c:15},
+    {z:116,sym:"Lv",name:"Livermorium",mass:"(293)",period:7,group:16,cat:"unknown",r:7,c:16},
+    {z:117,sym:"Ts",name:"Tennessine",mass:"(294)",period:7,group:17,cat:"unknown",r:7,c:17},
+    {z:118,sym:"Og",name:"Oganesson",mass:"(294)",period:7,group:18,cat:"noble",r:7,c:18}
+  ];
+  var CATS={
+    alkali:{label:"Alkali metal",bg:"#f38ba8",fg:"#1e1e2e"},
+    alkaline:{label:"Alkaline earth",bg:"#fab387",fg:"#1e1e2e"},
+    transition:{label:"Transition metal",bg:"#89b4fa",fg:"#1e1e2e"},
+    post:{label:"Post-transition",bg:"#89dceb",fg:"#1e1e2e"},
+    metalloid:{label:"Metalloid",bg:"#a6e3a1",fg:"#1e1e2e"},
+    nonmetal:{label:"Nonmetal",bg:"#cba6f7",fg:"#1e1e2e"},
+    halogen:{label:"Halogen",bg:"#f5c2e7",fg:"#1e1e2e"},
+    noble:{label:"Noble gas",bg:"#94e2d5",fg:"#1e1e2e"},
+    lanthanide:{label:"Lanthanide",bg:"#f9e2af",fg:"#1e1e2e"},
+    actinide:{label:"Actinide",bg:"#eba0ac",fg:"#1e1e2e"},
+    unknown:{label:"Unknown",bg:"#585b70",fg:"#cdd6f4"}
+  };
+  var st=document.createElement('style');st.id='__ptst__';
+  st.textContent='#__ptable__{position:fixed;top:0;left:0;width:100vw;height:100vh;background:#11111b;z-index:2147483647;display:flex;flex-direction:column;font-family:system-ui,sans-serif;overflow:hidden;}'
+  +'#__pt_hd__{display:flex;align-items:center;justify-content:space-between;padding:10px 16px;border-bottom:1px solid #313244;flex-shrink:0;}'
+  +'#__pt_hd__ h2{font-size:14px;font-weight:600;color:#cba6f7;margin:0;}'
+  +'#__pt_close__{background:none;border:none;color:#6c7086;font-size:22px;cursor:pointer;line-height:1;padding:0;}'
+  +'#__pt_close__:hover{color:#f38ba8;}'
+  +'#__pt_legend__{display:flex;flex-wrap:wrap;gap:5px;align-items:center;}'
+  +'.pt-leg{display:flex;align-items:center;gap:4px;font-size:10px;color:#a6adc8;}'
+  +'.pt-leg-dot{width:10px;height:10px;border-radius:2px;flex-shrink:0;}'
+  +'#__pt_body__{flex:1;display:flex;gap:0;overflow:hidden;}'
+  +'#__pt_grid__{flex:1;overflow:auto;padding:10px 12px;display:grid;grid-template-columns:repeat(18,1fr);grid-template-rows:repeat(10,1fr);gap:3px;min-width:0;}'
+  +'.pt-cell{border-radius:5px;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;padding:2px;transition:transform .1s,box-shadow .1s;min-width:0;aspect-ratio:1;}'
+  +'.pt-cell:hover{transform:scale(1.15);box-shadow:0 4px 16px rgba(0,0,0,.5);z-index:2;position:relative;}'
+  +'.pt-z{font-size:7px;line-height:1;opacity:.7;align-self:flex-start;padding-left:2px;}'
+  +'.pt-sym{font-size:13px;font-weight:700;line-height:1;}'
+  +'.pt-nm{font-size:5.5px;line-height:1;opacity:.75;text-align:center;overflow:hidden;white-space:nowrap;max-width:100%;}'
+  +'#__pt_info__{width:220px;flex-shrink:0;background:#1e1e2e;border-left:1px solid #313244;padding:16px;overflow-y:auto;}'
+  +'#__pt_info__ .pi-sym{width:72px;height:72px;border-radius:10px;display:flex;flex-direction:column;align-items:center;justify-content:center;margin-bottom:12px;}'
+  +'#__pt_info__ .pi-sym-txt{font-size:28px;font-weight:700;line-height:1;}'
+  +'#__pt_info__ .pi-z{font-size:11px;opacity:.7;margin-top:3px;}'
+  +'#__pt_info__ .pi-name{font-size:18px;font-weight:600;color:#cdd6f4;margin-bottom:3px;}'
+  +'#__pt_info__ .pi-cat{font-size:11px;color:#6c7086;margin-bottom:12px;}'
+  +'#__pt_info__ .pi-row{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid rgba(255,255,255,.05);font-size:12px;}'
+  +'#__pt_info__ .pi-lbl{color:#6c7086;}'
+  +'#__pt_info__ .pi-val{font-weight:600;color:#cdd6f4;}'
+  +'#__pt_info__ .pi-placeholder{color:#45475a;font-size:12px;margin-top:20px;text-align:center;line-height:1.6;}';
+  document.head.appendChild(st);
+  var wrap=document.createElement('div');wrap.id=id;
+  var hd=document.createElement('div');hd.id='__pt_hd__';
+  var title=document.createElement('h2');title.textContent='⚗ Periodic Table';
+  var legend=document.createElement('div');legend.id='__pt_legend__';
+  Object.keys(CATS).forEach(function(k){
+    var c=CATS[k];
+    legend.innerHTML+='<div class="pt-leg"><div class="pt-leg-dot" style="background:'+c.bg+'"></div>'+c.label+'</div>';
+  });
+  var closeBtn=document.createElement('button');closeBtn.id='__pt_close__';closeBtn.textContent='×';
+  closeBtn.onclick=function(){wrap.remove();st.remove();};
+  hd.appendChild(title);hd.appendChild(legend);hd.appendChild(closeBtn);
+  var body=document.createElement('div');body.id='__pt_body__';
+  var grid=document.createElement('div');grid.id='__pt_grid__';
+  var info=document.createElement('div');info.id='__pt_info__';
+  info.innerHTML='<div class="pi-placeholder">Click any element<br>to see its details</div>';
+  EL.forEach(function(el){
+    var c=CATS[el.cat]||CATS.unknown;
+    var cell=document.createElement('div');
+    cell.className='pt-cell';
+    cell.style.cssText='background:'+c.bg+';color:'+c.fg+';grid-row:'+el.r+';grid-column:'+el.c+';';
+    cell.innerHTML='<span class="pt-z">'+el.z+'</span><span class="pt-sym">'+el.sym+'</span><span class="pt-nm">'+el.name+'</span>';
+    cell.title=el.name;
+    cell.onclick=function(){
+      var c2=CATS[el.cat]||CATS.unknown;
+      info.innerHTML='<div class="pi-sym" style="background:'+c2.bg+';color:'+c2.fg+'"><div class="pi-sym-txt">'+el.sym+'</div><div class="pi-z">Z = '+el.z+'</div></div>'
+        +'<div class="pi-name">'+el.name+'</div>'
+        +'<div class="pi-cat">'+c2.label+'</div>'
+        +'<div class="pi-row"><span class="pi-lbl">Atomic number</span><span class="pi-val">'+el.z+'</span></div>'
+        +'<div class="pi-row"><span class="pi-lbl">Symbol</span><span class="pi-val">'+el.sym+'</span></div>'
+        +'<div class="pi-row"><span class="pi-lbl">Atomic mass</span><span class="pi-val">'+el.mass+'</span></div>'
+        +'<div class="pi-row"><span class="pi-lbl">Period</span><span class="pi-val">'+el.period+'</span></div>'
+        +'<div class="pi-row"><span class="pi-lbl">Group</span><span class="pi-val">'+(el.group||'—')+'</span></div>'
+        +'<div class="pi-row" style="border:none"><span class="pi-lbl">Category</span><span class="pi-val">'+c2.label+'</span></div>';
+    };
+    grid.appendChild(cell);
+  });
+  body.appendChild(grid);body.appendChild(info);
+  wrap.appendChild(hd);wrap.appendChild(body);
+  document.body.appendChild(wrap);
+})()`},
       {folder:"Revision",children:[
         {name:"Chemistry",type:"github",src:"https://raw.githubusercontent.com/jazbloktq/Bookmarklets/refs/heads/main/Revision/Science/Chemistry"},
       ]},
@@ -569,7 +771,240 @@ var TREE=[
     {name:"Tron Light Cycles",type:"sandbox",idx:64},
     {name:"Turbo Racer",type:"sandbox",idx:65},
     {name:"Dots & Boxes",type:"sandbox",idx:66},
-    {name:"Ludo",type:"sandbox",idx:67}
+    {name:"Ludo",type:"sandbox",idx:67},
+    {name:"Geography Quiz",type:"inline",src:`(function(){
+  if(document.getElementById('__geoqz__')){document.getElementById('__geoqz__').remove();try{window._cqMap&&window._cqMap.remove();}catch(e){}return;}
+  function loadScript(src,cb){var s=document.createElement('script');s.src=src;s.onload=cb;document.head.appendChild(s);}
+  function loadCSS(href){var l=document.createElement('link');l.rel='stylesheet';l.href=href;document.head.appendChild(l);}
+  loadCSS('https://unpkg.com/leaflet@1.9.4/dist/leaflet.css');
+  loadScript('https://unpkg.com/leaflet@1.9.4/dist/leaflet.js',function(){
+    var countries=[
+      {name:"France",lat:46.2,lng:2.2,zoom:5},{name:"Brazil",lat:-14.2,lng:-51.9,zoom:4},
+      {name:"Japan",lat:36.2,lng:138.3,zoom:5},{name:"Australia",lat:-25.3,lng:133.8,zoom:4},
+      {name:"Egypt",lat:26.8,lng:30.8,zoom:5},{name:"Canada",lat:56.1,lng:-96.3,zoom:3},
+      {name:"India",lat:20.6,lng:78.9,zoom:4},{name:"China",lat:35.8,lng:104.2,zoom:4},
+      {name:"Argentina",lat:-38.4,lng:-63.6,zoom:4},{name:"Nigeria",lat:9.1,lng:8.7,zoom:5},
+      {name:"Germany",lat:51.2,lng:10.4,zoom:5},{name:"Mexico",lat:23.6,lng:-102.6,zoom:4},
+      {name:"Russia",lat:61.5,lng:90.0,zoom:3},{name:"South Africa",lat:-28.5,lng:24.7,zoom:5},
+      {name:"Indonesia",lat:-2.5,lng:118.0,zoom:4},{name:"USA",lat:37.1,lng:-95.7,zoom:4},
+      {name:"Italy",lat:41.9,lng:12.6,zoom:5},{name:"Spain",lat:40.5,lng:-3.7,zoom:5},
+      {name:"Colombia",lat:4.6,lng:-74.3,zoom:5},{name:"Kenya",lat:0.0,lng:37.9,zoom:5},
+      {name:"Turkey",lat:38.9,lng:35.2,zoom:5},{name:"Thailand",lat:15.9,lng:100.9,zoom:5},
+      {name:"Poland",lat:51.9,lng:19.1,zoom:5},{name:"Ukraine",lat:48.4,lng:31.2,zoom:5},
+      {name:"Peru",lat:-9.2,lng:-75.0,zoom:4},{name:"Sweden",lat:60.1,lng:18.6,zoom:4},
+      {name:"Vietnam",lat:14.1,lng:108.3,zoom:5},{name:"Morocco",lat:31.8,lng:-7.1,zoom:5},
+      {name:"Saudi Arabia",lat:23.9,lng:45.1,zoom:5},{name:"New Zealand",lat:-40.9,lng:174.9,zoom:5}
+    ];
+    var hints={
+      "France":"Western Europe, Eiffel Tower, wine","Brazil":"Largest in South America, Amazon rainforest",
+      "Japan":"Island nation, Land of the Rising Sun","Australia":"Continent-country, kangaroos and coral reef",
+      "Egypt":"Pyramids, Nile River, northeast Africa","Canada":"Second largest by area, north of the USA",
+      "India":"South Asia, second most populous","China":"East Asia, most populous country",
+      "Argentina":"Southern cone of South America, tango","Nigeria":"Most populous country in Africa",
+      "Germany":"Central Europe, cars and Oktoberfest","Mexico":"South of the USA, tacos and pyramids",
+      "Russia":"Largest by area, spans Europe and Asia","South Africa":"Rainbow Nation, tip of Africa",
+      "Indonesia":"World's largest archipelago","USA":"North America, 50 states",
+      "Italy":"Boot-shaped, pasta and pizza","Spain":"Iberian Peninsula, flamenco",
+      "Colombia":"Northwest South America, coffee","Kenya":"East Africa, safari and Maasai Mara",
+      "Turkey":"Straddles Europe and Asia, Istanbul","Thailand":"Southeast Asia, temples and beaches",
+      "Poland":"Central Europe, bordered by Germany and Ukraine","Ukraine":"Eastern Europe, sunflowers and wheat",
+      "Peru":"Western South America, Machu Picchu","Sweden":"Northern Europe, Scandinavia",
+      "Vietnam":"Southeast Asia, long coastal country","Morocco":"Northwest Africa, Sahara desert edge",
+      "Saudi Arabia":"Arabian Peninsula, oil and Mecca","New Zealand":"Pacific islands, Lord of the Rings"
+    };
+    var score=0,total=0,used=[],current=null;
+    var ov=document.createElement('div');ov.id='__geoqz__';
+    Object.assign(ov.style,{position:'fixed',top:0,left:0,width:'100%',height:'100%',background:'rgba(0,0,0,0.75)',zIndex:2147483647,display:'flex',alignItems:'center',justifyContent:'center',fontFamily:'system-ui,sans-serif'});
+    var box=document.createElement('div');
+    Object.assign(box.style,{background:'#1e1e2e',borderRadius:'16px',padding:'22px 24px',width:'480px',maxWidth:'95vw',color:'#cdd6f4',position:'relative',boxShadow:'0 12px 48px rgba(0,0,0,.6)',border:'1px solid #313244'});
+    var closeBtn=document.createElement('button');closeBtn.textContent='×';
+    Object.assign(closeBtn.style,{position:'absolute',top:'12px',right:'14px',background:'none',border:'none',fontSize:'20px',cursor:'pointer',color:'#6c7086',lineHeight:'1'});
+    closeBtn.onmouseover=function(){closeBtn.style.color='#f38ba8';};closeBtn.onmouseout=function(){closeBtn.style.color='#6c7086';};
+    closeBtn.onclick=function(){ov.remove();try{window._cqMap.remove();}catch(e){}};
+    var titleEl=document.createElement('div');titleEl.textContent='🌍 Geography Quiz';
+    Object.assign(titleEl.style,{fontSize:'16px',fontWeight:'600',marginBottom:'4px',color:'#cba6f7'});
+    var scoreEl=document.createElement('div');
+    Object.assign(scoreEl.style,{fontSize:'12px',color:'#6c7086',marginBottom:'12px'});
+    var mapDiv=document.createElement('div');mapDiv.id='gqmap'+Date.now();
+    Object.assign(mapDiv.style,{width:'100%',height:'220px',borderRadius:'10px',overflow:'hidden',marginBottom:'12px',border:'1px solid #45475a'});
+    var hintEl=document.createElement('div');
+    Object.assign(hintEl.style,{fontSize:'12px',color:'#a6adc8',background:'#313244',borderRadius:'8px',padding:'8px 12px',marginBottom:'12px',minHeight:'32px',lineHeight:'1.5'});
+    var inputRow=document.createElement('div');inputRow.style.cssText='display:flex;gap:8px;margin-bottom:10px;';
+    var inp=document.createElement('input');
+    Object.assign(inp.style,{flex:'1',padding:'9px 12px',fontSize:'14px',borderRadius:'8px',border:'1px solid #45475a',outline:'none',background:'#313244',color:'#cdd6f4'});
+    inp.placeholder='Type country name…';
+    var subBtn=document.createElement('button');subBtn.textContent='Submit';
+    Object.assign(subBtn.style,{padding:'9px 16px',background:'#cba6f7',color:'#1e1e2e',border:'none',borderRadius:'8px',fontSize:'13px',cursor:'pointer',fontWeight:'600'});
+    inputRow.append(inp,subBtn);
+    var feedback=document.createElement('div');
+    Object.assign(feedback.style,{fontSize:'13px',minHeight:'20px',marginBottom:'10px',fontWeight:'500'});
+    var btnRow=document.createElement('div');btnRow.style.cssText='display:flex;gap:8px;';
+    var hintBtn=document.createElement('button');hintBtn.textContent='Show hint';
+    Object.assign(hintBtn.style,{flex:'1',padding:'8px',background:'#313244',border:'1px solid #45475a',borderRadius:'8px',fontSize:'12px',cursor:'pointer',color:'#cdd6f4'});
+    hintBtn.onclick=function(){if(current)hintEl.textContent='Hint: '+hints[current.name];};
+    var skipBtn=document.createElement('button');skipBtn.textContent='Skip';
+    Object.assign(skipBtn.style,{flex:'1',padding:'8px',background:'#313244',border:'1px solid #45475a',borderRadius:'8px',fontSize:'12px',cursor:'pointer',color:'#cdd6f4'});
+    skipBtn.onclick=skip;
+    btnRow.append(hintBtn,skipBtn);
+    box.append(closeBtn,titleEl,scoreEl,mapDiv,hintEl,inputRow,feedback,btnRow);
+    ov.appendChild(box);document.body.appendChild(ov);
+    var map=L.map(mapDiv.id,{zoomControl:true,attributionControl:false,dragging:true,scrollWheelZoom:true});
+    window._cqMap=map;
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png',{subdomains:'abcd',maxZoom:19}).addTo(map);
+    var marker=null;
+    function updateScore(){scoreEl.textContent='Score: '+score+' / '+total+'  ('+used.length+'/'+countries.length+' done)';}
+    function next(){
+      var rem=countries.filter(function(c){return used.indexOf(c.name)<0;});
+      if(!rem.length){feedback.style.color='#a6e3a1';feedback.textContent='Game over! Final score: '+score+'/'+countries.length;inp.disabled=true;subBtn.disabled=true;return;}
+      current=rem[Math.floor(Math.random()*rem.length)];
+      hintEl.textContent='';feedback.textContent='';inp.value='';inp.disabled=false;
+      subBtn.style.background='#cba6f7';
+      if(marker)map.removeLayer(marker);
+      map.setView([current.lat,current.lng],current.zoom,{animate:true});
+      marker=L.circleMarker([current.lat,current.lng],{radius:9,fillColor:'#f38ba8',color:'#1e1e2e',weight:2,fillOpacity:1}).addTo(map);
+      updateScore();setTimeout(function(){inp.focus();},100);
+    }
+    function check(){
+      if(!current||inp.disabled)return;
+      var ans=inp.value.trim().toLowerCase();if(!ans)return;
+      total++;
+      var correct=current.name.toLowerCase();
+      if(ans===correct||(ans.length>=3&&correct.includes(ans))){score++;feedback.style.color='#a6e3a1';feedback.textContent='✓ Correct! That was '+current.name+'.';}
+      else{feedback.style.color='#f38ba8';feedback.textContent='✗ Wrong! It was '+current.name+'.';}
+      used.push(current.name);inp.disabled=true;subBtn.style.background='#585b70';
+      updateScore();setTimeout(next,1800);
+    }
+    function skip(){
+      if(!current)return;total++;feedback.style.color='#fab387';feedback.textContent='⟳ Skipped. It was '+current.name+'.';
+      used.push(current.name);inp.disabled=true;updateScore();setTimeout(next,1600);
+    }
+    subBtn.onclick=check;inp.addEventListener('keydown',function(e){if(e.key==='Enter')check();});
+    next();
+  });
+})()`},
+    {name:"Trivia Quiz",type:"inline",src:`(function(){
+  var id='__trivqz__';if(document.getElementById(id)){document.getElementById(id).remove();return;}
+  var QS=[
+    {q:"What is the capital of Australia?",a:["canberra"],hint:"Not Sydney or Melbourne"},
+    {q:"How many sides does a hexagon have?",a:["6","six"],hint:"More than five, less than seven"},
+    {q:"What is the largest planet in our solar system?",a:["jupiter"],hint:"Named after the Roman king of gods"},
+    {q:"Who wrote Romeo and Juliet?",a:["shakespeare","william shakespeare"],hint:"Famous Elizabethan playwright"},
+    {q:"What is the chemical symbol for gold?",a:["au"],hint:"From the Latin word 'aurum'"},
+    {q:"How many bones are in the adult human body?",a:["206"],hint:"Between 200 and 210"},
+    {q:"What is the smallest country in the world?",a:["vatican","vatican city"],hint:"It's inside Rome, Italy"},
+    {q:"What year did World War II end?",a:["1945"],hint:"Mid-1940s"},
+    {q:"What is the hardest natural substance on Earth?",a:["diamond"],hint:"Used in engagement rings"},
+    {q:"Which planet is closest to the Sun?",a:["mercury"],hint:"Named after the Roman messenger god"},
+    {q:"What is the longest river in the world?",a:["nile","the nile"],hint:"Flows through Egypt"},
+    {q:"How many players are on a standard football (soccer) team?",a:["11","eleven"],hint:"More than ten"},
+    {q:"What gas do plants absorb from the atmosphere?",a:["carbon dioxide","co2"],hint:"The gas humans breathe out"},
+    {q:"In which country is the Eiffel Tower located?",a:["france"],hint:"Famous for wine and baguettes"},
+    {q:"What is the square root of 144?",a:["12","twelve"],hint:"12 × 12 = ?"},
+    {q:"What ocean is the largest?",a:["pacific","pacific ocean"],hint:"It covers more than 30% of Earth"},
+    {q:"What language has the most native speakers worldwide?",a:["mandarin","chinese","mandarin chinese"],hint:"Spoken in East Asia"},
+    {q:"How many continents are there?",a:["7","seven"],hint:"Africa, Asia, Europe, Americas (2), Oceania, Antarctica"},
+    {q:"What is the powerhouse of the cell?",a:["mitochondria","the mitochondria"],hint:"Biology class classic"},
+    {q:"Which element has the atomic number 1?",a:["hydrogen"],hint:"Lightest element on the periodic table"},
+    {q:"What is the speed of light in a vacuum (km/s, rounded)?",a:["300000","299792"],hint:"Approximately 300,000 km/s"},
+    {q:"Who painted the Mona Lisa?",a:["da vinci","leonardo da vinci","leonardo"],hint:"Italian Renaissance master"},
+    {q:"What is the capital of Japan?",a:["tokyo"],hint:"The world's most populous metropolitan area"},
+    {q:"How many degrees are in a full circle?",a:["360"],hint:"Three hundred and sixty"},
+    {q:"What is the largest organ in the human body?",a:["skin"],hint:"You wear it every day"},
+    {q:"Which gas makes up most of Earth's atmosphere?",a:["nitrogen"],hint:"About 78% of the air"},
+    {q:"What is the currency of Japan?",a:["yen"],hint:"Symbol: ¥"},
+    {q:"How many teeth does an adult human have?",a:["32"],hint:"Including wisdom teeth"},
+    {q:"What is the tallest mountain in the world?",a:["everest","mount everest"],hint:"In the Himalayas"},
+    {q:"In what year did the Titanic sink?",a:["1912"],hint:"Early 20th century"}
+  ];
+  var score=0,idx=0,answered=false,order=[];
+  for(var i=0;i<QS.length;i++)order.push(i);
+  order.sort(function(){return Math.random()-.5;});
+  var st=document.createElement('style');st.id='__trivst__';
+  st.textContent='#__trivqz__{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:460px;max-width:95vw;background:#1e1e2e;border:1px solid #313244;border-radius:16px;z-index:2147483647;font-family:system-ui,sans-serif;color:#cdd6f4;box-shadow:0 12px 48px rgba(0,0,0,.7);overflow:hidden;}'
+  +'#__triv_hd__{padding:14px 18px 12px;border-bottom:1px solid #313244;display:flex;align-items:center;justify-content:space-between;}'
+  +'#__triv_hd__ h2{font-size:14px;font-weight:600;color:#cba6f7;margin:0;}'
+  +'#__triv_close__{background:none;border:none;color:#6c7086;font-size:20px;cursor:pointer;line-height:1;padding:0;}'
+  +'#__triv_close__:hover{color:#f38ba8;}'
+  +'#__triv_bd__{padding:18px;}'
+  +'#__triv_progress__{height:4px;background:#313244;border-radius:2px;margin-bottom:16px;overflow:hidden;}'
+  +'#__triv_bar__{height:100%;background:#cba6f7;border-radius:2px;transition:width .3s;}'
+  +'#__triv_qnum__{font-size:11px;color:#6c7086;margin-bottom:8px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;}'
+  +'#__triv_q__{font-size:15px;font-weight:500;color:#cdd6f4;margin-bottom:14px;line-height:1.5;min-height:44px;}'
+  +'#__triv_inp__{width:100%;padding:10px 12px;font-size:14px;background:#313244;border:1px solid #45475a;border-radius:8px;color:#cdd6f4;outline:none;box-sizing:border-box;margin-bottom:10px;}'
+  +'#__triv_inp__:focus{border-color:#cba6f7;}'
+  +'#__triv_row__{display:flex;gap:8px;margin-bottom:12px;}'
+  +'#__triv_sub__{flex:1;padding:9px;background:#cba6f7;color:#1e1e2e;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;}'
+  +'#__triv_hint__{padding:9px 14px;background:#313244;border:1px solid #45475a;border-radius:8px;font-size:13px;cursor:pointer;color:#cdd6f4;white-space:nowrap;}'
+  +'#__triv_fb__{font-size:13px;min-height:20px;margin-bottom:12px;font-weight:500;padding:8px 12px;border-radius:7px;display:none;}'
+  +'#__triv_hintbox__{font-size:12px;color:#a6adc8;background:#313244;border-radius:7px;padding:8px 12px;margin-bottom:12px;display:none;}'
+  +'#__triv_score__{font-size:12px;color:#6c7086;text-align:center;}'
+  +'#__triv_next__{width:100%;padding:10px;background:#313244;border:1px solid #45475a;border-radius:8px;font-size:13px;cursor:pointer;color:#cdd6f4;margin-top:10px;display:none;}'
+  +'#__triv_next__:hover{background:#45475a;}';
+  document.head.appendChild(st);
+  var panel=document.createElement('div');panel.id=id;
+  panel.innerHTML='<div id="__triv_hd__"><h2>🧠 Trivia Quiz</h2><button id="__triv_close__">×</button></div>'
+    +'<div id="__triv_bd__">'
+    +'<div id="__triv_progress__"><div id="__triv_bar__" style="width:0%"></div></div>'
+    +'<div id="__triv_qnum__"></div>'
+    +'<div id="__triv_q__"></div>'
+    +'<div id="__triv_hintbox__"></div>'
+    +'<input id="__triv_inp__" placeholder="Type your answer…" autocomplete="off"/>'
+    +'<div id="__triv_row__"><button id="__triv_sub__">Submit</button><button id="__triv_hint__">💡 Hint</button></div>'
+    +'<div id="__triv_fb__"></div>'
+    +'<div id="__triv_score__"></div>'
+    +'<button id="__triv_next__">Next question →</button>'
+    +'</div>';
+  document.body.appendChild(panel);
+  document.getElementById('__triv_close__').onclick=function(){panel.remove();st.remove();};
+  function tG(i){return document.getElementById(i);}
+  function showQ(){
+    if(idx>=order.length){
+      tG('__triv_q__').textContent='Quiz complete!';
+      tG('__triv_inp__').style.display='none';
+      tG('__triv_row__').style.display='none';
+      tG('__triv_fb__').style.display='none';
+      tG('__triv_next__').style.display='none';
+      tG('__triv_hintbox__').style.display='none';
+      tG('__triv_qnum__').textContent='';
+      tG('__triv_score__').textContent='Final score: '+score+' / '+order.length;
+      tG('__triv_bar__').style.width='100%';
+      return;
+    }
+    answered=false;
+    var q=QS[order[idx]];
+    tG('__triv_qnum__').textContent='Question '+(idx+1)+' of '+order.length;
+    tG('__triv_q__').textContent=q.q;
+    tG('__triv_inp__').value='';tG('__triv_inp__').disabled=false;tG('__triv_inp__').style.display='';
+    tG('__triv_row__').style.display='';
+    tG('__triv_sub__').style.background='#cba6f7';tG('__triv_sub__').disabled=false;
+    tG('__triv_fb__').style.display='none';
+    tG('__triv_hintbox__').style.display='none';
+    tG('__triv_next__').style.display='none';
+    tG('__triv_score__').textContent='Score: '+score+' / '+idx;
+    tG('__triv_bar__').style.width=(idx/order.length*100)+'%';
+    setTimeout(function(){tG('__triv_inp__').focus();},50);
+  }
+  function submit(){
+    if(answered)return;
+    var ans=tG('__triv_inp__').value.trim().toLowerCase();
+    if(!ans)return;
+    answered=true;
+    var q=QS[order[idx]];
+    var correct=q.a.some(function(a){return ans===a||(ans.length>=3&&a.includes(ans));});
+    var fb=tG('__triv_fb__');
+    if(correct){score++;fb.textContent='✓ Correct!';fb.style.background='rgba(166,227,161,.1)';fb.style.color='#a6e3a1';fb.style.border='1px solid #a6e3a1';}
+    else{fb.textContent='✗ Incorrect — the answer was: '+q.a[0];fb.style.background='rgba(243,139,168,.1)';fb.style.color='#f38ba8';fb.style.border='1px solid #f38ba8';}
+    fb.style.display='block';
+    tG('__triv_inp__').disabled=true;tG('__triv_sub__').style.background='#585b70';tG('__triv_sub__').disabled=true;
+    tG('__triv_score__').textContent='Score: '+score+' / '+(idx+1);
+    tG('__triv_next__').style.display='block';
+  }
+  tG('__triv_sub__').onclick=submit;
+  tG('__triv_inp__').addEventListener('keydown',function(e){if(e.key==='Enter')submit();});
+  tG('__triv_hint__').onclick=function(){var q=QS[order[idx]];var hb=tG('__triv_hintbox__');hb.textContent='💡 '+q.hint;hb.style.display='block';};
+  tG('__triv_next__').onclick=function(){idx++;showQ();};
+  showQ();
+})()`}
     ]},
     {folder:"Simulations",children:[
     {name:"Particle Field",type:"sandbox",idx:0},
