@@ -1,0 +1,492 @@
+/* ============================================================
+   STATISTICS TOOL v3 — paste into browser console
+   Paste once to open, paste again to close.
+   ============================================================ */
+
+(function () {
+  const TOOL_ID = "__stats-tool__";
+  const existing = document.getElementById(TOOL_ID);
+  if (existing) { existing.remove(); return; }
+
+  function f(v, d = 4) { return isFinite(v) ? +v.toFixed(d) : "N/A"; }
+  function quantile(sorted, p) {
+    const idx = p * (sorted.length - 1), lo = Math.floor(idx), hi = Math.ceil(idx);
+    return sorted[lo] + (sorted[hi] - sorted[lo]) * (idx - lo);
+  }
+  function normalPDF(x) { return Math.exp(-0.5 * x * x) / Math.sqrt(2 * Math.PI); }
+  function normalCDF(x) {
+    const t = 1 / (1 + 0.2316419 * Math.abs(x));
+    const poly = t * (0.319381530 + t * (-0.356563782 + t * (1.781477937 + t * (-1.821255978 + t * 1.330274429))));
+    const p = 1 - normalPDF(x) * poly;
+    return x >= 0 ? p : 1 - p;
+  }
+  function escHtml(s) { return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+
+  function kde(nums, mean, stdDev) {
+    const n = nums.length;
+    const bw = 1.06 * stdDev * Math.pow(n, -0.2);
+    return function(x) {
+      let sum = 0;
+      for (let i = 0; i < n; i++) {
+        const z = (x - nums[i]) / bw;
+        sum += Math.exp(-0.5 * z * z);
+      }
+      return sum / (n * bw * Math.sqrt(2 * Math.PI));
+    };
+  }
+
+  function computeStats(nums) {
+    const sorted = [...nums].sort((a, b) => a - b);
+    const n = nums.length;
+    const min = sorted[0], max = sorted[n - 1];
+    const sum = nums.reduce((a, b) => a + b, 0);
+    const mean = sum / n;
+    const range = max - min;
+    const q1 = quantile(sorted, 0.25);
+    const q2 = quantile(sorted, 0.50);
+    const q3 = quantile(sorted, 0.75);
+    const iqr = q3 - q1;
+    const lowerFence = q1 - 1.5 * iqr;
+    const upperFence = q3 + 1.5 * iqr;
+    /* Population: divide by n */
+    const popVariance = nums.reduce((acc, v) => acc + (v - mean) ** 2, 0) / n;
+    const popStdDev = Math.sqrt(popVariance);
+    /* Sample: divide by n-1 (Bessel's correction) */
+    const sampleVariance = n > 1 ? nums.reduce((acc, v) => acc + (v - mean) ** 2, 0) / (n - 1) : 0;
+    const sampleStdDev = Math.sqrt(sampleVariance);
+    const skewness = n < 3 ? 0 :
+      (nums.reduce((acc, v) => acc + ((v - mean) / sampleStdDev) ** 3, 0) * n) / ((n - 1) * (n - 2));
+    const freq = {};
+    nums.forEach(v => { freq[v] = (freq[v] || 0) + 1; });
+    const maxFreq = Math.max(...Object.values(freq));
+    const modes = maxFreq === 1 ? ["No mode"] :
+      Object.keys(freq).filter(k => freq[k] === maxFreq).map(Number).sort((a, b) => a - b);
+    const zScores = nums.map(v => (v - mean) / sampleStdDev);
+    const outliers = nums.filter(v => v < lowerFence || v > upperFence);
+    let skewLabel = "Approximately symmetric";
+    if (skewness > 0.5) skewLabel = "Right (positive) skew";
+    else if (skewness < -0.5) skewLabel = "Left (negative) skew";
+    else if (skewness > 0.1) skewLabel = "Slight right skew";
+    else if (skewness < -0.1) skewLabel = "Slight left skew";
+    return { nums, sorted, n, min, max, sum, mean, range, q1, q2, q3, iqr,
+             lowerFence, upperFence,
+             popVariance, popStdDev,
+             sampleVariance, sampleStdDev,
+             skewness, skewLabel, modes, zScores, outliers };
+  }
+
+  const MAX_HIST = 8;
+  let history = [];
+  function pushHistory(input, s) {
+    history.unshift({ input, result: "n=" + s.n + "  μ=" + f(s.mean,3) + "  s=" + f(s.sampleStdDev,3), time: new Date().toLocaleTimeString() });
+    if (history.length > MAX_HIST) history.pop();
+    renderHistory();
+  }
+  function renderHistory() {
+    const list = document.getElementById("__st-hist-list__");
+    if (!list) return;
+    if (!history.length) { list.innerHTML = '<span style="color:#bbb;font-size:12px;">No history yet</span>'; return; }
+    list.innerHTML = history.map((h, i) =>
+      '<div onclick="document.getElementById(\'__st-input__\').value=' + JSON.stringify(h.input) + ';document.getElementById(\'__st-input__\').dispatchEvent(new Event(\'input\'));"' +
+      'style="display:flex;gap:8px;align-items:baseline;padding:5px 8px;border-radius:6px;cursor:pointer;background:' + (i===0?"#f0f4ff":"transparent") + ';margin-bottom:3px;"' +
+      'onmouseover="this.style.background=\'#eef2fb\'" onmouseout="this.style.background=\'' + (i===0?"#f0f4ff":"transparent") + '\'">' +
+      '<span style="font-size:10px;color:#bbb;min-width:40px;font-family:monospace;">' + h.time + '</span>' +
+      '<span style="font-size:11px;color:#444;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:monospace;">' + escHtml(h.input) + '</span>' +
+      '<span style="font-size:10px;color:#1a5abf;background:#e8f0fe;border:1px solid #b0c8f8;border-radius:3px;padding:1px 5px;white-space:nowrap;font-family:monospace;">' + escHtml(h.result) + '</span>' +
+      '</div>'
+    ).join("");
+  }
+
+  const overlay = document.createElement("div");
+  overlay.id = TOOL_ID;
+  overlay.style.cssText = "position:fixed;top:20px;right:20px;z-index:999999;width:560px;max-width:calc(100vw - 40px);background:#fff;color:#111;border:1px solid #ddd;border-radius:14px;box-shadow:0 8px 40px rgba(0,0,0,0.18);font-family:system-ui,sans-serif;font-size:14px;overflow:hidden;max-height:calc(100vh - 40px);display:flex;flex-direction:column;";
+
+  const styleEl = document.createElement("style");
+  styleEl.textContent = [
+    "#__stats-tool__ *{box-sizing:border-box;}",
+    "#__st-input__{width:100%;padding:9px 12px;border:1.5px solid #bbb;border-radius:8px;font-size:14px;font-family:monospace;outline:none;color:#111;background:#fff;transition:border-color 0.15s;resize:none;}",
+    "#__st-input__:focus{border-color:#1a5abf;}",
+    "#__st-go__{width:100%;padding:10px;background:#1a1a1a;color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:500;cursor:pointer;letter-spacing:0.02em;transition:background 0.15s;}",
+    "#__st-go__:hover{background:#333;}",
+    ".__st-card__{background:#f5f7fb;border:1px solid #e4e8f0;border-radius:8px;padding:8px 12px;min-width:0;}",
+    ".__st-card-label__{font-size:10px;color:#888;text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px;}",
+    ".__st-card-value__{font-size:17px;font-weight:600;color:#111;font-family:Georgia,serif;word-break:break-all;}",
+    ".__st-card-value__.sm{font-size:13px;}",
+    ".__st-card.pop{border-color:#c7d9f8;background:#eef4ff;}",
+    ".__st-card.samp{border-color:#c5e8d4;background:#edfaf3;}",
+    ".__st-card-label__.pop{color:#1a5abf;}",
+    ".__st-card-label__.samp{color:#1a7a40;}",
+    ".__st-section__{font-size:10px;color:#bbb;text-transform:uppercase;letter-spacing:.07em;margin:14px 0 7px;}",
+    ".__st-copy-btn__{position:absolute;top:10px;right:10px;padding:4px 10px;font-size:11px;font-family:monospace;background:#fff;border:1px solid #ccc;border-radius:5px;cursor:pointer;color:#555;z-index:1;}",
+    ".__st-copy-btn__:hover{background:#f0f0f0;}",
+    ".__st-copy-btn__.copied{background:#edfaf3;border-color:#7dd3a8;color:#1a7a40;}",
+    ".__st-out-badge__{font-size:10px;font-family:monospace;background:#fff0f0;color:#c00;border:1px solid #f5bbbb;border-radius:3px;padding:1px 5px;margin-left:5px;}",
+    ".__st-z-badge__{font-size:10px;font-family:monospace;background:#fff7e0;color:#805500;border:1px solid #f5dfa0;border-radius:3px;padding:1px 5px;margin-left:5px;}",
+    ".__st-scroll__{overflow-y:auto;flex:1;padding:0 16px 16px;}",
+    "table{width:100%;border-collapse:collapse;font-size:12px;}",
+    "th{text-align:left;padding:5px 8px;border-bottom:1px solid #eee;color:#888;font-weight:500;font-size:11px;white-space:nowrap;}",
+    "td{padding:5px 8px;border-bottom:1px solid #f3f3f3;color:#333;white-space:nowrap;font-family:monospace;}",
+    "tr:last-child td{border-bottom:none;}",
+    "tr.outlier-row td{background:#fff8f8;color:#c00;}",
+  ].join("");
+  overlay.appendChild(styleEl);
+
+  overlay.innerHTML += `
+  <div id="__st-hdr__" style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:#f7f7f7;border-bottom:1px solid #e8e8e8;cursor:move;user-select:none;flex-shrink:0;">
+    <div style="display:flex;align-items:center;gap:10px;">
+      <span style="font-weight:700;font-size:15px;letter-spacing:-0.3px;">Statistics Tool</span>
+      <span style="font-size:11px;color:#aaa;font-style:italic;">mean · σ pop · s sample · KDE curve</span>
+    </div>
+    <button id="__st-x__" style="background:none;border:none;font-size:18px;cursor:pointer;padding:0 4px;color:#666;line-height:1;">✕</button>
+  </div>
+  <div style="padding:14px 16px 12px;border-bottom:1px solid #eee;flex-shrink:0;">
+    <textarea id="__st-input__" rows="2" placeholder="Enter numbers separated by commas, e.g.  3, 7, 12, 5, 9, 4, 7, 15, 2, 8"></textarea>
+    <div style="display:flex;gap:8px;margin-top:8px;align-items:center;flex-wrap:wrap;">
+      <button id="__st-go__" style="flex:1;min-width:120px;margin-bottom:0;">Calculate</button>
+      <button id="__st-clear__" style="padding:10px 16px;border:1px solid #ddd;border-radius:8px;background:#fff;color:#555;font-size:13px;cursor:pointer;white-space:nowrap;">Clear</button>
+    </div>
+    <div id="__st-err__" style="min-height:16px;margin-top:6px;font-size:12px;color:#c00;"></div>
+    <div style="margin-top:10px;display:flex;gap:5px;flex-wrap:wrap;" id="__st-examples__">
+      <span style="font-size:10px;color:#bbb;align-self:center;">Examples:</span>
+    </div>
+  </div>
+  <div class="__st-scroll__" id="__st-body__">
+    <div style="padding:24px 0;text-align:center;color:#ccc;font-size:13px;">Enter numbers above to see statistics</div>
+  </div>
+  <div style="border-top:1px solid #eee;padding:10px 16px 12px;flex-shrink:0;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+      <span style="font-size:10px;color:#bbb;text-transform:uppercase;letter-spacing:.07em;">History</span>
+      <button onclick="window.__st_clearHistory&&window.__st_clearHistory()" style="font-size:11px;color:#bbb;background:none;border:none;cursor:pointer;padding:0;">Clear</button>
+    </div>
+    <div id="__st-hist-list__" style="max-height:90px;overflow-y:auto;"><span style="color:#bbb;font-size:12px;">No history yet</span></div>
+  </div>`;
+
+  document.body.appendChild(overlay);
+
+  const examples = [
+    { label: "Symmetric", val: "2, 4, 6, 4, 2, 6, 4, 5, 3, 4" },
+    { label: "Right skew", val: "1, 2, 2, 3, 3, 3, 10, 15, 20, 25" },
+    { label: "With outliers", val: "5, 6, 7, 8, 6, 7, 6, 5, 100, 4" },
+    { label: "Class test", val: "45, 67, 72, 55, 88, 91, 60, 73, 66, 79, 82, 50" },
+  ];
+  const exDiv = document.getElementById("__st-examples__");
+  examples.forEach(ex => {
+    const chip = document.createElement("button");
+    chip.textContent = ex.label;
+    chip.style.cssText = "padding:3px 10px;font-size:11px;border:1px solid #ddd;border-radius:999px;cursor:pointer;color:#555;background:#f5f5f5;";
+    chip.onmouseover = () => chip.style.background = "#e8e8e8";
+    chip.onmouseout = () => chip.style.background = "#f5f5f5";
+    chip.onclick = () => { document.getElementById("__st-input__").value = ex.val; run(); };
+    exDiv.appendChild(chip);
+  });
+
+  function drawBellCurve(ctx, W, H, stats) {
+    const { mean, sampleStdDev, nums, skewness, q2, lowerFence, upperFence } = stats;
+    const stdDev = sampleStdDev;
+    const PAD_L = 52, PAD_R = 20, PAD_T = 54, PAD_B = 52;
+    const plotW = W - PAD_L - PAD_R;
+    const plotH = H - PAD_T - PAD_B;
+    const baseline = PAD_T + plotH;
+    const xLo = Math.min(mean - 3.8*stdDev, Math.min(...nums) - stdDev*0.5);
+    const xHi = Math.max(mean + 3.8*stdDev, Math.max(...nums) + stdDev*0.5);
+    const xSpan = xHi - xLo;
+    const kdeFunc = kde(nums, mean, stdDev);
+    const STEPS = 600;
+    let yPeak = 0;
+    for (let i = 0; i <= STEPS; i++) {
+      const y = kdeFunc(xLo + (i/STEPS)*xSpan);
+      if (y > yPeak) yPeak = y;
+    }
+    yPeak *= 1.08;
+    function xC(v) { return PAD_L + ((v-xLo)/xSpan)*plotW; }
+    function yC(y) { return baseline - (y/yPeak)*plotH; }
+    ctx.clearRect(0, 0, W, H);
+    ctx.strokeStyle="#ddd"; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.moveTo(PAD_L,baseline); ctx.lineTo(PAD_L+plotW,baseline); ctx.stroke();
+    [[3,"rgba(200,220,255,0.28)"],[2,"rgba(140,185,240,0.32)"],[1,"rgba(55,138,221,0.28)"]].forEach(([k,color])=>{
+      const lo=mean-k*stdDev, hi=mean+k*stdDev;
+      ctx.beginPath(); let started=false;
+      for(let i=0;i<=STEPS;i++){
+        const x=xLo+(i/STEPS)*xSpan;
+        if(x<lo||x>hi) continue;
+        const cx=xC(x),cy=yC(kdeFunc(x));
+        if(!started){ctx.moveTo(cx,baseline);ctx.lineTo(cx,cy);started=true;}
+        else ctx.lineTo(cx,cy);
+      }
+      ctx.lineTo(xC(Math.min(hi,xHi)),baseline);
+      ctx.closePath(); ctx.fillStyle=color; ctx.fill();
+    });
+    ctx.setLineDash([4,5]); ctx.lineWidth=1;
+    [-3,-2,-1,1,2,3].forEach(k=>{
+      const xv=mean+k*stdDev;
+      if(xv<xLo||xv>xHi) return;
+      ctx.strokeStyle="rgba(120,150,200,0.45)";
+      ctx.beginPath(); ctx.moveTo(xC(xv),PAD_T+4); ctx.lineTo(xC(xv),baseline); ctx.stroke();
+    });
+    ctx.setLineDash([]);
+    ctx.beginPath(); ctx.moveTo(xC(xLo),baseline);
+    for(let i=0;i<=STEPS;i++){const x=xLo+(i/STEPS)*xSpan;ctx.lineTo(xC(x),yC(kdeFunc(x)));}
+    ctx.lineTo(xC(xHi),baseline); ctx.closePath();
+    ctx.fillStyle="rgba(55,138,221,0.12)"; ctx.fill();
+    ctx.beginPath();
+    for(let i=0;i<=STEPS;i++){const x=xLo+(i/STEPS)*xSpan;i===0?ctx.moveTo(xC(x),yC(kdeFunc(x))):ctx.lineTo(xC(x),yC(kdeFunc(x)));}
+    ctx.strokeStyle="#1a5abf"; ctx.lineWidth=2.5; ctx.stroke();
+    ctx.strokeStyle="#e24b4a"; ctx.lineWidth=2;
+    ctx.beginPath(); ctx.moveTo(xC(mean),PAD_T+2); ctx.lineTo(xC(mean),baseline); ctx.stroke();
+    if(Math.abs(q2-mean)>stdDev*0.04){
+      ctx.strokeStyle="#f0992a"; ctx.lineWidth=1.8; ctx.setLineDash([5,4]);
+      ctx.beginPath(); ctx.moveTo(xC(q2),PAD_T+2); ctx.lineTo(xC(q2),baseline); ctx.stroke();
+      ctx.setLineDash([]);
+    }
+    [[1,"68%",0.62],[2,"95%",0.28],[3,"99.7%",0.10]].forEach(([k,pct,yFrac])=>{
+      const lv=mean-k*stdDev,rv=mean+k*stdDev;
+      if(lv<xLo||rv>xHi) return;
+      const lx=xC(lv),rx=xC(rv),cy=PAD_T+plotH*yFrac,mid=(lx+rx)/2;
+      const hw=ctx.measureText(pct).width/2+6;
+      ctx.strokeStyle="rgba(80,110,180,0.55)"; ctx.lineWidth=1;
+      ctx.beginPath();
+      ctx.moveTo(lx+6,cy);ctx.lineTo(mid-hw,cy);
+      ctx.moveTo(lx+6,cy);ctx.lineTo(lx+12,cy-3);ctx.moveTo(lx+6,cy);ctx.lineTo(lx+12,cy+3);
+      ctx.moveTo(rx-6,cy);ctx.lineTo(mid+hw,cy);
+      ctx.moveTo(rx-6,cy);ctx.lineTo(rx-12,cy-3);ctx.moveTo(rx-6,cy);ctx.lineTo(rx-12,cy+3);
+      ctx.stroke();
+      ctx.font="10px system-ui";ctx.fillStyle="#444";ctx.textAlign="center";
+      ctx.fillText(pct,mid,cy+3.5);
+    });
+    const rugY=baseline+14;
+    nums.forEach(v=>{
+      const isOut=v<lowerFence||v>upperFence;
+      const cx=xC(Math.max(xLo,Math.min(xHi,v)));
+      ctx.beginPath();ctx.arc(cx,rugY,3.5,0,2*Math.PI);
+      ctx.fillStyle=isOut?"#e24b4a":"rgba(24,95,165,0.70)";ctx.fill();
+      if(isOut){ctx.strokeStyle="#a32d2d";ctx.lineWidth=0.8;ctx.stroke();}
+    });
+    ctx.textAlign="center";
+    [-3,-2,-1,0,1,2,3].forEach(k=>{
+      const xv=mean+k*stdDev;
+      if(xv<xLo-xSpan*0.01||xv>xHi+xSpan*0.01) return;
+      const cx=xC(xv);
+      ctx.strokeStyle="#ccc";ctx.lineWidth=1;
+      ctx.beginPath();ctx.moveTo(cx,baseline);ctx.lineTo(cx,baseline+4);ctx.stroke();
+      const label=Math.abs(xv)>=100?Math.round(xv).toString():Math.abs(xv)>=10?xv.toFixed(1):xv.toFixed(2);
+      ctx.font="10px monospace";ctx.fillStyle="#666";ctx.fillText(label,cx,baseline+15);
+      ctx.font="9px system-ui";ctx.fillStyle="#aaa";
+      ctx.fillText(k===0?"μ":(k>0?"+":"")+k+"σ",cx,baseline+27);
+    });
+    if(Math.abs(skewness)>0.4){
+      ctx.font="bold 10px system-ui";
+      ctx.fillStyle=skewness>0?"#c0392b":"#1a5abf";
+      ctx.textAlign="center";
+      ctx.fillText(skewness>0?"▶ right skew":"◀ left skew",PAD_L+plotW/2,PAD_T-12);
+    }
+    const legItems=[
+      {color:"#1a5abf",dash:[],label:"KDE density curve"},
+      {color:"#e24b4a",dash:[],label:"Mean"},
+      {color:"#f0992a",dash:[4,3],label:"Median"},
+      {color:"rgba(24,95,165,0.70)",dot:true,label:"Data point"},
+      {color:"#e24b4a",dot:true,label:"Outlier"},
+    ];
+    const legX=PAD_L+6,legY0=PAD_T+6;
+    ctx.fillStyle="rgba(255,255,255,0.88)";
+    ctx.beginPath();ctx.roundRect(legX-4,legY0-4,152,legItems.length*15+6,4);ctx.fill();
+    legItems.forEach((item,i)=>{
+      const ly=legY0+i*15+6;
+      if(item.dot){ctx.beginPath();ctx.arc(legX+8,ly,3.5,0,2*Math.PI);ctx.fillStyle=item.color;ctx.fill();}
+      else{ctx.strokeStyle=item.color;ctx.lineWidth=item.label==="Mean"?2:1.6;ctx.setLineDash(item.dash);ctx.beginPath();ctx.moveTo(legX+2,ly);ctx.lineTo(legX+18,ly);ctx.stroke();ctx.setLineDash([]);}
+      ctx.font="10px system-ui";ctx.fillStyle="#444";ctx.textAlign="left";
+      ctx.fillText(item.label,legX+24,ly+3.5);
+    });
+  }
+
+  function renderResult(s, rawInput) {
+    const body = document.getElementById("__st-body__");
+    let html = "";
+
+    /* Main stats */
+    const mainStats=[
+      {label:"Count (n)",val:s.n},
+      {label:"Minimum",val:f(s.min,4)},
+      {label:"Maximum",val:f(s.max,4)},
+      {label:"Range",val:f(s.range,4)},
+      {label:"Sum",val:f(s.sum,4)},
+      {label:"Mean (μ)",val:f(s.mean,4)},
+      {label:"Median (Q2)",val:f(s.q2,4)},
+      {label:"Mode",val:s.modes.join(", "),sm:true},
+      {label:"Skewness",val:f(s.skewness,4)},
+    ];
+    html+='<div class="__st-section__">Descriptive statistics</div>';
+    html+='<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(118px,1fr));gap:7px;">';
+    mainStats.forEach(({label,val,sm})=>{
+      html+=`<div class="__st-card__"><div class="__st-card-label__">${label}</div><div class="__st-card-value__ ${sm?"sm":""}">${escHtml(String(val))}</div></div>`;
+    });
+    html+="</div>";
+    html+=`<div style="margin-top:8px;padding:7px 12px;background:#f0f4ff;border-radius:7px;font-size:12px;color:#1a5abf;border:1px solid #d4e2fb;">${escHtml(s.skewLabel)}</div>`;
+
+    /* Standard deviation section — population vs sample side by side */
+    html+='<div class="__st-section__">Standard deviation &amp; variance</div>';
+    html+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-bottom:4px;">';
+    /* Population */
+    html+=`<div class="__st-card pop" style="background:#eef4ff;border-color:#c7d9f8;">
+      <div class="__st-card-label__ pop" style="color:#1a5abf;">Population Std Dev (σ)</div>
+      <div class="__st-card-value__" style="font-size:15px;">${f(s.popStdDev,6)}</div>
+      <div style="font-size:10px;color:#7a9ad4;margin-top:3px;">Divide by n = ${s.n}</div>
+    </div>`;
+    /* Sample */
+    html+=`<div class="__st-card samp" style="background:#edfaf3;border-color:#c5e8d4;">
+      <div class="__st-card-label__ samp" style="color:#1a7a40;">Sample Std Dev (s)</div>
+      <div class="__st-card-value__" style="font-size:15px;">${f(s.sampleStdDev,6)}</div>
+      <div style="font-size:10px;color:#5aaa7a;margin-top:3px;">Divide by n−1 = ${s.n-1}</div>
+    </div>`;
+    /* Population variance */
+    html+=`<div class="__st-card pop" style="background:#eef4ff;border-color:#c7d9f8;">
+      <div class="__st-card-label__ pop" style="color:#1a5abf;">Population Variance (σ²)</div>
+      <div class="__st-card-value__" style="font-size:14px;">${f(s.popVariance,6)}</div>
+    </div>`;
+    /* Sample variance */
+    html+=`<div class="__st-card samp" style="background:#edfaf3;border-color:#c5e8d4;">
+      <div class="__st-card-label__ samp" style="color:#1a7a40;">Sample Variance (s²)</div>
+      <div class="__st-card-value__" style="font-size:14px;">${f(s.sampleVariance,6)}</div>
+    </div>`;
+    html+="</div>";
+    html+=`<div style="padding:7px 12px;background:#fafafa;border-radius:7px;font-size:11px;color:#888;border:1px solid #eee;line-height:1.6;">
+      <strong style="color:#555;">Which to use?</strong> Use <span style="color:#1a5abf;font-weight:600;">σ (population)</span> when your data <em>is</em> the entire group.
+      Use <span style="color:#1a7a40;font-weight:600;">s (sample)</span> when your data is a <em>subset</em> drawn from a larger population — this is more common in practice.
+    </div>`;
+
+    /* Five-number summary */
+    const spreadStats=[
+      {label:"Q1 (25th pct)",val:f(s.q1,4)},
+      {label:"Q2 Median (50th)",val:f(s.q2,4)},
+      {label:"Q3 (75th pct)",val:f(s.q3,4)},
+      {label:"IQR (Q3−Q1)",val:f(s.iqr,4)},
+      {label:"Lower fence",val:f(s.lowerFence,4)},
+      {label:"Upper fence",val:f(s.upperFence,4)},
+    ];
+    html+='<div class="__st-section__">Five-number summary &amp; fences</div>';
+    html+='<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(118px,1fr));gap:7px;">';
+    spreadStats.forEach(({label,val})=>{
+      html+=`<div class="__st-card__"><div class="__st-card-label__">${label}</div><div class="__st-card-value__">${escHtml(String(val))}</div></div>`;
+    });
+    html+="</div>";
+    if(s.outliers.length>0){
+      html+=`<div style="margin-top:8px;padding:7px 12px;background:#fff8f8;border-radius:7px;font-size:12px;color:#c00;border:1px solid #f5bbbb;">Outliers (fence method): <strong>${s.outliers.map(v=>f(v,4)).join(", ")}</strong> — outside [${f(s.lowerFence,3)}, ${f(s.upperFence,3)}]</div>`;
+    } else {
+      html+=`<div style="margin-top:8px;padding:7px 12px;background:#f0faf5;border-radius:7px;font-size:12px;color:#1a7a40;border:1px solid #b0ddc0;">No fence outliers detected — all values within [${f(s.lowerFence,3)}, ${f(s.upperFence,3)}]</div>`;
+    }
+
+    html+='<div class="__st-section__">Density curve (KDE — data-driven)</div>';
+    html+='<canvas id="__st-canvas__" style="width:100%;border-radius:8px;background:#f9fbff;border:1px solid #e4e8f0;display:block;"></canvas>';
+
+    html+='<div class="__st-section__">Z-scores &amp; outlier analysis</div>';
+    html+='<div style="overflow-x:auto;"><table>';
+    html+='<thead><tr><th>#</th><th>Value</th><th>Z-score</th><th>Percentile</th><th>Fence out</th><th>|Z|>2</th><th>|Z|>3</th></tr></thead><tbody>';
+    s.nums.forEach((v,i)=>{
+      const z=s.zScores[i];
+      const isFenceOut=v<s.lowerFence||v>s.upperFence;
+      const isZ2=Math.abs(z)>2,isZ3=Math.abs(z)>3;
+      const pct=(normalCDF(z)*100).toFixed(1)+"%";
+      const rowClass=isFenceOut?'class="outlier-row"':"";
+      html+=`<tr ${rowClass}><td>${i+1}</td><td>${f(v,4)}</td><td>${f(z,4)}</td><td>${pct}</td>
+        <td>${isFenceOut?'<span class="__st-out-badge__">YES</span>':"no"}</td>
+        <td>${isZ2?'<span class="__st-z-badge__">YES</span>':"no"}</td>
+        <td>${isZ3?'<span class="__st-out-badge__">YES</span>':"no"}</td></tr>`;
+    });
+    html+="</tbody></table></div>";
+    html+=`<div style="position:relative;margin-top:14px;padding:10px 12px;background:#f5f7fb;border-radius:8px;border:1px solid #e4e8f0;">
+      <button class="__st-copy-btn__" id="__st-copy-btn__">Copy CSV ⎘</button>
+      <div style="font-size:11px;color:#888;">Export all statistics as CSV for spreadsheets.</div>
+    </div>`;
+
+    body.innerHTML = html;
+
+    const canvas = document.getElementById("__st-canvas__");
+    const DPR = window.devicePixelRatio || 1;
+    const cssW = canvas.parentElement.clientWidth - 2;
+    const cssH = 280;
+    canvas.style.width = cssW + "px";
+    canvas.style.height = cssH + "px";
+    canvas.width = Math.round(cssW * DPR);
+    canvas.height = Math.round(cssH * DPR);
+    const ctx = canvas.getContext("2d");
+    ctx.scale(DPR, DPR);
+    drawBellCurve(ctx, cssW, cssH, s);
+
+    const copyBtn=document.getElementById("__st-copy-btn__");
+    if(copyBtn){
+      copyBtn.onclick=()=>{
+        const rows=[
+          ["Statistic","Value"],
+          ["Count (n)",s.n],["Minimum",f(s.min,6)],["Maximum",f(s.max,6)],
+          ["Range",f(s.range,6)],["Sum",f(s.sum,6)],["Mean",f(s.mean,6)],
+          ["Median (Q2)",f(s.q2,6)],["Mode",s.modes.join(" | ")],
+          ["Population Std Dev (sigma)",f(s.popStdDev,6)],
+          ["Population Variance (sigma^2)",f(s.popVariance,6)],
+          ["Sample Std Dev (s)",f(s.sampleStdDev,6)],
+          ["Sample Variance (s^2)",f(s.sampleVariance,6)],
+          ["Skewness",f(s.skewness,6)],["Skew type",s.skewLabel],
+          ["Q1",f(s.q1,6)],["Q2 (Median)",f(s.q2,6)],["Q3",f(s.q3,6)],
+          ["IQR",f(s.iqr,6)],["Lower Fence",f(s.lowerFence,6)],["Upper Fence",f(s.upperFence,6)],
+          ["Outliers",s.outliers.map(v=>f(v,4)).join(" | ")||"None"],
+          [],["#","Value","Z-score","Percentile","Fence Outlier","|Z|>2","|Z|>3"],
+          ...s.nums.map((v,i)=>{
+            const z=s.zScores[i];
+            return [i+1,f(v,6),f(z,6),(normalCDF(z)*100).toFixed(2)+"%",
+              (v<s.lowerFence||v>s.upperFence)?"YES":"no",
+              Math.abs(z)>2?"YES":"no",Math.abs(z)>3?"YES":"no"];
+          }),
+        ];
+        const csv=rows.map(r=>r.join(",")).join("\n");
+        navigator.clipboard.writeText(csv).then(()=>{
+          copyBtn.textContent="Copied ✓";copyBtn.classList.add("copied");
+          setTimeout(()=>{copyBtn.textContent="Copy CSV ⎘";copyBtn.classList.remove("copied");},2000);
+        }).catch(()=>{
+          const ta=document.createElement("textarea");ta.value=csv;
+          document.body.appendChild(ta);ta.select();document.execCommand("copy");document.body.removeChild(ta);
+          copyBtn.textContent="Copied ✓";copyBtn.classList.add("copied");
+          setTimeout(()=>{copyBtn.textContent="Copy CSV ⎘";copyBtn.classList.remove("copied");},2000);
+        });
+      };
+    }
+  }
+
+  function run() {
+    const raw=document.getElementById("__st-input__").value;
+    const errEl=document.getElementById("__st-err__");
+    errEl.textContent="";
+    const nums=raw.split(/[\s,]+/).map(s=>s.trim()).filter(s=>s!=="").map(Number);
+    if(nums.length<2){errEl.textContent="Please enter at least 2 numbers separated by commas.";return;}
+    if(nums.some(isNaN)){errEl.textContent="One or more values are not valid numbers. Check for typos.";return;}
+    const s=computeStats(nums);
+    renderResult(s,raw.trim());
+    pushHistory(raw.trim().slice(0,60),s);
+  }
+
+  document.getElementById("__st-go__").onclick=run;
+  document.getElementById("__st-clear__").onclick=()=>{
+    document.getElementById("__st-input__").value="";
+    document.getElementById("__st-err__").textContent="";
+    document.getElementById("__st-body__").innerHTML='<div style="padding:24px 0;text-align:center;color:#ccc;font-size:13px;">Enter numbers above to see statistics</div>';
+  };
+  document.getElementById("__st-input__").addEventListener("keydown",e=>{
+    if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();run();}
+  });
+  document.getElementById("__st-x__").onclick=()=>overlay.remove();
+
+  let dragging=false,dx=0,dy=0;
+  document.getElementById("__st-hdr__").addEventListener("mousedown",e=>{
+    dragging=true;
+    const r=overlay.getBoundingClientRect();
+    dx=e.clientX-r.left;dy=e.clientY-r.top;
+    overlay.style.transition="none";
+  });
+  document.addEventListener("mousemove",e=>{
+    if(!dragging)return;
+    overlay.style.left=(e.clientX-dx)+"px";
+    overlay.style.top=(e.clientY-dy)+"px";
+    overlay.style.right="auto";
+  });
+  document.addEventListener("mouseup",()=>{dragging=false;});
+  window.__st_clearHistory=()=>{history=[];renderHistory();};
+
+  console.log("%c Statistics Tool v3 loaded!", "background:#1a5abf;color:#fff;padding:3px 8px;border-radius:4px;font-weight:bold;font-size:13px;");
+})();
