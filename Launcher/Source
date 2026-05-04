@@ -15,6 +15,7 @@ var TREE=[
       {name:"Calculator",type:"github",src:"https://raw.githubusercontent.com/jazbloktq/Bookmarklets/refs/heads/main/Calculator/Source"},
       {name:"Geometry",type:"github",src:"https://raw.githubusercontent.com/jazbloktq/Bookmarklets/refs/heads/main/Geometry/Source"},
       {name:"Algebra",type:"github",src:"https://raw.githubusercontent.com/jazbloktq/Bookmarklets/refs/heads/main/Algebra/Source"},
+      {name:"Statistics Calculator",type:"github",src:"https://raw.githubusercontent.com/jazbloktq/Bookmarklets/refs/heads/main/Statistics/Source"},
       {folder:"Revision",children:[
       ]},
     ]},
