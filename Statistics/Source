@@ -1,5 +1,5 @@
 /* ============================================================
-   STATISTICS TOOL v3 — paste into browser console
+   STATISTICS TOOL v4 — paste into browser console
    Paste once to open, paste again to close.
    ============================================================ */
 
@@ -9,10 +9,31 @@
   if (existing) { existing.remove(); return; }
 
   function f(v, d = 4) { return isFinite(v) ? +v.toFixed(d) : "N/A"; }
-  function quantile(sorted, p) {
-    const idx = p * (sorted.length - 1), lo = Math.floor(idx), hi = Math.ceil(idx);
-    return sorted[lo] + (sorted[hi] - sorted[lo]) * (idx - lo);
+
+  /*
+   * Quartile method: "exclusive" / Tukey / textbook method
+   * Split sorted array at median (exclude median if n is odd),
+   * then take median of each half.
+   * This matches what most school curricula and graphing calculators use.
+   */
+  function medianOf(arr) {
+    const m = arr.length;
+    if (m === 0) return 0;
+    const mid = Math.floor(m / 2);
+    return m % 2 === 0 ? (arr[mid - 1] + arr[mid]) / 2 : arr[mid];
   }
+  function quartiles(sorted) {
+    const n = sorted.length;
+    const mid = Math.floor(n / 2);
+    const lower = n % 2 === 0 ? sorted.slice(0, mid) : sorted.slice(0, mid);
+    const upper = n % 2 === 0 ? sorted.slice(mid) : sorted.slice(mid + 1);
+    return {
+      q1: medianOf(lower),
+      q2: medianOf(sorted),
+      q3: medianOf(upper)
+    };
+  }
+
   function normalPDF(x) { return Math.exp(-0.5 * x * x) / Math.sqrt(2 * Math.PI); }
   function normalCDF(x) {
     const t = 1 / (1 + 0.2316419 * Math.abs(x));
@@ -42,16 +63,12 @@
     const sum = nums.reduce((a, b) => a + b, 0);
     const mean = sum / n;
     const range = max - min;
-    const q1 = quantile(sorted, 0.25);
-    const q2 = quantile(sorted, 0.50);
-    const q3 = quantile(sorted, 0.75);
+    const { q1, q2, q3 } = quartiles(sorted);
     const iqr = q3 - q1;
     const lowerFence = q1 - 1.5 * iqr;
     const upperFence = q3 + 1.5 * iqr;
-    /* Population: divide by n */
     const popVariance = nums.reduce((acc, v) => acc + (v - mean) ** 2, 0) / n;
     const popStdDev = Math.sqrt(popVariance);
-    /* Sample: divide by n-1 (Bessel's correction) */
     const sampleVariance = n > 1 ? nums.reduce((acc, v) => acc + (v - mean) ** 2, 0) / (n - 1) : 0;
     const sampleStdDev = Math.sqrt(sampleVariance);
     const skewness = n < 3 ? 0 :
@@ -112,10 +129,6 @@
     ".__st-card-label__{font-size:10px;color:#888;text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px;}",
     ".__st-card-value__{font-size:17px;font-weight:600;color:#111;font-family:Georgia,serif;word-break:break-all;}",
     ".__st-card-value__.sm{font-size:13px;}",
-    ".__st-card.pop{border-color:#c7d9f8;background:#eef4ff;}",
-    ".__st-card.samp{border-color:#c5e8d4;background:#edfaf3;}",
-    ".__st-card-label__.pop{color:#1a5abf;}",
-    ".__st-card-label__.samp{color:#1a7a40;}",
     ".__st-section__{font-size:10px;color:#bbb;text-transform:uppercase;letter-spacing:.07em;margin:14px 0 7px;}",
     ".__st-copy-btn__{position:absolute;top:10px;right:10px;padding:4px 10px;font-size:11px;font-family:monospace;background:#fff;border:1px solid #ccc;border-radius:5px;cursor:pointer;color:#555;z-index:1;}",
     ".__st-copy-btn__:hover{background:#f0f0f0;}",
@@ -135,7 +148,7 @@
   <div id="__st-hdr__" style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:#f7f7f7;border-bottom:1px solid #e8e8e8;cursor:move;user-select:none;flex-shrink:0;">
     <div style="display:flex;align-items:center;gap:10px;">
       <span style="font-weight:700;font-size:15px;letter-spacing:-0.3px;">Statistics Tool</span>
-      <span style="font-size:11px;color:#aaa;font-style:italic;">mean · σ pop · s sample · KDE curve</span>
+      <span style="font-size:11px;color:#aaa;font-style:italic;">mean · σ pop · s sample · KDE · box plot</span>
     </div>
     <button id="__st-x__" style="background:none;border:none;font-size:18px;cursor:pointer;padding:0 4px;color:#666;line-height:1;">✕</button>
   </div>
@@ -180,6 +193,129 @@
     exDiv.appendChild(chip);
   });
 
+  /* ── Box plot ─────────────────────────────────────────────────── */
+  function drawBoxPlot(ctx, W, H, s) {
+    const { min, max, q1, q2, q3, mean, lowerFence, upperFence, sorted } = s;
+    const PAD_L = 52, PAD_R = 24, PAD_T = 30, PAD_B = 40;
+    const plotW = W - PAD_L - PAD_R;
+    const midY  = PAD_T + (H - PAD_T - PAD_B) / 2;
+    const boxH  = Math.max(24, (H - PAD_T - PAD_B) * 0.42);
+
+    /* whisker ends = most extreme non-outlier values */
+    const wLo = sorted.find(v => v >= lowerFence) ?? min;
+    const wHi = [...sorted].reverse().find(v => v <= upperFence) ?? max;
+    const outlierPts = sorted.filter(v => v < lowerFence || v > upperFence);
+
+    /* x-axis range — include outliers with padding */
+    const allPts = [min, max, lowerFence, upperFence];
+    const xMin = Math.min(...allPts) - (max - min) * 0.06;
+    const xMax = Math.max(...allPts) + (max - min) * 0.06;
+    const span = xMax - xMin || 1;
+
+    function xC(v) { return PAD_L + ((v - xMin) / span) * plotW; }
+
+    ctx.clearRect(0, 0, W, H);
+
+    /* grid lines */
+    const nTicks = 6;
+    ctx.font = "10px monospace"; ctx.textAlign = "center"; ctx.fillStyle = "#999";
+    for (let i = 0; i <= nTicks; i++) {
+      const v = xMin + (i / nTicks) * span;
+      const cx = xC(v);
+      ctx.strokeStyle = "#eee"; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(cx, PAD_T); ctx.lineTo(cx, H - PAD_B + 4); ctx.stroke();
+      const lbl = Math.abs(v) >= 100 ? Math.round(v).toString() : v.toFixed(1);
+      ctx.fillText(lbl, cx, H - PAD_B + 16);
+    }
+
+    /* IQR box */
+    const bx1 = xC(q1), bx3 = xC(q3), bMed = xC(q2), bTop = midY - boxH/2, bBot = midY + boxH/2;
+    ctx.fillStyle = "rgba(55,138,221,0.13)";
+    ctx.fillRect(bx1, bTop, bx3 - bx1, boxH);
+    ctx.strokeStyle = "#1a5abf"; ctx.lineWidth = 1.8;
+    ctx.strokeRect(bx1, bTop, bx3 - bx1, boxH);
+
+    /* median line */
+    ctx.strokeStyle = "#e24b4a"; ctx.lineWidth = 2.5;
+    ctx.beginPath(); ctx.moveTo(bMed, bTop); ctx.lineTo(bMed, bBot); ctx.stroke();
+
+    /* mean diamond */
+    const bMean = xC(mean); const dm = 5;
+    ctx.fillStyle = "#f0992a"; ctx.strokeStyle = "#c07010"; ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(bMean, midY - dm); ctx.lineTo(bMean + dm, midY);
+    ctx.lineTo(bMean, midY + dm); ctx.lineTo(bMean - dm, midY);
+    ctx.closePath(); ctx.fill(); ctx.stroke();
+
+    /* whiskers */
+    const wY = midY;
+    ctx.strokeStyle = "#555"; ctx.lineWidth = 1.6;
+    /* left whisker */
+    ctx.beginPath(); ctx.moveTo(xC(wLo), wY); ctx.lineTo(bx1, wY); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(xC(wLo), bTop + boxH*0.2); ctx.lineTo(xC(wLo), bBot - boxH*0.2); ctx.stroke();
+    /* right whisker */
+    ctx.beginPath(); ctx.moveTo(bx3, wY); ctx.lineTo(xC(wHi), wY); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(xC(wHi), bTop + boxH*0.2); ctx.lineTo(xC(wHi), bBot - boxH*0.2); ctx.stroke();
+
+    /* outlier dots */
+    outlierPts.forEach(v => {
+      ctx.beginPath(); ctx.arc(xC(v), midY, 4.5, 0, 2 * Math.PI);
+      ctx.fillStyle = "rgba(220,50,50,0.75)"; ctx.fill();
+      ctx.strokeStyle = "#a32d2d"; ctx.lineWidth = 0.8; ctx.stroke();
+    });
+
+    /* labels above box */
+    ctx.font = "9px system-ui"; ctx.textAlign = "center";
+    const labels = [
+      { v: wLo,  txt: "Min\n" + f(wLo,2),  col: "#555"   },
+      { v: q1,   txt: "Q1\n" + f(q1,2),    col: "#1a5abf"},
+      { v: q2,   txt: "Q2\n" + f(q2,2),    col: "#e24b4a"},
+      { v: q3,   txt: "Q3\n" + f(q3,2),    col: "#1a5abf"},
+      { v: wHi,  txt: "Max\n" + f(wHi,2),  col: "#555"   },
+    ];
+    labels.forEach(({ v, txt, col }) => {
+      ctx.fillStyle = col;
+      const [line1, line2] = txt.split("\n");
+      ctx.fillText(line1, xC(v), bTop - 13);
+      ctx.font = "8px monospace";
+      ctx.fillText(line2, xC(v), bTop - 3);
+      ctx.font = "9px system-ui";
+    });
+
+    /* mini legend */
+    const legItems = [
+      { col: "#e24b4a", type: "line", lbl: "Median (Q2)" },
+      { col: "#f0992a", type: "diamond", lbl: "Mean" },
+      { col: "rgba(220,50,50,0.75)", type: "dot", lbl: "Outlier" },
+    ];
+    const lx = PAD_L + 6, ly0 = PAD_T + 4;
+    ctx.fillStyle = "rgba(255,255,255,0.9)";
+    ctx.beginPath();
+    if (ctx.roundRect) ctx.roundRect(lx - 4, ly0 - 4, 120, legItems.length * 14 + 6, 4);
+    else ctx.rect(lx - 4, ly0 - 4, 120, legItems.length * 14 + 6);
+    ctx.fill();
+    legItems.forEach((item, i) => {
+      const ly = ly0 + i * 14 + 6;
+      if (item.type === "line") {
+        ctx.strokeStyle = item.col; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(lx + 2, ly); ctx.lineTo(lx + 18, ly); ctx.stroke();
+      } else if (item.type === "diamond") {
+        const d = 4;
+        ctx.fillStyle = item.col;
+        ctx.beginPath();
+        ctx.moveTo(lx + 10, ly - d); ctx.lineTo(lx + 14, ly);
+        ctx.lineTo(lx + 10, ly + d); ctx.lineTo(lx + 6, ly);
+        ctx.closePath(); ctx.fill();
+      } else {
+        ctx.beginPath(); ctx.arc(lx + 10, ly, 3.5, 0, 2 * Math.PI);
+        ctx.fillStyle = item.col; ctx.fill();
+      }
+      ctx.font = "10px system-ui"; ctx.fillStyle = "#444"; ctx.textAlign = "left";
+      ctx.fillText(item.lbl, lx + 24, ly + 3.5);
+    });
+  }
+
+  /* ── KDE Bell Curve ───────────────────────────────────────────── */
   function drawBellCurve(ctx, W, H, stats) {
     const { mean, sampleStdDev, nums, skewness, q2, lowerFence, upperFence } = stats;
     const stdDev = sampleStdDev;
@@ -288,7 +424,10 @@
     ];
     const legX=PAD_L+6,legY0=PAD_T+6;
     ctx.fillStyle="rgba(255,255,255,0.88)";
-    ctx.beginPath();ctx.roundRect(legX-4,legY0-4,152,legItems.length*15+6,4);ctx.fill();
+    ctx.beginPath();
+    if(ctx.roundRect)ctx.roundRect(legX-4,legY0-4,152,legItems.length*15+6,4);
+    else ctx.rect(legX-4,legY0-4,152,legItems.length*15+6);
+    ctx.fill();
     legItems.forEach((item,i)=>{
       const ly=legY0+i*15+6;
       if(item.dot){ctx.beginPath();ctx.arc(legX+8,ly,3.5,0,2*Math.PI);ctx.fillStyle=item.color;ctx.fill();}
@@ -298,11 +437,24 @@
     });
   }
 
+  function makeCanvas(id, cssH) {
+    const DPR = window.devicePixelRatio || 1;
+    const canvas = document.getElementById(id);
+    if (!canvas) return null;
+    const cssW = canvas.parentElement.clientWidth - 2;
+    canvas.style.width = cssW + "px";
+    canvas.style.height = cssH + "px";
+    canvas.width  = Math.round(cssW * DPR);
+    canvas.height = Math.round(cssH * DPR);
+    const ctx = canvas.getContext("2d");
+    ctx.scale(DPR, DPR);
+    return { ctx, W: cssW, H: cssH };
+  }
+
   function renderResult(s, rawInput) {
     const body = document.getElementById("__st-body__");
     let html = "";
 
-    /* Main stats */
     const mainStats=[
       {label:"Count (n)",val:s.n},
       {label:"Minimum",val:f(s.min,4)},
@@ -322,38 +474,32 @@
     html+="</div>";
     html+=`<div style="margin-top:8px;padding:7px 12px;background:#f0f4ff;border-radius:7px;font-size:12px;color:#1a5abf;border:1px solid #d4e2fb;">${escHtml(s.skewLabel)}</div>`;
 
-    /* Standard deviation section — population vs sample side by side */
     html+='<div class="__st-section__">Standard deviation &amp; variance</div>';
     html+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-bottom:4px;">';
-    /* Population */
-    html+=`<div class="__st-card pop" style="background:#eef4ff;border-color:#c7d9f8;">
-      <div class="__st-card-label__ pop" style="color:#1a5abf;">Population Std Dev (σ)</div>
+    html+=`<div class="__st-card__" style="background:#eef4ff;border-color:#c7d9f8;">
+      <div class="__st-card-label__" style="color:#1a5abf;">Population Std Dev (σ)</div>
       <div class="__st-card-value__" style="font-size:15px;">${f(s.popStdDev,6)}</div>
       <div style="font-size:10px;color:#7a9ad4;margin-top:3px;">Divide by n = ${s.n}</div>
     </div>`;
-    /* Sample */
-    html+=`<div class="__st-card samp" style="background:#edfaf3;border-color:#c5e8d4;">
-      <div class="__st-card-label__ samp" style="color:#1a7a40;">Sample Std Dev (s)</div>
+    html+=`<div class="__st-card__" style="background:#edfaf3;border-color:#c5e8d4;">
+      <div class="__st-card-label__" style="color:#1a7a40;">Sample Std Dev (s)</div>
       <div class="__st-card-value__" style="font-size:15px;">${f(s.sampleStdDev,6)}</div>
       <div style="font-size:10px;color:#5aaa7a;margin-top:3px;">Divide by n−1 = ${s.n-1}</div>
     </div>`;
-    /* Population variance */
-    html+=`<div class="__st-card pop" style="background:#eef4ff;border-color:#c7d9f8;">
-      <div class="__st-card-label__ pop" style="color:#1a5abf;">Population Variance (σ²)</div>
+    html+=`<div class="__st-card__" style="background:#eef4ff;border-color:#c7d9f8;">
+      <div class="__st-card-label__" style="color:#1a5abf;">Population Variance (σ²)</div>
       <div class="__st-card-value__" style="font-size:14px;">${f(s.popVariance,6)}</div>
     </div>`;
-    /* Sample variance */
-    html+=`<div class="__st-card samp" style="background:#edfaf3;border-color:#c5e8d4;">
-      <div class="__st-card-label__ samp" style="color:#1a7a40;">Sample Variance (s²)</div>
+    html+=`<div class="__st-card__" style="background:#edfaf3;border-color:#c5e8d4;">
+      <div class="__st-card-label__" style="color:#1a7a40;">Sample Variance (s²)</div>
       <div class="__st-card-value__" style="font-size:14px;">${f(s.sampleVariance,6)}</div>
     </div>`;
     html+="</div>";
     html+=`<div style="padding:7px 12px;background:#fafafa;border-radius:7px;font-size:11px;color:#888;border:1px solid #eee;line-height:1.6;">
       <strong style="color:#555;">Which to use?</strong> Use <span style="color:#1a5abf;font-weight:600;">σ (population)</span> when your data <em>is</em> the entire group.
-      Use <span style="color:#1a7a40;font-weight:600;">s (sample)</span> when your data is a <em>subset</em> drawn from a larger population — this is more common in practice.
+      Use <span style="color:#1a7a40;font-weight:600;">s (sample)</span> when your data is a <em>subset</em> drawn from a larger population.
     </div>`;
 
-    /* Five-number summary */
     const spreadStats=[
       {label:"Q1 (25th pct)",val:f(s.q1,4)},
       {label:"Q2 Median (50th)",val:f(s.q2,4)},
@@ -363,6 +509,9 @@
       {label:"Upper fence",val:f(s.upperFence,4)},
     ];
     html+='<div class="__st-section__">Five-number summary &amp; fences</div>';
+    html+=`<div style="padding:6px 10px;background:#fffde8;border:1px solid #f0e0a0;border-radius:6px;font-size:11px;color:#7a6000;margin-bottom:8px;">
+      Quartiles use the <strong>exclusive / textbook method</strong>: the median is excluded when splitting into halves, matching most school curricula and graphing calculators.
+    </div>`;
     html+='<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(118px,1fr));gap:7px;">';
     spreadStats.forEach(({label,val})=>{
       html+=`<div class="__st-card__"><div class="__st-card-label__">${label}</div><div class="__st-card-value__">${escHtml(String(val))}</div></div>`;
@@ -374,6 +523,11 @@
       html+=`<div style="margin-top:8px;padding:7px 12px;background:#f0faf5;border-radius:7px;font-size:12px;color:#1a7a40;border:1px solid #b0ddc0;">No fence outliers detected — all values within [${f(s.lowerFence,3)}, ${f(s.upperFence,3)}]</div>`;
     }
 
+    /* Box plot */
+    html+='<div class="__st-section__">Box plot (box-and-whisker)</div>';
+    html+='<canvas id="__st-boxplot__" style="width:100%;border-radius:8px;background:#f9fbff;border:1px solid #e4e8f0;display:block;"></canvas>';
+
+    /* KDE curve */
     html+='<div class="__st-section__">Density curve (KDE — data-driven)</div>';
     html+='<canvas id="__st-canvas__" style="width:100%;border-radius:8px;background:#f9fbff;border:1px solid #e4e8f0;display:block;"></canvas>';
 
@@ -399,17 +553,13 @@
 
     body.innerHTML = html;
 
-    const canvas = document.getElementById("__st-canvas__");
-    const DPR = window.devicePixelRatio || 1;
-    const cssW = canvas.parentElement.clientWidth - 2;
-    const cssH = 280;
-    canvas.style.width = cssW + "px";
-    canvas.style.height = cssH + "px";
-    canvas.width = Math.round(cssW * DPR);
-    canvas.height = Math.round(cssH * DPR);
-    const ctx = canvas.getContext("2d");
-    ctx.scale(DPR, DPR);
-    drawBellCurve(ctx, cssW, cssH, s);
+    /* render box plot */
+    const bp = makeCanvas("__st-boxplot__", 130);
+    if (bp) drawBoxPlot(bp.ctx, bp.W, bp.H, s);
+
+    /* render KDE */
+    const kd = makeCanvas("__st-canvas__", 280);
+    if (kd) drawBellCurve(kd.ctx, kd.W, kd.H, s);
 
     const copyBtn=document.getElementById("__st-copy-btn__");
     if(copyBtn){
@@ -487,6 +637,4 @@
   });
   document.addEventListener("mouseup",()=>{dragging=false;});
   window.__st_clearHistory=()=>{history=[];renderHistory();};
-
-  console.log("%c Statistics Tool v3 loaded!", "background:#1a5abf;color:#fff;padding:3px 8px;border-radius:4px;font-weight:bold;font-size:13px;");
 })();
