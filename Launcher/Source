@@ -626,21 +626,11 @@ var TREE=[
   function renderBar(){
     bar.innerHTML='';
     var lbl=document.createElement('span');lbl.textContent='Highlight:';lbl.style.cssText='color:#6c7086;font-size:11px;white-space:nowrap;';bar.appendChild(lbl);
-    colours.forEach(function(c){
-      var sw=document.createElement('button');
-      sw.style.cssText='width:18px;height:18px;border-radius:50%;background:'+c+';border:2px solid '+(c===active&&mode==='highlight'?'#fff':'transparent')+';cursor:pointer;padding:0;flex-shrink:0;';
-      sw.onclick=function(){active=c;mode='highlight';renderBar();};bar.appendChild(sw);
-    });
+    colours.forEach(function(c){var sw=document.createElement('button');sw.style.cssText='width:18px;height:18px;border-radius:50%;background:'+c+';border:2px solid '+(c===active&&mode==='highlight'?'#fff':'transparent')+';cursor:pointer;padding:0;flex-shrink:0;';sw.onclick=function(){active=c;mode='highlight';renderBar();};bar.appendChild(sw);});
     var sep=document.createElement('span');sep.style.cssText='width:1px;height:18px;background:#45475a;flex-shrink:0;';bar.appendChild(sep);
-    var eraseBtn=document.createElement('button');eraseBtn.textContent='Eraser';
-    eraseBtn.style.cssText='background:'+(mode==='erase'?'#f38ba8':'#313244')+';color:'+(mode==='erase'?'#1e1e2e':'#cdd6f4')+';border:none;border-radius:20px;padding:3px 10px;font-size:11px;cursor:pointer;';
-    eraseBtn.onclick=function(){mode=mode==='erase'?'highlight':'erase';renderBar();};bar.appendChild(eraseBtn);
-    var pauseBtn=document.createElement('button');pauseBtn.textContent=mode==='off'?'▶ Resume':'⏸ Pause';
-    pauseBtn.style.cssText='background:#313244;color:#cdd6f4;border:none;border-radius:20px;padding:3px 10px;font-size:11px;cursor:pointer;';
-    pauseBtn.onclick=function(){mode=mode==='off'?'highlight':'off';renderBar();};bar.appendChild(pauseBtn);
-    var closeBtn=document.createElement('button');closeBtn.textContent='×';
-    closeBtn.style.cssText='background:none;border:none;color:#6c7086;font-size:16px;cursor:pointer;padding:0;line-height:1;margin-left:2px;';
-    closeBtn.onclick=function(){bar.remove();document.removeEventListener('mouseup',window.__hl_up__);};bar.appendChild(closeBtn);
+    var eraseBtn=document.createElement('button');eraseBtn.textContent='Eraser';eraseBtn.style.cssText='background:'+(mode==='erase'?'#f38ba8':'#313244')+';color:'+(mode==='erase'?'#1e1e2e':'#cdd6f4')+';border:none;border-radius:20px;padding:3px 10px;font-size:11px;cursor:pointer;';eraseBtn.onclick=function(){mode=mode==='erase'?'highlight':'erase';renderBar();};bar.appendChild(eraseBtn);
+    var pauseBtn=document.createElement('button');pauseBtn.textContent=mode==='off'?'\u25b6 Resume':'\u23f8 Pause';pauseBtn.style.cssText='background:#313244;color:#cdd6f4;border:none;border-radius:20px;padding:3px 10px;font-size:11px;cursor:pointer;';pauseBtn.onclick=function(){mode=mode==='off'?'highlight':'off';renderBar();};bar.appendChild(pauseBtn);
+    var closeBtn=document.createElement('button');closeBtn.textContent='\xd7';closeBtn.style.cssText='background:none;border:none;color:#6c7086;font-size:16px;cursor:pointer;padding:0;line-height:1;margin-left:2px;';closeBtn.onclick=function(){bar.remove();document.removeEventListener('mouseup',window.__hl_up__);};bar.appendChild(closeBtn);
   }
   renderBar();document.body.appendChild(bar);
   window.__hl_up__=function(e){
@@ -658,6 +648,163 @@ var TREE=[
     sel.removeAllRanges();
   };
   document.addEventListener('mouseup',window.__hl_up__);
+})()`},
+      {name:"PDF Highlighter",type:"inline",src:`(function(){
+  var id='__hl__';
+  if(document.getElementById(id)){
+    document.getElementById(id).remove();
+    var oc=document.getElementById('__hl_canvas__');if(oc)oc.remove();
+    document.removeEventListener('mouseup',window.__hl_up__);
+    document.removeEventListener('mousedown',window.__hl_dn__);
+    document.removeEventListener('mousemove',window.__hl_mv__);
+    return;
+  }
+  var colours=['#fef08a','#86efac','#93c5fd','#f9a8d4','#fdba74'];
+  var active=colours[0];var mode='highlight';
+  var isPDF=true;
+
+  /* ══════════════════════════════════════════════════════════════
+     PDF MODE — drag-to-draw highlight rectangles on a canvas
+     The PDF viewer renders images; there is no real DOM text layer
+     we can inject <mark> into, so instead we capture raw mouse
+     coordinates and paint coloured boxes on a fixed canvas overlay.
+  ══════════════════════════════════════════════════════════════ */
+  var canvas,ctx,pdfRects=[],dragStart=null,dragging=false;
+
+  function hexRgba(hex,a){
+    var r=parseInt(hex.slice(1,3),16),g=parseInt(hex.slice(3,5),16),b=parseInt(hex.slice(5,7),16);
+    return 'rgba('+r+','+g+','+b+','+a+')';
+  }
+  function ensureCanvas(){
+    if(canvas)return;
+    canvas=document.createElement('canvas');
+    canvas.id='__hl_canvas__';
+    canvas.style.cssText='position:fixed;top:0;left:0;z-index:2147483646;cursor:crosshair;';
+    resizeCanvas();
+    document.documentElement.appendChild(canvas);
+    ctx=canvas.getContext('2d');
+    window.addEventListener('resize',function(){resizeCanvas();redraw();});
+  }
+  function resizeCanvas(){
+    if(!canvas)return;
+    canvas.width=window.innerWidth;canvas.height=window.innerHeight;
+    canvas.style.width=window.innerWidth+'px';canvas.style.height=window.innerHeight+'px';
+  }
+  function redraw(previewRect){
+    if(!ctx)return;
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    pdfRects.forEach(function(rec){
+      ctx.fillStyle=hexRgba(rec.colour,0.4);
+      ctx.fillRect(rec.x,rec.y,rec.w,rec.h);
+    });
+    if(previewRect){
+      ctx.fillStyle=hexRgba(previewRect.colour,0.25);
+      ctx.strokeStyle=hexRgba(previewRect.colour,0.8);
+      ctx.lineWidth=1;
+      ctx.fillRect(previewRect.x,previewRect.y,previewRect.w,previewRect.h);
+      ctx.strokeRect(previewRect.x,previewRect.y,previewRect.w,previewRect.h);
+    }
+  }
+  function rectFrom(a,b){
+    return {x:Math.min(a.x,b.x),y:Math.min(a.y,b.y),
+            w:Math.abs(b.x-a.x),h:Math.abs(b.y-a.y),colour:active};
+  }
+
+  function setupPDF(){
+    ensureCanvas();
+    window.__hl_dn__=function(e){
+      if(bar.contains(e.target))return;
+      if(mode==='off')return;
+      dragging=true;
+      dragStart={x:e.clientX,y:e.clientY};
+    };
+    window.__hl_mv__=function(e){
+      if(!dragging||!dragStart)return;
+      redraw(rectFrom(dragStart,{x:e.clientX,y:e.clientY}));
+    };
+    window.__hl_up__=function(e){
+      if(!dragging||!dragStart)return;
+      dragging=false;
+      if(bar.contains(e.target)){dragStart=null;return;}
+      if(mode==='off'){dragStart=null;return;}
+      var rec=rectFrom(dragStart,{x:e.clientX,y:e.clientY});
+      dragStart=null;
+      if(rec.w<4&&rec.h<4)return; /* ignore accidental clicks */
+      if(mode==='erase'){
+        pdfRects=pdfRects.filter(function(r){
+          return !(r.x<rec.x+rec.w&&r.x+r.w>rec.x&&r.y<rec.y+rec.h&&r.y+r.h>rec.y);
+        });
+        redraw();return;
+      }
+      pdfRects.push(rec);redraw();
+    };
+    canvas.addEventListener('mousedown',window.__hl_dn__);
+    canvas.addEventListener('mousemove',window.__hl_mv__);
+    canvas.addEventListener('mouseup',window.__hl_up__);
+  }
+
+  /* ══════════════════════════════════════════════════════════════
+     NORMAL MODE — wrap selected text in <mark> elements
+  ══════════════════════════════════════════════════════════════ */
+  function setupNormal(){
+    window.__hl_up__=function(e){
+      if(bar.contains(e.target))return;if(mode==='off')return;
+      var sel=window.getSelection();if(!sel||sel.isCollapsed||!sel.rangeCount)return;
+      var range=sel.getRangeAt(0);
+      if(mode==='erase'){
+        var node=range.commonAncestorContainer;
+        var mark=node.nodeType===3?node.parentElement:node;
+        while(mark&&mark.tagName!=='MARK'&&mark!==document.body)mark=mark.parentElement;
+        if(mark&&mark.tagName==='MARK'){
+          var p=mark.parentNode;while(mark.firstChild)p.insertBefore(mark.firstChild,mark);
+          p.removeChild(mark);p.normalize();
+        }
+        sel.removeAllRanges();return;
+      }
+      var mk=document.createElement('mark');mk.style.cssText='background:'+active+';color:inherit;border-radius:2px;';
+      try{range.surroundContents(mk);}
+      catch(ex){var frag=range.extractContents();mk.appendChild(frag);range.insertNode(mk);}
+      sel.removeAllRanges();
+    };
+    document.addEventListener('mouseup',window.__hl_up__);
+  }
+
+  /* ── Toolbar ────────────────────────────────────────────────── */
+  var bar=document.createElement('div');bar.id=id;
+  bar.style.cssText='position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:#1e1e2e;border:1px solid #45475a;border-radius:30px;padding:7px 14px;display:flex;align-items:center;gap:8px;z-index:2147483647;box-shadow:0 4px 20px rgba(0,0,0,.5);font-family:system-ui,sans-serif;font-size:12px;user-select:none;';
+  function renderBar(){
+    bar.innerHTML='';
+    var lbl=document.createElement('span');
+    lbl.textContent=isPDF?'PDF Highlight:':'Highlight:';
+    lbl.style.cssText='color:#6c7086;font-size:11px;white-space:nowrap;';bar.appendChild(lbl);
+    colours.forEach(function(c){
+      var sw=document.createElement('button');
+      sw.style.cssText='width:18px;height:18px;border-radius:50%;background:'+c+';border:2px solid '+(c===active&&mode==='highlight'?'#fff':'transparent')+';cursor:pointer;padding:0;flex-shrink:0;';
+      sw.onclick=function(){active=c;mode='highlight';renderBar();};bar.appendChild(sw);
+    });
+    var sep=document.createElement('span');sep.style.cssText='width:1px;height:18px;background:#45475a;flex-shrink:0;';bar.appendChild(sep);
+    var eraseBtn=document.createElement('button');eraseBtn.textContent='Eraser';
+    eraseBtn.style.cssText='background:'+(mode==='erase'?'#f38ba8':'#313244')+';color:'+(mode==='erase'?'#1e1e2e':'#cdd6f4')+';border:none;border-radius:20px;padding:3px 10px;font-size:11px;cursor:pointer;';
+    eraseBtn.onclick=function(){mode=mode==='erase'?'highlight':'erase';renderBar();};bar.appendChild(eraseBtn);
+    var pauseBtn=document.createElement('button');pauseBtn.textContent=mode==='off'?'\u25b6 Resume':'\u23f8 Pause';
+    pauseBtn.style.cssText='background:#313244;color:#cdd6f4;border:none;border-radius:20px;padding:3px 10px;font-size:11px;cursor:pointer;';
+    pauseBtn.onclick=function(){mode=mode==='off'?'highlight':'off';renderBar();};bar.appendChild(pauseBtn);
+    if(isPDF){
+      var clrBtn=document.createElement('button');clrBtn.textContent='Clear All';
+      clrBtn.style.cssText='background:#313244;color:#cdd6f4;border:none;border-radius:20px;padding:3px 10px;font-size:11px;cursor:pointer;';
+      clrBtn.onclick=function(){pdfRects=[];redraw();};bar.appendChild(clrBtn);
+    }
+    var closeBtn=document.createElement('button');closeBtn.textContent='\xd7';
+    closeBtn.style.cssText='background:none;border:none;color:#6c7086;font-size:16px;cursor:pointer;padding:0;line-height:1;margin-left:2px;';
+    closeBtn.onclick=function(){
+      bar.remove();
+      if(canvas){canvas.removeEventListener('mousedown',window.__hl_dn__);canvas.removeEventListener('mousemove',window.__hl_mv__);canvas.removeEventListener('mouseup',window.__hl_up__);canvas.remove();}
+      document.removeEventListener('mouseup',window.__hl_up__);
+    };bar.appendChild(closeBtn);
+  }
+  renderBar();document.body.appendChild(bar);
+
+  if(isPDF){setupPDF();}else{setupNormal();}
 })()`},
       {name:"Pomodoro Timer",type:"inline",src:`(function(){
   var id='__pom__';if(document.getElementById(id)){document.getElementById(id).remove();return;}
