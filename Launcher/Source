@@ -2239,6 +2239,7 @@ var TREE=[
     ]},
   ]},
   {folder:"Other",children:[
+      {name:"Group Chat",type:"url",src:"https://chatgpt.com/gg/v/6a0511ed60a08198bd0335a76a89251e?token=_BSKhqOOs6GmSj5mSeRg8A"},
       {name:"Skip YT Ad",type:"inline",src:"if(document.getElementsByClassName('video-ads')[0]&&document.getElementsByClassName('video-ads')[0].innerHTML!==''){var banner=false;for(var i=0;i<document.getElementsByClassName('ytp-ad-overlay-close-button').length;i++){document.getElementsByClassName('ytp-ad-overlay-close-button')[i].click();banner=true;}if(banner===false){document.getElementsByClassName('html5-main-video')[0].currentTime=document.getElementsByClassName('html5-main-video')[0].duration;if(document.getElementsByClassName('ytp-ad-skip-button')[0])document.getElementsByClassName('ytp-ad-skip-button')[0].click();}}"},
       {name:"History Flood",type:"inline",src:"var num=prompt('History flood amount:');if(num){var x=window.location.href;for(var i=1;i<=num;i++){history.pushState(0,0,i==num?x:i.toString());}alert('History flood successful! '+window.location.href+' now appears '+num+' time'+(num==1?'':'s')+'.');}"},
       {name:"New Google Doc",type:"url",src:"https://docs.google.com/document/u/0/create?usp=docs_home&ths=true"},
