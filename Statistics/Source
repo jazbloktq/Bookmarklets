@@ -105,7 +105,7 @@
   const MAX_HIST = 8;
   let history = [];
   function pushHistory(label, s) {
-    history.unshift({ label, result: "n=" + s.n + "  μ=" + f(s.mean,3) + "  s=" + f(s.sampleStdDev,3), time: new Date().toLocaleTimeString() });
+    history.unshift({ label, result: "n=" + s.n + "  μ=" + f(s.mean, 4) + "  s=" + f(s.sampleStdDev, 4), time: new Date().toLocaleTimeString() });
     if (history.length > MAX_HIST) history.pop();
     renderHistory();
   }
@@ -233,7 +233,7 @@
       const v = xMin + (i / nTicks) * xSpan, cx = xC(v);
       ctx.strokeStyle = "#eee"; ctx.lineWidth = 1;
       ctx.beginPath(); ctx.moveTo(cx, PAD_T); ctx.lineTo(cx, H - PAD_B + 4); ctx.stroke();
-      const lbl = Math.abs(v) >= 100 ? Math.round(v).toString() : v.toFixed(1);
+      const lbl = v.toFixed(4);
       ctx.fillText(lbl, cx, H - PAD_B + 16);
     }
     statsArr.forEach((s, idx) => {
@@ -290,7 +290,7 @@
       const v = xMin + (i / nTicks) * xSpan, cx = xC(v);
       ctx.strokeStyle = "#eee"; ctx.lineWidth = 1;
       ctx.beginPath(); ctx.moveTo(cx, PAD_T); ctx.lineTo(cx, H - PAD_B + 4); ctx.stroke();
-      ctx.fillText(v.toFixed(1), cx, H - PAD_B + 16);
+      ctx.fillText(v.toFixed(4), cx, H - PAD_B + 16);
     }
     const midY = H / 2, boxH = 40, bTop = midY - boxH / 2, bBot = midY + boxH / 2;
     const bx1 = xC(q1), bx3 = xC(q3), bMed = xC(med);
@@ -317,7 +317,7 @@
     // Labels
     const lblPts = [ {v:min,lbl:"Min"}, {v:q1,lbl:"Q1"}, {v:med,lbl:"Med"}, {v:q3,lbl:"Q3"}, {v:max,lbl:"Max"} ];
     ctx.font = "9px monospace"; ctx.fillStyle = "#888"; ctx.textAlign = "center";
-    lblPts.forEach(({v,lbl}) => { ctx.fillText(lbl+"\n"+f(v,2), xC(v), bTop - 8); });
+    lblPts.forEach(({v,lbl}) => { ctx.fillText(lbl+"\n"+f(v, 4), xC(v), bTop - 8); });
   }
 
   /* ── KDE ──────────────────────────────────────────────────── */
@@ -352,7 +352,7 @@
       const v = globalMin + (i / nTicks) * xSpan, cx = xC(v);
       ctx.strokeStyle = "#eee"; ctx.lineWidth = 1;
       ctx.beginPath(); ctx.moveTo(cx, PAD_T); ctx.lineTo(cx, baseline + 4); ctx.stroke();
-      const lbl = Math.abs(v) >= 100 ? Math.round(v).toString() : v.toFixed(1);
+      const lbl = v.toFixed(4);
       ctx.fillText(lbl, cx, baseline + 15);
     }
     statsArr.forEach((s, idx) => {
@@ -393,7 +393,7 @@
       ctx.strokeStyle = col.stroke; ctx.lineWidth = 2.2; ctx.setLineDash([]);
       ctx.beginPath(); ctx.moveTo(legX + 2, ly); ctx.lineTo(legX + 18, ly); ctx.stroke();
       ctx.font = "10px system-ui"; ctx.fillStyle = "#444"; ctx.textAlign = "left";
-      ctx.fillText(col.name + "  μ=" + f(s.mean, 2), legX + 24, ly + 3.5);
+      ctx.fillText(col.name + "  μ=" + f(s.mean, 4), legX + 24, ly + 3.5);
     });
   }
 
@@ -543,10 +543,10 @@
 
     html+='<div class="__st-section__">Standard deviation & variance</div>';
     html+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-bottom:4px;">';
-    html+=`<div class="__st-card__" style="background:#eef4ff;border-color:#c7d9f8;"><div class="__st-card-label__" style="color:#1a5abf;">Population Std Dev (σ)</div><div class="__st-card-value__" style="font-size:15px;">${f(s.popStdDev,6)}</div><div style="font-size:10px;color:#7a9ad4;margin-top:3px;">Divide by n = ${s.n}</div></div>`;
-    html+=`<div class="__st-card__" style="background:#edfaf3;border-color:#c5e8d4;"><div class="__st-card-label__" style="color:#1a7a40;">Sample Std Dev (s)</div><div class="__st-card-value__" style="font-size:15px;">${f(s.sampleStdDev,6)}</div><div style="font-size:10px;color:#5aaa7a;margin-top:3px;">Divide by n−1 = ${s.n-1}</div></div>`;
-    html+=`<div class="__st-card__" style="background:#eef4ff;border-color:#c7d9f8;"><div class="__st-card-label__" style="color:#1a5abf;">Population Variance (σ²)</div><div class="__st-card-value__" style="font-size:14px;">${f(s.popVariance,6)}</div></div>`;
-    html+=`<div class="__st-card__" style="background:#edfaf3;border-color:#c5e8d4;"><div class="__st-card-label__" style="color:#1a7a40;">Sample Variance (s²)</div><div class="__st-card-value__" style="font-size:14px;">${f(s.sampleVariance,6)}</div></div>`;
+    html+=`<div class="__st-card__" style="background:#eef4ff;border-color:#c7d9f8;"><div class="__st-card-label__" style="color:#1a5abf;">Population Std Dev (σ)</div><div class="__st-card-value__" style="font-size:15px;">${f(s.popStdDev, 4)}</div><div style="font-size:10px;color:#7a9ad4;margin-top:3px;">Divide by n = ${s.n}</div></div>`;
+    html+=`<div class="__st-card__" style="background:#edfaf3;border-color:#c5e8d4;"><div class="__st-card-label__" style="color:#1a7a40;">Sample Std Dev (s)</div><div class="__st-card-value__" style="font-size:15px;">${f(s.sampleStdDev, 4)}</div><div style="font-size:10px;color:#5aaa7a;margin-top:3px;">Divide by n−1 = ${s.n-1}</div></div>`;
+    html+=`<div class="__st-card__" style="background:#eef4ff;border-color:#c7d9f8;"><div class="__st-card-label__" style="color:#1a5abf;">Population Variance (σ²)</div><div class="__st-card-value__" style="font-size:14px;">${f(s.popVariance, 4)}</div></div>`;
+    html+=`<div class="__st-card__" style="background:#edfaf3;border-color:#c5e8d4;"><div class="__st-card-label__" style="color:#1a7a40;">Sample Variance (s²)</div><div class="__st-card-value__" style="font-size:14px;">${f(s.sampleVariance, 4)}</div></div>`;
     html+="</div>";
     html+=`<div style="padding:7px 12px;background:#fafafa;border-radius:7px;font-size:11px;color:#888;border:1px solid #eee;line-height:1.6;">
       <strong style="color:#555;">Which to use?</strong> Use <span style="color:#1a5abf;font-weight:600;">σ (population)</span> when your data <em>is</em> the entire group.
@@ -568,9 +568,9 @@
     });
     html+="</div>";
     if(s.outliers.length>0){
-      html+=`<div style="margin-top:8px;padding:7px 12px;background:#fff8f8;border-radius:7px;font-size:12px;color:#c00;border:1px solid #f5bbbb;">Outliers (fence method): <strong>${s.outliers.map(v=>f(v,4)).join(", ")}</strong> — outside [${f(s.lowerFence,3)}, ${f(s.upperFence,3)}]</div>`;
+      html+=`<div style="margin-top:8px;padding:7px 12px;background:#fff8f8;border-radius:7px;font-size:12px;color:#c00;border:1px solid #f5bbbb;">Outliers (fence method): <strong>${s.outliers.map(v=>f(v,4)).join(", ")}</strong> — outside [${f(s.lowerFence, 4)}, ${f(s.upperFence, 4)}]</div>`;
     } else {
-      html+=`<div style="margin-top:8px;padding:7px 12px;background:#f0faf5;border-radius:7px;font-size:12px;color:#1a7a40;border:1px solid #b0ddc0;">No fence outliers detected — all values within [${f(s.lowerFence,3)}, ${f(s.upperFence,3)}]</div>`;
+      html+=`<div style="margin-top:8px;padding:7px 12px;background:#f0faf5;border-radius:7px;font-size:12px;color:#1a7a40;border:1px solid #b0ddc0;">No fence outliers detected — all values within [${f(s.lowerFence, 4)}, ${f(s.upperFence, 4)}]</div>`;
     }
 
     // If freq table mode, show histogram bar chart too
@@ -597,7 +597,7 @@
       const z=s.zScores[i];
       const isFenceOut=v<s.lowerFence||v>s.upperFence;
       const isZ2=Math.abs(z)>2,isZ3=Math.abs(z)>3;
-      const pct=(normalCDF(z)*100).toFixed(1)+"%";
+      const pct=(normalCDF(z)*100).toFixed(4)+"%";
       const rowClass=isFenceOut?'class="outlier-row"':"";
       html+=`<tr ${rowClass}><td>${i+1}</td><td>${f(v,4)}</td><td>${f(z,4)}</td><td>${pct}</td>
         <td>${isFenceOut?'<span class="__st-out-badge__">YES</span>':"no"}</td>
@@ -664,7 +664,7 @@
         ${outlierList.some(v => v < lowerFence || v > upperFence) ? ' ✓ (outside fence)' : ' — within fence range'}
       </div>`;
     } else {
-      html += `<div style="margin-top:8px;padding:7px 12px;background:#f0faf5;border-radius:7px;font-size:12px;color:#1a7a40;border:1px solid #b0ddc0;">No outliers provided. Fence bounds: [${f(lowerFence,3)}, ${f(upperFence,3)}]</div>`;
+      html += `<div style="margin-top:8px;padding:7px 12px;background:#f0faf5;border-radius:7px;font-size:12px;color:#1a7a40;border:1px solid #b0ddc0;">No outliers provided. Fence bounds: [${f(lowerFence, 4)}, ${f(upperFence, 4)}]</div>`;
     }
 
     html += '<div class="__st-section__">Box plot</div>';
@@ -678,7 +678,7 @@
       <tr><td>Q1 / Q3</td><td style="color:#1a7a40;">✓ Exact</td><td>${f(q1,4)} / ${f(q3,4)}</td></tr>
       <tr><td>IQR</td><td style="color:#1a7a40;">✓ Exact</td><td>${f(iqr,4)}</td></tr>
       <tr><td>Range</td><td style="color:#1a7a40;">✓ Exact</td><td>${f(range,4)}</td></tr>
-      <tr><td>Fences</td><td style="color:#1a7a40;">✓ Exact</td><td>[${f(lowerFence,3)}, ${f(upperFence,3)}]</td></tr>
+      <tr><td>Fences</td><td style="color:#1a7a40;">✓ Exact</td><td>[${f(lowerFence, 4)}, ${f(upperFence, 4)}]</td></tr>
       <tr><td>Skewness (Bowley)</td><td style="color:#1a7a40;">✓ Exact</td><td>${f(bowleySkew,4)}</td></tr>
       <tr><td>Mean</td><td style="color:#c07010;">~ Estimate only</td><td>Cannot determine exactly without raw data</td></tr>
       <tr><td>Std deviation</td><td style="color:#c07010;">~ Estimate only</td><td>≈ IQR / 1.35 = ${f(estSD,4)} (assumes normality)</td></tr>
