@@ -2,19 +2,40 @@
 'use strict';
 
 // ── 60fps cap ─────────────────────────────────────────────────────────────────
+// Every game here moves things a fixed amount per frame, so on a 120/144/165/240Hz
+// monitor they run 2-4x too fast. This scheduler is shared by ALL games: it runs a
+// single real rAF loop and only dispatches queued callbacks at ~60 times per second,
+// whatever the monitor's refresh rate is.
 const _raf = window.requestAnimationFrame.bind(window);
 const _caf = window.cancelAnimationFrame.bind(window);
-const _rafWrap = (cb) => {
-  let rafId, lastTs = 0;
-  const tick = (ts) => {
-    if (ts - lastTs >= 16.0) { lastTs = ts; cb(ts); } 
-    else { rafId = _raf(tick); }
-  };
-  rafId = _raf(tick);
-  return rafId;
+const _FRAME_MS = 1000 / 60;
+let _rafSeq = 0, _rafPumpId = null, _rafAcc = 0, _rafPrev = 0;
+const _rafPending = new Map();
+function _rafPump(ts) {
+  _rafPumpId = null;
+  if (!_rafPending.size) { _rafPrev = 0; return; }
+  if (!_rafPrev) _rafPrev = ts - _FRAME_MS;
+  _rafAcc += Math.min(ts - _rafPrev, 100);   // clamp so a background tab doesn't cause a burst
+  _rafPrev = ts;
+  if (_rafAcc >= _FRAME_MS - 0.5) {
+    _rafAcc = Math.min(_rafAcc - _FRAME_MS, _FRAME_MS);
+    const ids = Array.from(_rafPending.keys());   // callbacks queued during this run wait for the next tick
+    for (const id of ids) {
+      const cb = _rafPending.get(id);
+      if (!cb) continue;                          // cancelled by an earlier callback this tick
+      _rafPending.delete(id);
+      try { cb(ts); } catch (e) { console.error(e); }
+    }
+  }
+  if (_rafPending.size && _rafPumpId === null) _rafPumpId = _raf(_rafPump);
+}
+const requestAnimationFrame = (cb) => {
+  const id = ++_rafSeq;
+  _rafPending.set(id, cb);
+  if (_rafPumpId === null) _rafPumpId = _raf(_rafPump);
+  return id;
 };
-const requestAnimationFrame = _rafWrap;
-const cancelAnimationFrame  = _caf;
+const cancelAnimationFrame = (id) => { _rafPending.delete(id); };
 
 
 // ── config ────────────────────────────────────────────────────────────────────
